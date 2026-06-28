@@ -18,10 +18,8 @@ public class DatabaseService : IDatabaseService
         var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var appFolder = Path.Combine(appDataFolder, "IncomeExpenditureTracker");
 
-        if (!Directory.Exists(appFolder))
-        {
-            Directory.CreateDirectory(appFolder);
-        }
+
+        Directory.CreateDirectory(appFolder);
 
         var databaseFile = Path.Combine(appFolder, "transactions.db");
 

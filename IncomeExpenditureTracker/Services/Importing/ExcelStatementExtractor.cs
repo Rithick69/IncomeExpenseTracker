@@ -35,15 +35,15 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
     }
 
     // Analyzes the given Excel file and returns a preview of the detected account information, column mappings, and a sample of transactions.
-    public async Task<StatementPreview> Analyze(IXLWorksheet worksheet, string filePath)
+    public async Task<StatementPreview> Analyze(IXLWorksheet worksheet, string filePath, bool forceReload = false)
     {
         try
         {
-            var accountInfo = await _fieldMapper.DetectAccountDetails(worksheet);
+            var accountInfo = await _fieldMapper.DetectAccountDetails(worksheet, forceReload);
 
-            var headerRow = await _headerDetector.DetectHeaderRow(worksheet);
+            var headerRow = await _headerDetector.DetectHeaderRow(worksheet, forceReload);
 
-            var columnMap = await _fieldMapper.DetectColumns(worksheet, headerRow);
+            var columnMap = await _fieldMapper.DetectColumns(worksheet, headerRow, forceReload);
 
             // Extract a sample of transactions for preview (e.g., first 20 rows)
 

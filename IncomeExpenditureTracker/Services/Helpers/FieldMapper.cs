@@ -40,8 +40,7 @@ namespace IncomeExpenditureTracker.Services.Helpers;
 
 public class FieldMapper : IFieldMapper<IXLWorksheet>
 {
-    private readonly SynonymService _synonymService = null!;
-    private List<Synonyms> _synonyms = null!;
+    private IEnumerable<Synonyms> _synonyms = null!;
 
     // Exact synonym lookup
     private Dictionary<string, Synonyms> _exactMatchMap = null!;
@@ -51,10 +50,12 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     // "DATE" -> [ "TRANSACTION DATE", "VALUE DATE" ]
     private Dictionary<string, List<Synonyms>> _tokenIndex = null!;
 
+    private readonly ISynonymService _synonymService = null!;
+
     private bool _isInitialized = false;
 
     // 1. The constructor is strictly for injecting dependencies
-    public FieldMapper(SynonymService synonymService)
+    public FieldMapper(ISynonymService synonymService)
     {
         ArgumentNullException.ThrowIfNull(synonymService);
         _synonymService = synonymService;
@@ -62,10 +63,10 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
 
 
     // 2. The new Async Initialization method
-    private async Task EnsureInitializedAsync()
+    private async Task EnsureInitializedAsync(bool forceReload = false)
     {
         // If we already built the dictionaries, skip doing it again
-        if (_isInitialized) return;
+        if (_isInitialized && !forceReload) return; // this forces a reload if needed, e.g., if synonyms were updated in the database
 
         // Fetch from the database safely
         _synonyms = await _synonymService.GetAllSynonyms();
@@ -79,7 +80,8 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
             );
 
         // Build token index dictionary
-        _tokenIndex = BuildTokenIndex(_synonyms);
+        // Pass only the active, highest-priority synonyms to the token index
+        _tokenIndex = BuildTokenIndex(_exactMatchMap.Values);
 
         _isInitialized = true;
     }
@@ -95,18 +97,21 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     // This allows us to quickly narrow down potential matches
     // without scanning every synonym.
     // ------------------------------------------------------------
-    private Dictionary<string, List<Synonyms>> BuildTokenIndex(List<Synonyms> synonyms)
+    private Dictionary<string, List<Synonyms>> BuildTokenIndex(IEnumerable<Synonyms> activeSynonyms)
     {
         var index = new Dictionary<string, List<Synonyms>>();
 
-        foreach (var synonym in synonyms)
+        // Now we are only looping through the "winners" of the priority resolution
+        foreach (var synonym in activeSynonyms)
         {
-            var tokens = Normalize(synonym.Synonym).Split(' ');
+            var tokens = Normalize(synonym.Synonym).Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
             foreach (var token in tokens)
             {
                 if (!index.ContainsKey(token))
+                {
                     index[token] = new List<Synonyms>();
+                }
 
                 index[token].Add(synonym);
             }
@@ -126,11 +131,11 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     // Returns:
     // TransColumnMap containing detected column indices
     // ------------------------------------------------------------
-    public async Task<TransColumnMap> DetectColumns(IXLWorksheet worksheet, int headerRow)
+    public async Task<TransColumnMap> DetectColumns(IXLWorksheet worksheet, int headerRow, bool forceReload = false)
     {
         try
         {
-            await EnsureInitializedAsync();
+            await EnsureInitializedAsync(forceReload);
 
             var map = new TransColumnMap
             {
@@ -177,11 +182,11 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     //
     // Usually the value is stored in the next column.
     // ------------------------------------------------------------
-    public async Task<Account> DetectAccountDetails(IXLWorksheet worksheet)
+    public async Task<Account> DetectAccountDetails(IXLWorksheet worksheet, bool forceReload = false)
     {
         try
         {
-            await EnsureInitializedAsync();
+            await EnsureInitializedAsync(forceReload);
 
             var account = new Account
             {

@@ -8,8 +8,8 @@ public interface IFieldMapper<TDocument>
 {
 
     // Detects column mappings based on the header row and synonyms.
-    public Task<TransColumnMap> DetectColumns(TDocument document, int headerRow);
+    public Task<TransColumnMap> DetectColumns(TDocument document, int headerRow, bool forceReload = false);
 
     // Detects account details from the given Excel worksheet.
-    public Task<Account> DetectAccountDetails(TDocument document);
+    public Task<Account> DetectAccountDetails(TDocument document, bool forceReload = false);
 }

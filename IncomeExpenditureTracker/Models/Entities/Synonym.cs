@@ -8,5 +8,6 @@ public class Synonyms
 
     public string Synonym { get; set; } = "";
 
-    public int Priority { get; set; }
+    public int Priority { get; set; } = 0;
+
 }
