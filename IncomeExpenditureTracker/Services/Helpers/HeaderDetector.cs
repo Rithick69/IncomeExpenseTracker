@@ -19,12 +19,12 @@ namespace IncomeExpenditureTracker.Services.Helpers;
 public class HeaderDetector : IHeaderDetector<IXLWorksheet>
 {
     private Dictionary<string, string> _synonymFieldMap = null!;
-    private readonly SynonymService _synonymService = null!;
-    private List<Synonyms> _synonyms = null!;
+    private readonly ISynonymService _synonymService = null!;
+    private IEnumerable<Synonyms> _synonyms = null!;
     private bool _isInitialized = false;
 
 
-    public HeaderDetector(SynonymService synonymService)
+    public HeaderDetector(ISynonymService synonymService)
     {
         ArgumentNullException.ThrowIfNull(synonymService);
         _synonymService = synonymService;
@@ -32,10 +32,10 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
 
 
     // 2. The new Async Initialization method
-    private async Task EnsureInitializedAsync()
+    private async Task EnsureInitializedAsync(bool forceReload = false)
     {
         // If we already built the dictionaries, skip doing it again
-        if (_isInitialized) return;
+        if (_isInitialized && !forceReload) return; // this forces a reload if needed, e.g., if synonyms were updated in the database
 
         // Fetch from the database safely
         _synonyms = await _synonymService.GetAllSynonyms();
@@ -61,11 +61,11 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
         { "AMOUNT", 1 }
     };
 
-    public async Task<int> DetectHeaderRow(IXLWorksheet worksheet)
+    public async Task<int> DetectHeaderRow(IXLWorksheet worksheet, bool forceReload = false)
     {
         try
         {
-            await EnsureInitializedAsync();
+            await EnsureInitializedAsync(forceReload);
 
             int bestRow = 0;
             int bestScore = 0;

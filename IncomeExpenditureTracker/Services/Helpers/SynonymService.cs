@@ -46,13 +46,13 @@ namespace IncomeExpenditureTracker.Services.Helpers;
 // DEBIT        WITHDRAWAL
 // CREDIT       DEPOSIT
 // ------------------------------------------------------------
-public class SynonymService : ISynonymnService
+public class SynonymService : ISynonymService
 {
     private readonly IDatabaseService _database;
 
     public SynonymService(IDatabaseService database)
     {
-        _database = database;
+        _database = database ?? throw new ArgumentNullException(nameof(database));
     }
 
     // ------------------------------------------------------------
@@ -71,7 +71,7 @@ public class SynonymService : ISynonymnService
     // Returns:
     // List<Synonyms>
     // ------------------------------------------------------------
-    public async Task<List<Synonyms>> GetAllSynonyms()
+    public async Task<IEnumerable<Synonyms>> GetAllSynonyms()
     {
         try
         {
@@ -96,6 +96,115 @@ public class SynonymService : ISynonymnService
             // can stop the import process safely.
             // ------------------------------------------------------------
             Console.WriteLine($"[SynonymService] Failed to load synonyms: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Learns a new mapping by inserting a new record with a strictly higher priority
+    /// than any previous mappings for the same raw synonym.
+    /// </summary>
+    public async Task LearnFromCorrectionAsync(string rawSynonym, string fieldType)
+    {
+        try
+        {
+            // 1. Find the current highest priority for this specific raw synonym
+            const string maxPrioritySql = "SELECT MAX(Priority) FROM Synonyms WHERE Synonym = @Synonym;";
+
+            var currentMaxPriority = await _database.ExecuteWithRetryAsync(async connection =>
+            {
+                return await connection.QuerySingleOrDefaultAsync<int?>(maxPrioritySql, new { Synonym = rawSynonym });
+            });
+
+            // 2. Increment the priority so this new rule beats all older rules.
+            int newPriority = (currentMaxPriority ?? 0) + 1;
+
+            // 3. Create the new historical record
+            var newSynonym = new Synonyms
+            {
+                FieldType = fieldType,
+                Synonym = rawSynonym,
+                Priority = newPriority
+            };
+
+            // 4. Save the new mapping
+            await AddSynonymAsync(newSynonym);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SynonymService] Failed to learn from correction: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Inserts a new synonym record. Because we rely on Priority to resolve duplicates,
+    /// this is a standard INSERT, appending to the history.
+    /// </summary>
+    public async Task AddSynonymAsync(Synonyms synonym)
+    {
+        try
+        {
+            const string sql = @"
+            INSERT INTO Synonyms (FieldType, Synonym, Priority)
+            VALUES (@FieldType, @Synonym, @Priority);";
+
+            await _database.ExecuteWithRetryAsync(async connection =>
+            {
+                await connection.ExecuteAsync(sql, synonym);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SynonymService] Failed to add synonym: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Updates an existing synonym record. Used by the manual management UI
+    /// to correct typos or change mappings for a specific entry.
+    /// </summary>
+    public async Task UpdateSynonymAsync(Synonyms synonym)
+    {
+        try
+        {
+            const string sql = @"
+            UPDATE Synonyms
+            SET FieldType = @FieldType,
+                Synonym = @Synonym,
+                Priority = @Priority
+            WHERE Id = @Id;";
+
+            await _database.ExecuteWithRetryAsync(async connection =>
+            {
+                await connection.ExecuteAsync(sql, synonym);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SynonymService] Failed to update synonym: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Removes a specific synonym record by its primary key, utilized by the manual management UI.
+    /// </summary>
+    public async Task DeleteSynonymAsync(int id)
+    {
+        try
+        {
+            const string sql = "DELETE FROM Synonyms WHERE Id = @Id;";
+
+            await _database.ExecuteWithRetryAsync(async connection =>
+            {
+                await connection.ExecuteAsync(sql, new { Id = id });
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SynonymService] Failed to delete synonym: {ex.Message}");
             throw;
         }
     }

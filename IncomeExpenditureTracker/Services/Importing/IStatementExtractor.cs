@@ -5,5 +5,5 @@ namespace IncomeExpenditureTracker.Services.Importing;
 
 public interface IStatementExtractor<in TDocument>
 {
-    public Task<StatementPreview> Analyze(TDocument document, string sourceFileName);
+    public Task<StatementPreview> Analyze(TDocument document, string sourceFileName, bool forceReload = false);
 }
