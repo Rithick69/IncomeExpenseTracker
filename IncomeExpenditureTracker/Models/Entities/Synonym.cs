@@ -1,0 +1,12 @@
+namespace IncomeExpenditureTracker.Models;
+
+public class Synonyms
+{
+    public int Id { get; set; }
+
+    public string FieldType { get; set; } = "";
+
+    public string Synonym { get; set; } = "";
+
+    public int Priority { get; set; }
+}
