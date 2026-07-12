@@ -86,6 +86,36 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
         _isInitialized = true;
     }
 
+    private async Task<Dictionary<string, DetectedField>> PreseedDictionary(string category)
+    {
+        var dictionary = new Dictionary<string, DetectedField>(StringComparer.OrdinalIgnoreCase);
+
+        var prefix = category == "TRANSACTION" ? "Col:" : "Meta:"; // e.g., "Col:" or "Meta:"
+
+        var synonymMap = await _synonymService.GetSynonymsByCategory(category);
+
+        var knownFieldTypes = synonymMap.Values
+            .Select(s => s.FieldType)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        // 2. PRE-SEEDING STEP: Populate default fallbacks for every expected field
+        foreach (var fieldType in knownFieldTypes)
+        {
+            string namespacedKey = $"{prefix}{fieldType}"; // No trailing space!
+
+            dictionary[namespacedKey] = new DetectedField
+            {
+                SuggestedField = fieldType,  // Pure domain concept, clean of prefixes
+                ColumnName = "",             // Empty because it's not found yet
+                ColumnIndex = -1,            // 0-based indexing flag for "Not Detected"
+                ExtractedValue = "",
+                ConfidenceScore = 0.0,
+                IsUserVerified = false
+            };
+        }
+        return dictionary;
+    }
+
     // ------------------------------------------------------------
     // BUILD TOKEN INDEX
     // ------------------------------------------------------------
@@ -129,25 +159,26 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     // headerRow → row number containing column headers
     //
     // Returns:
-    // TransColumnMap containing detected column indices
+    // detectedColumns containing detected column indices
     // ------------------------------------------------------------
-    public async Task<TransColumnMap> DetectColumns(IXLWorksheet worksheet, int headerRow, bool forceReload = false)
+    public async Task<Dictionary<string, DetectedField>> DetectColumns(IXLWorksheet worksheet, int headerRow, bool forceReload = false)
     {
         try
         {
             await EnsureInitializedAsync(forceReload);
-
-            var map = new TransColumnMap
-            {
-                HeaderRow = headerRow
-            };
+            // Using case-insensitive keys so "DATE", "Date", and "date" are handled uniformly
+            var detectedColumns = await PreseedDictionary("TRANSACTION"); // Pre-seed with "Col:" prefix for transaction columns
 
             var lastColCell = worksheet.LastColumnUsed();
             int lastColumn = lastColCell?.ColumnNumber() ?? 0;
 
+            // BOUNDARY TRANSLATION (ROW):
+            // Convert our incoming 0-based domain row coordinate back to ClosedXML's 1-based Excel coordinate.
+            int excelHeaderRow = headerRow + 1;
+
             for (int col = 1; col <= lastColumn; col++)
             {
-                var headerText = Normalize(worksheet.Cell(headerRow, col).GetString());
+                var headerText = Normalize(worksheet.Cell(excelHeaderRow, col).GetString());
 
                 if (string.IsNullOrWhiteSpace(headerText))
                     continue;
@@ -155,12 +186,28 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
                 var match = MatchSynonym(headerText);
 
                 if (match != null)
-                    AssignTransColumn(map, match.FieldType, col);
+                {
+
+                    // BOUNDARY TRANSLATION:
+                    // Convert ClosedXML's 1-based Excel coordinate to our global 0-based domain coordinate by subtracting 1.
+                    int zeroBasedIndex = col - 1;
+
+                    // DYNAMIC POPULATION: No switch statement needed!
+                    // We map the domain concept (e.g., "DATE") directly to our universal container.
+                    detectedColumns[$"Col:{match.FieldType}"] = new DetectedField
+                    {
+                        SuggestedField = match.FieldType, // The standard name (e.g., "DATE", "DESCRIPTION")
+                        ColumnName = headerText,          // The raw Excel text (e.g., "TXN_DT") -> VITAL FOR LEARNING!
+                        ColumnIndex = zeroBasedIndex,     // The integer coordinate for import engine math
+                        ConfidenceScore = 0.95,           // High confidence since it matched our synonym engine
+                        IsUserVerified = false
+                    };
+                }
             }
 
-            ValidateTransColumnMap(map);
+            // ValidateTransColumnMap(map);
 
-            return map;
+            return detectedColumns;
         }
         catch (Exception ex)
         {
@@ -182,16 +229,13 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     //
     // Usually the value is stored in the next column.
     // ------------------------------------------------------------
-    public async Task<Account> DetectAccountDetails(IXLWorksheet worksheet, bool forceReload = false)
+    public async Task<Dictionary<string, DetectedField>> DetectAccountDetails(IXLWorksheet worksheet, bool forceReload = false)
     {
         try
         {
             await EnsureInitializedAsync(forceReload);
 
-            var account = new Account
-            {
-                CreatedDate = DateTime.UtcNow
-            };
+            var detectedMetadata = await PreseedDictionary("METADATA"); // Pre-seed with "Meta:" prefix for account metadata
 
             var lastColCell = worksheet.LastColumnUsed();
             int lastColumn = lastColCell?.ColumnNumber() ?? 0;
@@ -212,13 +256,32 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
 
                     var value = ExtractFieldValue(worksheet, row, col);
 
-                    AssignAccountField(account, match.FieldType, value);
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        // BOUNDARY TRANSLATION:
+                        // Convert ClosedXML's 1-based Excel coordinate to our global 0-based domain coordinate by subtracting 1.
+                        int zeroBasedIndex = col - 1;
+
+                        // DYNAMIC POPULATION: No switch statement needed!
+                        // Works identically for Account Number, Card Number, Currency, OR Bank Name (Entity)!
+                        detectedMetadata[$"Meta:{match.FieldType}"] = new DetectedField
+                        {
+                            SuggestedField = match.FieldType, // e.g., "ACCOUNT_NUMBER", "ENTITY_NAME"
+                            ColumnName = text,                // The raw label in Excel (e.g., "A/C NO:") -> VITAL FOR LEARNING!
+                            ColumnIndex = zeroBasedIndex,     // The integer coordinate for import engine math
+                            ExtractedValue = value,           // The actual data string (e.g., "987654321", "HDFC Bank")
+                            ConfidenceScore = 0.90,
+                            IsUserVerified = false
+                        };
+                    }
                 }
             }
 
-            ValidateAccountDetails(account);
+            // RELAXED VALIDATION: Commented out so missing Account/Card numbers
+            // can be manually entered by the user during the StatementEditSession!
+            // ValidateAccountDetails(account);
 
-            return account;
+            return detectedMetadata;
         }
         catch (Exception ex)
         {
@@ -334,67 +397,6 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     }
 
     // ------------------------------------------------------------
-    // ASSIGN TRANSACTION COLUMN
-    // ------------------------------------------------------------
-    private void AssignTransColumn(TransColumnMap map, string type, int column)
-    {
-        switch (type)
-        {
-            case "DATE":
-                map.DateColumn = column;
-                break;
-
-            case "DESCRIPTION":
-                map.DescriptionColumn = column;
-                break;
-
-            case "DEBIT":
-                map.DebitColumn = column;
-                break;
-
-            case "CREDIT":
-                map.CreditColumn = column;
-                break;
-            case "AMOUNT":
-                map.AmountColumn = column;
-                break;
-        }
-    }
-
-    // ------------------------------------------------------------
-    // ASSIGN ACCOUNT FIELD
-    // ------------------------------------------------------------
-    private void AssignAccountField(Account account, string fieldType, string value)
-    {
-        switch (fieldType)
-        {
-            case "ACCOUNT_NUMBER":
-                account.AccountNumber = value;
-                break;
-
-            case "CARD_NUMBER":
-                account.CardNumber = value;
-                break;
-
-            case "ENTITY_NAME":
-                account.EntityName = value;
-                break;
-
-            case "ACCOUNT_TYPE":
-                account.AccountType = value;
-                break;
-
-            case "CURRENCY":
-                account.Currency = value;
-                break;
-
-            case "CREDIT_LIMIT":
-                account.CreditLimit = value;
-                break;
-        }
-    }
-
-    // ------------------------------------------------------------
     // SIMILARITY CALCULATION
     // ------------------------------------------------------------
     // similarity calculation summary:
@@ -464,49 +466,5 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
             .Replace("_", " ")
             .Replace("-", " ")
             .Trim();
-    }
-
-    // ------------------------------------------------------------
-    // VALIDATE REQUIRED TRANSACTION COLUMNS
-    // ------------------------------------------------------------
-    private void ValidateTransColumnMap(TransColumnMap map)
-    {
-        if (map.DateColumn == 0)
-            throw new Exception("DATE column not detected.");
-
-        if (map.DescriptionColumn == 0)
-            throw new Exception("DESCRIPTION column not detected.");
-
-        if (map.DebitColumn == 0 && map.CreditColumn == 0 && map.AmountColumn == 0)
-            throw new Exception("No amount column detected.");
-    }
-
-    // ------------------------------------------------------------
-    // VALIDATE REQUIRED ACCOUNT DETAILS
-    // ------------------------------------------------------------
-    // Ensures that all critical account fields were detected
-    // during statement parsing. If any required field is missing,
-    // the parser throws an exception to prevent invalid data
-    // from entering the system.
-    // ------------------------------------------------------------
-    private void ValidateAccountDetails(Account account)
-    {
-        if (string.IsNullOrWhiteSpace(account.EntityName))
-            throw new InvalidOperationException("Entity Name could not be detected.");
-
-        if (string.IsNullOrWhiteSpace(account.AccountNumber) || account.AccountNumber.Length < 4)
-            throw new InvalidOperationException("Account Number could not be detected.");
-
-        if (string.IsNullOrWhiteSpace(account.CardNumber) || account.CardNumber.Length < 4)
-            throw new InvalidOperationException("Card Number could not be detected.");
-
-        if (string.IsNullOrWhiteSpace(account.AccountType))
-            throw new InvalidOperationException("Account Type could not be detected.");
-
-        if (string.IsNullOrWhiteSpace(account.Currency))
-            throw new InvalidOperationException("Currency could not be detected.");
-
-        if (string.IsNullOrWhiteSpace(account.CreditLimit))
-            throw new InvalidOperationException("Credit Limit could not be detected.");
     }
 }

@@ -1,3 +1,5 @@
+namespace IncomeExpenditureTracker.Models;
+
 public class ImportBatch
 {
     public int Id { get; set; }

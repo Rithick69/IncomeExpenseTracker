@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using ClosedXML.Excel;
+using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
 using IncomeExpenditureTracker.Services.Importing;
@@ -14,6 +15,21 @@ public static class ServiceRegistration
 {
     public static void Register(IServiceCollection services)
     {
+        // 1. REGISTER LOGGING
+        services.AddLogging(builder =>
+        {
+            builder.ClearProviders(); // Clears default noisy providers
+
+            // Outputs logs to the Visual Studio / Rider "Debug Output" window
+            builder.AddDebug();
+
+            // Outputs logs to the terminal / console window
+            builder.AddConsole();
+
+            // Set the minimum log level (Information is great for general dev, Debug for deep troubleshooting)
+            builder.SetMinimumLevel(LogLevel.Debug);
+        });
+
         // ---------------------------------------------------------
         // Database
         // ---------------------------------------------------------

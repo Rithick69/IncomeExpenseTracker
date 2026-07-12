@@ -19,7 +19,7 @@ public interface ISynonymService
     Task<IEnumerable<Synonyms>> GetAllSynonyms();
 
     // Called when the user maps an unknown column in the preview UI
-    Task LearnFromCorrectionAsync(string rawSynonym, string fieldType);
+    Task LearnFromCorrectionAsync(string rawSynonym, string fieldType, string category);
 
     // CRUD operations for the dedicated manual management UI
     Task AddSynonymAsync(Synonyms synonym);
@@ -29,4 +29,12 @@ public interface ISynonymService
 
     // Deletion now targets the primary key for precision in the UI
     Task DeleteSynonymAsync(int id);
+
+    /// <summary>
+    /// Ensures that all standard domain concepts exist in the database.
+    /// Should be called during application startup by DatabaseInitializer.
+    /// </summary>
+    Task SeedDefaultFieldTypesAsync(IEnumerable<string> standardFieldTypes, string category);
+
+    Task<IReadOnlyDictionary<string, Synonyms>> GetSynonymsByCategory(string category);
 }

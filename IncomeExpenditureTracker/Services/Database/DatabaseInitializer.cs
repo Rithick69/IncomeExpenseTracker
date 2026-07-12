@@ -1,6 +1,10 @@
 // Dapper allows us to execute SQL easily
 using Dapper;
 using System;
+using System.Threading.Tasks;
+using System.Linq;
+using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Helpers;
 
 namespace IncomeExpenditureTracker.Services.Database;
 
@@ -9,16 +13,18 @@ namespace IncomeExpenditureTracker.Services.Database;
 public class DatabaseInitializer
 {
     private readonly IDatabaseService _database;
+    private readonly ISynonymService _synonymService;
 
     // The IDatabaseService provides the SQLite connection
-    public DatabaseInitializer(IDatabaseService database)
+    public DatabaseInitializer(IDatabaseService database, ISynonymService synonymService)
     {
         _database = database;
+        _synonymService = synonymService;
     }
 
     // This method runs during application startup
     // and ensures all required tables exist.
-    public void Initialize()
+    public async Task Initialize()
     {
         try
         {
@@ -203,7 +209,9 @@ public class DatabaseInitializer
             Id INTEGER PRIMARY KEY AUTOINCREMENT,
             FieldType TEXT NOT NULL,
             Synonym TEXT NOT NULL,
-            Priority INTEGER DEFAULT 10
+            Priority INTEGER DEFAULT 10,
+            Category TEXT NOT NULL, -- Or INTEGER if storing Enum value directly
+            UNIQUE(FieldType, Synonym, Category)
         );
 
         ";
@@ -211,26 +219,38 @@ public class DatabaseInitializer
             // Execute the SQL statements above
             connection.Execute(sql);
 
+            var fieldTypeGroups = new[]
+            {
+                (Category: "TRANSACTION", Fields: Enum.GetNames(typeof(TransactionColumnField)).Select(f => f.ToUpperInvariant())),
+                (Category: "METADATA", Fields: Enum.GetNames(typeof(MetadataField)).Select(f => f.ToUpperInvariant()))
+            };
+
+            foreach (var group in fieldTypeGroups)
+            {
+                // Seed the default field types for each category into the Synonyms table
+                await _synonymService.SeedDefaultFieldTypesAsync(group.Fields, group.Category);
+            }
+
             // Add default synonyms during initialization.
             connection.Execute(@"
-                INSERT OR IGNORE INTO Synonyms (FieldType, Synonym, Priority) VALUES
-                ('DATE','DATE',50),
-                ('DATE','TXN DATE',80),
-                ('DATE','TRANSACTION DATE',100),
-                ('DATE','VALUE DATE',20),
+                INSERT OR IGNORE INTO Synonyms (FieldType, Synonym, Priority, Category) VALUES
+                ('DATE','DATE',50, 'TRANSACTION'),
+                ('DATE','TXN DATE',80, 'TRANSACTION'),
+                ('DATE','TRANSACTION DATE',100, 'TRANSACTION'),
+                ('DATE','VALUE DATE',20, 'TRANSACTION'),
 
-                ('DESCRIPTION','DESCRIPTION',100),
-                ('DESCRIPTION','NARRATION',90),
-                ('DESCRIPTION','REMARKS',80),
-                ('DESCRIPTION','DETAILS',70),
+                ('DESCRIPTION','DESCRIPTION',100, 'TRANSACTION'),
+                ('DESCRIPTION','NARRATION',90, 'TRANSACTION'),
+                ('DESCRIPTION','REMARKS',80, 'TRANSACTION'),
+                ('DESCRIPTION','DETAILS',70, 'TRANSACTION'),
 
-                ('DEBIT','DEBIT',100),
-                ('DEBIT','WITHDRAWAL',90),
-                ('DEBIT','DR',70),
+                ('DEBIT','DEBIT',100, 'TRANSACTION'),
+                ('DEBIT','WITHDRAWAL',90, 'TRANSACTION'),
+                ('DEBIT','DR',70, 'TRANSACTION'),
 
-                ('CREDIT','CREDIT',100),
-                ('CREDIT','DEPOSIT',90),
-                ('CREDIT','CR',70)
+                ('CREDIT','CREDIT',100, 'TRANSACTION'),
+                ('CREDIT','DEPOSIT',90, 'TRANSACTION'),
+                ('CREDIT','CR',70, 'TRANSACTION')
             ");
         }
         catch (Exception ex)

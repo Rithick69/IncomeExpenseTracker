@@ -23,13 +23,16 @@ public class StatementLoadResult : IDisposable
     public IXLWorkbook Workbook { get; }
     public IXLWorksheet Worksheet { get; }
 
+    public string FileName { get; set; } = string.Empty; // Store the file name for reference, useful for logging or user feedback.
+
     private readonly Stream _fileStream; // We keep the file stream open as long as the workbook is in use to prevent memory issues with large files.
 
     // The constructor guarantees they are populated immediately
-    public StatementLoadResult(IXLWorkbook workbook, IXLWorksheet worksheet, Stream fileStream)
+    public StatementLoadResult(IXLWorkbook workbook, IXLWorksheet worksheet, string FileName, Stream fileStream)
     {
         Workbook = workbook ?? throw new ArgumentNullException(nameof(workbook));
         Worksheet = worksheet ?? throw new ArgumentNullException(nameof(worksheet));
+        FileName = FileName ?? throw new ArgumentNullException(nameof(FileName));
         _fileStream = fileStream ?? throw new ArgumentNullException(nameof(fileStream));
     }
 
@@ -44,7 +47,7 @@ public class StatementLoadResult : IDisposable
 public class StatementLoader : IStatementLoader
 {
 
-    public async Task<StatementLoadResult> LoadStatementAsync(string filePath, IProgress<LoadingProgress> progress = null)
+    public async Task<StatementLoadResult> LoadStatementAsync(string filePath, IProgress<LoadingProgress> progress = null!)
     {
         // This method will return workbook and worksheet objects to be used by the StatementExtractor for analysis and preview generation.
 
@@ -89,7 +92,7 @@ public class StatementLoader : IStatementLoader
             progress?.Report(new LoadingProgress { Percentage = 100, Message = "Statement loaded." });
 
             // Step 5: Return the combined result
-            return new StatementLoadResult(workbook, worksheet, stream);
+            return new StatementLoadResult(workbook, worksheet, Path.GetFileName(filePath), stream);
         }
         catch (IOException ex)
         {
@@ -134,7 +137,7 @@ public class StatementLoader : IStatementLoader
         }
     }
 
-    public async Task<StatementLoadResult> LoadSpecificSheetAsync(string filePath, string sheetName, IProgress<LoadingProgress> progress = null)
+    public async Task<StatementLoadResult> LoadSpecificSheetAsync(string filePath, string sheetName, IProgress<LoadingProgress> progress = null!)
     {
         ValidateFilePath(filePath);
         ValidateExtension(filePath);
@@ -158,7 +161,7 @@ public class StatementLoader : IStatementLoader
             }
 
             progress?.Report(new LoadingProgress { Percentage = 100, Message = $"Sheet {sheetName} loaded." });
-            return new StatementLoadResult(workbook, worksheet, stream);
+            return new StatementLoadResult(workbook, worksheet, Path.GetFileName(filePath), stream);
         }
         catch (IOException ex)
         {

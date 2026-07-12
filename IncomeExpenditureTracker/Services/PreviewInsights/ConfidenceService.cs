@@ -12,58 +12,66 @@ namespace IncomeExpenditureTracker.Services.PreviewInsights;
 // This score can be used to provide feedback to users about the quality of the detected information before they proceed with importing their statement.
 // ------------------------------------------------------------
 
+// FieldScoringRule defines a rule for scoring a specific field or set of fields.
+// Each rule specifies the target keys to look for and the maximum weight (points) that can be awarded if the field is present and valid.
+public record FieldScoringRule(string[] TargetKeys, double MaxWeight);
+
 public sealed class ConfidenceService
 {
+
+    // 1. Define your scoring rules cleanly in one place (can easily be moved to a JSON config or database later!)
+    private static readonly List<FieldScoringRule> AccountRules = new()
+    {
+        new(new[] { "Meta:ENTITY_NAME", "EntityName" }, 15),
+        new(new[] { "Meta:ACCOUNT_NUMBER", "AccountNumber" }, 15),
+        new(new[] { "Meta:CARD_NUMBER", "CardNumber" }, 5),
+        new(new[] { "Meta:ACCOUNT_TYPE", "AccountType" }, 3),
+        new(new[] { "Meta:CURRENCY", "Currency" }, 2)
+    };
+
+    private static readonly List<FieldScoringRule> CoreColumnRules = new()
+    {
+        new(new[] { "Col:DATE", "Date" }, 15),
+        new(new[] { "Col:DESCRIPTION", "Description" }, 15)
+    };
+
     public int CalculateConfidence(
-        Account account,
-        TransColumnMap map,
+        Dictionary<string, DetectedField> unifiedFields,
         List<TransactionPreview> previewTransactions)
     {
-        int score = 0;
 
-        // ------------------------------------------------------------
-        // ACCOUNT DETECTION (40)
-        // ------------------------------------------------------------
+        double totalScore = 0;
 
-        if (!string.IsNullOrWhiteSpace(account.EntityName))
-            score += 15;
+        // 2. Dynamically evaluate Account & Core Column rules via loops
+        foreach (var rule in AccountRules)
+            totalScore += EvaluateField(unifiedFields, rule.TargetKeys, rule.MaxWeight);
 
-        if (!string.IsNullOrWhiteSpace(account.AccountNumber))
-            score += 15;
+        foreach (var rule in CoreColumnRules)
+            totalScore += EvaluateField(unifiedFields, rule.TargetKeys, rule.MaxWeight);
 
-        if (!string.IsNullOrWhiteSpace(account.CardNumber))
-            score += 5;
-
-        if (!string.IsNullOrWhiteSpace(account.AccountType))
-            score += 3;
-
-        if (!string.IsNullOrWhiteSpace(account.Currency))
-            score += 2;
-
-        // ------------------------------------------------------------
-        // COLUMN DETECTION (40)
-        // ------------------------------------------------------------
-
-        if (map.DateColumn > 0)
-            score += 15;
-
-        if (map.DescriptionColumn > 0)
-            score += 15;
-
-        if (map.DebitColumn > 0 || map.CreditColumn > 0 || map.AmountColumn > 0)
-            score += 10;
+        // 3. Handle Amount layout branching (Single vs. Dual Column Mode)
+        double singleAmountScore = EvaluateField(unifiedFields, new[] { "Col:AMOUNT", "Amount" }, 10);
+        if (singleAmountScore > 0)
+        {
+            totalScore += singleAmountScore;
+        }
+        else
+        {
+            totalScore += EvaluateField(unifiedFields, new[] { "Col:DEBIT", "Debit" }, 5);
+            totalScore += EvaluateField(unifiedFields, new[] { "Col:CREDIT", "Credit" }, 5);
+        }
 
         // ------------------------------------------------------------
         // SAMPLE TRANSACTION VALIDATION (20)
         // ------------------------------------------------------------
 
         // A higher consistency of valid transactions in the preview sample increases confidence
-        score += CalculateColumnConsistency(previewTransactions);
+        totalScore += CalculateColumnConsistency(previewTransactions);
 
         // A higher density of valid transactions in the preview sample increases confidence
-        score += CalculateTransactionDensity(previewTransactions);
+        totalScore += CalculateTransactionDensity(previewTransactions);
 
-        return Math.Min(score, 100);
+        return Math.Min((int)Math.Round(totalScore), 100);
     }
 
     // ------------------------------------------------------------
@@ -73,6 +81,32 @@ public sealed class ConfidenceService
     // They return additional confidence points based on the consistency and density of valid transactions in the sample.
     // ------------------------------------------------------------
 
+    /// <summary>
+    /// Safely retrieves a DetectedField from the dictionary by evaluating possible keys,
+    /// and returns its weighted score contribution scaled by detection confidence.
+    /// </summary>
+    private double EvaluateField(Dictionary<string, DetectedField> dictionary, string[] possibleKeys, double maxWeight)
+    {
+        if (dictionary == null) return 0;
+
+        foreach (var key in possibleKeys)
+        {
+            if (dictionary.TryGetValue(key, out var field) && field != null)
+            {
+                // Normalize confidence to a 0.0 - 1.0 multiplier.
+                // Automatically handles both 0-100 percentage scales (e.g., 85.0 -> 0.85)
+                // and 0.0-1.0 ratio scales (e.g., 0.85 -> 0.85).
+                double confidenceFactor = field.ConfidenceScore > 1.0 ? field.ConfidenceScore / 100.0 : field.ConfidenceScore;
+
+                // Clamp factor between 0 and 1 to guard against rogue values or floating-point drift
+                confidenceFactor = Math.Clamp(confidenceFactor, 0.0, 1.0);
+
+                return maxWeight * confidenceFactor;
+            }
+        }
+
+        return 0;
+    }
 
     // ------------------------------------------------------------
     // CalculateTransactionDensity

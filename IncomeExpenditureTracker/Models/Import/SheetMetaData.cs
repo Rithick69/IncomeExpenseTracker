@@ -1,6 +1,7 @@
 // This file defines a simple record type to hold metadata about each sheet in an Excel workbook.
 // It includes the file path, sheet name, position in the workbook, and whether the sheet
 // contains any data. This information is useful for the StatementLoader to present sheet options to the user.
+namespace IncomeExpenditureTracker.Models;
 
 public record SheetMetaData
 {

@@ -20,7 +20,7 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
 {
     private Dictionary<string, string> _synonymFieldMap = null!;
     private readonly ISynonymService _synonymService = null!;
-    private IEnumerable<Synonyms> _synonyms = null!;
+    private IReadOnlyDictionary<string, Synonyms> _synonyms = null!;
     private bool _isInitialized = false;
 
 
@@ -38,15 +38,11 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
         if (_isInitialized && !forceReload) return; // this forces a reload if needed, e.g., if synonyms were updated in the database
 
         // Fetch from the database safely
-        _synonyms = await _synonymService.GetAllSynonyms();
+        _synonyms = await _synonymService.GetSynonymsByCategory("TRANSACTION"); // Default category for transaction headers
 
-        // Build exact match dictionary
-        _synonymFieldMap = _synonyms
-            .GroupBy(s => Normalize(s.Synonym)) // Group by normalized synonym to handle duplicates
-            .ToDictionary(
-                g => g.Key, // Use the normalized synonym as the key
-                g => g.First().FieldType // Use the first FieldType for each normalized synonym
-            );
+        // _synonyms is an IReadOnlyDictionary<string, Synonyms>, so ToDictionary receives KeyValuePair entries.
+        // Use kv.Value to access the Synonyms object inside each KeyValuePair.
+        _synonymFieldMap = _synonyms.ToDictionary(kv => kv.Value.Synonym, kv => kv.Value.FieldType);
 
         _isInitialized = true;
     }
@@ -67,7 +63,7 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
         {
             await EnsureInitializedAsync(forceReload);
 
-            int bestRow = 0;
+            int bestRow = -1; // Zero-based index of the best header row found so far
             int bestScore = 0;
 
             int windowSize = 3;
@@ -121,14 +117,14 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
                 if (score > bestScore)
                 {
                     bestScore = score;
-                    bestRow = startRow;
+                    bestRow = startRow - 1; // Convert to zero-based index
                 }
 
                 if (score >= 4)
                     break;
             }
 
-            if (bestRow == 0)
+            if (bestRow == -1)
                 throw new InvalidOperationException("Failed to detect header row.");
 
             return bestRow;
