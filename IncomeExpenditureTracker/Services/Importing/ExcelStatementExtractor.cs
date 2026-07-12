@@ -35,93 +35,55 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
     }
 
     // Analyzes the given Excel file and returns a preview of the detected account information, column mappings, and a sample of transactions.
-    public async Task<StatementPreview> Analyze(IXLWorksheet worksheet, string filePath, bool forceReload = false)
+    public async Task<StatementPreview> Analyze(IXLWorksheet worksheet, string fileName, bool forceReload = false)
     {
         try
         {
-            var accountInfo = await _fieldMapper.DetectAccountDetails(worksheet, forceReload);
+            // 1. Detect account & entity metadata (Returns Dictionary<string, DetectedField>)
+            var metadataFields = await _fieldMapper.DetectAccountDetails(worksheet, forceReload);
 
+            // 2. Detect the header row coordinate
             var headerRow = await _headerDetector.DetectHeaderRow(worksheet, forceReload);
 
-            var columnMap = await _fieldMapper.DetectColumns(worksheet, headerRow, forceReload);
+            // 3. Detect column coordinates (Returns Dictionary<string, DetectedField>)
+            var columnFields = await _fieldMapper.DetectColumns(worksheet, headerRow, forceReload);
 
-            // Extract a sample of transactions for preview (e.g., first 20 rows)
-
+            // 4. Extract a sample of transactions for UI verification (first 20 rows)
             var previewTransactions = _transactionExtractor
-                .ExtractPreview(worksheet, headerRow, columnMap)
+                .ExtractPreview(worksheet, headerRow, columnFields)
                 .Take(20)
                 .ToList();
 
-            var confidence = _confidenceService.CalculateConfidence(accountInfo, columnMap, previewTransactions);
+            // 5. MERGE both dictionaries into one unified map for our StatementPreview
+            var unifiedFields = new Dictionary<string, DetectedField>(StringComparer.OrdinalIgnoreCase);
 
-            var dateHeader = worksheet.Cell(headerRow, columnMap.DateColumn).GetString();
-            var descHeader = worksheet.Cell(headerRow, columnMap.DescriptionColumn).GetString();
+            foreach (var (key, field) in columnFields)
+                unifiedFields[key] = field;
 
-            var debitHeader = columnMap.DebitColumn > 0
-                ? worksheet.Cell(headerRow, columnMap.DebitColumn).GetString()
-                : "";
+            foreach (var (key, field) in metadataFields)
+                unifiedFields[key] = field;
 
-            var creditHeader = columnMap.CreditColumn > 0
-                ? worksheet.Cell(headerRow, columnMap.CreditColumn).GetString()
-                : "";
+            // 6. Calculate overall confidence score using our detected dictionaries
+            var confidence = _confidenceService.CalculateConfidence(unifiedFields, previewTransactions);
 
-            var amountHeader = columnMap.AmountColumn > 0
-                ? worksheet.Cell(headerRow, columnMap.AmountColumn).GetString()
-                : "";
+            // 7. Generate signature using our dictionary (no manual cell reading required!)
+            string entityName = metadataFields.TryGetValue(MetadataField.ENTITY_NAME.ToString(), out var ef)
+                ? ef.ExtractedValue
+                : "UNKNOWN_ENTITY";
 
-            // Generate a signature for this header configuration to help identify similar statements in the future
-
-            var signature = GenerateHeaderSignature(
-                                accountInfo.EntityName,
-                                columnMap.DateColumn,
-                                columnMap.DescriptionColumn,
-                                columnMap.DebitColumn,
-                                columnMap.CreditColumn,
-                                columnMap.AmountColumn
-                            );
+            var signature = GenerateHeaderSignature(entityName, columnFields);
 
             // Return the analysis results in a StatementPreview object
 
             return new StatementPreview
             {
-                FilePath = filePath,
-                AccountInfo = accountInfo,
+                FileName = fileName,
                 HeaderRow = headerRow,
-
-                DateField = new DetectedField
-                {
-                    ColumnIndex = columnMap.DateColumn,
-                    ColumnName = dateHeader
-                },
-
-                DescriptionField = new DetectedField
-                {
-                    ColumnIndex = columnMap.DescriptionColumn,
-                    ColumnName = descHeader
-                },
-
-                DebitField = new DetectedField
-                {
-                    ColumnIndex = columnMap.DebitColumn,
-                    ColumnName = debitHeader
-                },
-
-                CreditField = new DetectedField
-                {
-                    ColumnIndex = columnMap.CreditColumn,
-                    ColumnName = creditHeader
-                },
-                AmountField = new DetectedField
-                {
-                    ColumnIndex = columnMap.AmountColumn,
-                    ColumnName = amountHeader
-                },
-
+                Fields = unifiedFields,
                 HeaderSignature = signature,
-
                 PreviewTransactions = previewTransactions,
-
                 ConfidenceScore = confidence,
+                RequiresVerification = confidence < 80 || !previewTransactions.Any()
             };
         }
         catch (Exception ex)
@@ -130,35 +92,32 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
             Console.WriteLine($"Error analyzing statement: {ex.Message}");
             return new StatementPreview
             {
-                FilePath = filePath,
-                AccountInfo = new Account
-                {
-                    AccountNumber = "Unknown",
-                    EntityName = "Unknown"
-                },
+                FileName = fileName,
                 HeaderRow = -1,
-                DateField = new DetectedField { ColumnIndex = -1, ColumnName = "Unknown" },
-                DescriptionField = new DetectedField { ColumnIndex = -1, ColumnName = "Unknown" },
-                DebitField = new DetectedField { ColumnIndex = -1, ColumnName = "Unknown" },
-                CreditField = new DetectedField { ColumnIndex = -1, ColumnName = "Unknown" },
-                AmountField = new DetectedField { ColumnIndex = -1, ColumnName = "Unknown" },
-                PreviewTransactions = new List<TransactionPreview>()
+                Fields = new Dictionary<string, DetectedField>(StringComparer.OrdinalIgnoreCase),
+                HeaderSignature = string.Empty,
+                PreviewTransactions = new List<TransactionPreview>(),
+                ConfidenceScore = 0,
+                RequiresVerification = true
             };
         }
     }
 
     // Generates a simple signature string based on the detected header names and their positions.
-    private string GenerateHeaderSignature(
-        string entityName,
-        int dateColumn,
-        int descriptionColumn,
-        int debitColumn,
-        int creditColumn,
-        int amountColumn
-    )
+    private string GenerateHeaderSignature(string entityName, Dictionary<string, DetectedField> columnFields)
     {
-        var signature = $"ENTITY:{entityName}|DATE:{dateColumn}|DESC:{descriptionColumn}|DEBIT:{debitColumn}|CREDIT:{creditColumn}|AMOUNT:{amountColumn}";
+        // 1. Filter for valid detected columns (> 0)
+        // 2. Sort by ColumnIndex so the signature string is 100% deterministic
+        // 3. Format each as "INDEX:FIELDNAME" (e.g., "1:Date|2:Description|4:Amount")
+        var columnParts = columnFields.Values
+            .Where(f => f.ColumnIndex > 0)
+            .OrderBy(f => f.ColumnIndex)
+            .Select(f => $"{f.ColumnIndex}:{f.SuggestedField.ToUpperInvariant()}");
 
+        // Join everything together dynamically
+        var signature = $"ENTITY:{entityName.ToUpperInvariant()}|{string.Join("|", columnParts)}";
+
+        // Compute SHA256 Hash
         using var sha = SHA256.Create();
         var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(signature));
 

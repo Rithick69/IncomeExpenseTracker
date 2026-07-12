@@ -1,4 +1,6 @@
 using System;
+namespace IncomeExpenditureTracker.Models;
+
 public class TransactionPreview
 {
     public DateTime Date { get; set; }

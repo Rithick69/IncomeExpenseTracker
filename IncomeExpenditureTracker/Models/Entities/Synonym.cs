@@ -10,4 +10,6 @@ public class Synonyms
 
     public int Priority { get; set; } = 0;
 
+    public string Category { get; set; } = "";
+
 }
