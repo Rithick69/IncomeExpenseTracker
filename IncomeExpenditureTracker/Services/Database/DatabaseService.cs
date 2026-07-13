@@ -1,8 +1,13 @@
 // Import SQLite connection support
 using System;
+using System.Data;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Dapper;
+
 namespace IncomeExpenditureTracker.Services.Database;
 
 // This service is responsible for providing a connection
@@ -11,19 +16,31 @@ namespace IncomeExpenditureTracker.Services.Database;
 public class DatabaseService : IDatabaseService
 {
     private readonly string _connectionString;
+    private readonly ILogger<DatabaseService> _logger = null!; // Initialized in constructor
 
-    public DatabaseService()
+    // Retry configuration constants
+    private const int MaxRetryAttempts = 5;
+    private const int BaseDelayMilliseconds = 50;
+
+    public DatabaseService(IConfiguration configuration, ILogger<DatabaseService> logger)
     {
-        // 1. Path Safety: Store in the user's local app data folder
+        // Check if an external environment variable or test config explicitly overrides the DB path
+        var configPath = configuration.GetConnectionString("DefaultConnection");
+        if (!string.IsNullOrEmpty(configPath))
+        {
+            _connectionString = configPath;
+            return;
+        }
+
+        // Default Desktop Behavior: Restore your exact LocalApplicationData path and shared cache logic
         var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var appFolder = Path.Combine(appDataFolder, "IncomeExpenditureTracker");
 
-
+        // directory creation is idempotent; if it already exists, this is a no-op
         Directory.CreateDirectory(appFolder);
 
         var databaseFile = Path.Combine(appFolder, "transactions.db");
 
-        // 2. Connection String Construction
         var builder = new SqliteConnectionStringBuilder
         {
             DataSource = databaseFile,
@@ -31,73 +48,168 @@ public class DatabaseService : IDatabaseService
         };
 
         _connectionString = builder.ToString();
+        _logger = logger;
     }
 
-    // This method returns a connection object that other
-    // parts of the application will use to run queries.
-    public SqliteConnection GetConnection()
+    /// <summary>
+    /// Creates a new SqliteConnection, opens it asynchronously, and strictly applies
+    /// required SQLite PRAGMAs before yielding it to the caller.
+    /// </summary>
+    public async Task<IDbConnection> GetOpenConnectionAsync()
     {
-        // Return a new SQLite connection
-        return new SqliteConnection(_connectionString);
+        var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        // -------------------------------------------------------------------------
+        // ARCHITECTURAL GUARDRAIL: MANDATORY PRAGMAS
+        // -------------------------------------------------------------------------
+        // 1. foreign_keys = ON: Must be executed per connection in SQLite. Without this,
+        //    our compound uniqueness constraints and relational bindings are ignored.
+        // 2. journal_mode = WAL: Ensures non-blocking concurrent reads while writes occur.
+        // -------------------------------------------------------------------------
+        await connection.ExecuteAsync("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+
+        return connection;
     }
 
-    // 3. Robust Execution Wrapper with Retry Logic
-    public async Task<T> ExecuteWithRetryAsync<T>(Func<SqliteConnection, Task<T>> dbOperation, int maxRetries = 3)
+    public async Task ExecuteWithRetryAsync(Func<IDbConnection, Task> action)
+    {
+        await ExecuteWithRetryInternalAsync(async () =>
+        {
+            using var connection = await GetOpenConnectionAsync();
+            await action(connection);
+            return true; // Dummy return to satisfy generic helper
+        });
+    }
+
+    public async Task<T> ExecuteWithRetryAsync<T>(Func<IDbConnection, Task<T>> action)
+    {
+        return await ExecuteWithRetryInternalAsync(async () =>
+        {
+            using var connection = await GetOpenConnectionAsync();
+            return await action(connection);
+        });
+    }
+
+    public async Task ExecuteInTransactionWithRetryAsync(Func<IDbConnection, IDbTransaction, Task> action)
+    {
+        await ExecuteWithRetryInternalAsync(async () =>
+        {
+            using var connection = await GetOpenConnectionAsync();
+
+            // Initiate the explicit transaction boundary
+            using var transaction = connection.BeginTransaction();
+            try
+            {
+                // Pass connection and active transaction to caller's repository methods
+                await action(connection, transaction);
+
+                // If delegate succeeds without throwing, commit atomically to disk
+                transaction.Commit();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // -------------------------------------------------------------------------
+                // DEFENSIVE ROLLBACK
+                // -------------------------------------------------------------------------
+                // If any foreign key violation, formatting error, or constraint failure occurs,
+                // we instantly revert all changes made during this session.
+                // -------------------------------------------------------------------------
+                _logger.LogWarning(ex, "Exception occurred inside explicit database transaction. Rolling back changes.");
+                try
+                {
+                    transaction.Rollback();
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx, "Failed to execute transaction rollback.");
+                }
+
+                throw; // Rethrow original exception so the calling service knows it failed
+            }
+        });
+    }
+
+    public async Task<T> ExecuteInTransactionWithRetryAsync<T>(Func<IDbConnection, IDbTransaction, Task<T>> action)
+    {
+        return await ExecuteWithRetryInternalAsync(async () =>
+        {
+            using var connection = await GetOpenConnectionAsync();
+            using var transaction = connection.BeginTransaction();
+            try
+            {
+                var result = await action(connection, transaction);
+                transaction.Commit();
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Exception occurred inside explicit database transaction. Rolling back changes.");
+                try { transaction.Rollback(); } catch { /* Ignore cascade rollback failures */ }
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Core retry engine. Intercepts transient SQLite lock errors (SQLITE_BUSY / SQLITE_LOCKED)
+    /// and applies exponential backoff with random jitter.
+    /// </summary>
+    private async Task<T> ExecuteWithRetryInternalAsync<T>(Func<Task<T>> operation)
     {
         int attempt = 0;
-        int baseDelayMs = 200; // Starting delay for exponential backoff
+        var random = new Random();
 
         while (true)
         {
             try
             {
-                // Clean termination: 'await using' ensures the connection is immediately disposed
-                await using var connection = GetConnection();
-                await connection.OpenAsync();
-
-                // Enforce SQLite safety PRAGMAs per connection
-                await using (var command = connection.CreateCommand())
-                {
-                    // WAL mode vastly improves concurrent read/write performance
-                    // PRAGMA foreign_keys = ON ensures referential integrity
-                    command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;";
-                    await command.ExecuteNonQueryAsync();
-                }
-
-                // Execute the actual database work
-                return await dbOperation(connection);
-            }
-            catch (SqliteException ex) when (IsTransientError(ex))
-            {
                 attempt++;
-                if (attempt > maxRetries)
+                return await operation();
+            }
+            catch (SqliteException ex) when (IsTransientLockError(ex))
+            {
+                // If we've exhausted our retry budget, log and bubble up the crash
+                if (attempt >= MaxRetryAttempts)
                 {
-                    // Exhausted all retries, throw the error up the stack
-                    throw new InvalidOperationException($"Database operation failed after {maxRetries} attempts due to concurrency locks.", ex);
+                    _logger.LogError(ex, "Database remained locked after {MaxAttempts} exponential retry attempts. Aborting operation.", MaxRetryAttempts);
+                    throw;
                 }
 
-                // Exponential backoff: Wait 200ms, then 400ms, then 800ms...
-                int delay = baseDelayMs * (int)Math.Pow(2, attempt - 1);
-                await Task.Delay(delay);
+                // -------------------------------------------------------------------------
+                // EXPONENTIAL BACKOFF WITH JITTER
+                // -------------------------------------------------------------------------
+                // Formula: (BaseDelay * 2^attempt) + Random(10, 25) ms
+                // Example: Attempt 1 = ~115ms | Attempt 2 = ~215ms | Attempt 3 = ~415ms
+                // The random jitter prevents multiple background tasks from waking up at the exact
+                // same millisecond and colliding again.
+                // -------------------------------------------------------------------------
+                int exponentialDelay = BaseDelayMilliseconds * (int)Math.Pow(2, attempt);
+                int jitter = random.Next(10, 25);
+                int totalDelay = exponentialDelay + jitter;
+
+                _logger.LogWarning("SQLite lock contention detected (Error Code: {ErrorCode}). Retrying attempt {Attempt}/{MaxAttempts} in {Delay}ms...",
+                    ex.SqliteErrorCode, attempt, MaxRetryAttempts, totalDelay);
+
+                await Task.Delay(totalDelay);
+            }
+            catch (Exception ex)
+            {
+                // Non-transient exceptions (syntax errors, null refs, schema bugs) fail immediately
+                _logger.LogDebug(ex, "Non-transient database exception encountered. Failing immediately without retry.");
+                throw;
             }
         }
     }
 
-    // Overload for operations that do not return data (e.g., INSERTS, UPDATES)
-    public async Task ExecuteWithRetryAsync(Func<SqliteConnection, Task> dbOperation, int maxRetries = 3)
+    /// <summary>
+    /// Evaluates if a SqliteException represents a temporary file lock.
+    /// SQLite Error Code 5 = SQLITE_BUSY (The database file is locked)
+    /// SQLite Error Code 6 = SQLITE_LOCKED (A table in the database is locked)
+    /// </summary>
+    private static bool IsTransientLockError(SqliteException ex)
     {
-        await ExecuteWithRetryAsync<bool>(async conn =>
-        {
-            await dbOperation(conn);
-            return true;
-        }, maxRetries);
-    }
-
-    // Helper to identify if the error is a temporary lock
-    private bool IsTransientError(SqliteException ex)
-    {
-        // 5 = SQLITE_BUSY (Database is locked)
-        // 6 = SQLITE_LOCKED (A specific table is locked)
         return ex.SqliteErrorCode == 5 || ex.SqliteErrorCode == 6;
     }
 }

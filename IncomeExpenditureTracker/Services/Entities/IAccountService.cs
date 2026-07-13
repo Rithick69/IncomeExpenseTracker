@@ -1,3 +1,4 @@
+using System.Data;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using IncomeExpenditureTracker.Models;
@@ -14,8 +15,8 @@ namespace IncomeExpenditureTracker.Services.Entities;
 
 public interface IAccountService
 {
-    public Task<int> GetOrCreateAccount(Account account);
-    public Task<List<Account>> GetAllAccounts();
-    public Task UpdateAccount(Account account);
-    public Task DeleteAccount(int accountId);
+    Task<int> GetOrCreateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task<List<Account>> GetAllAccounts(IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task UpdateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task DeleteAccount(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null);
 }

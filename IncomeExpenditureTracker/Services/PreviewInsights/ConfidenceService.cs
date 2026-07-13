@@ -12,10 +12,6 @@ namespace IncomeExpenditureTracker.Services.PreviewInsights;
 // This score can be used to provide feedback to users about the quality of the detected information before they proceed with importing their statement.
 // ------------------------------------------------------------
 
-// FieldScoringRule defines a rule for scoring a specific field or set of fields.
-// Each rule specifies the target keys to look for and the maximum weight (points) that can be awarded if the field is present and valid.
-public record FieldScoringRule(string[] TargetKeys, double MaxWeight);
-
 public sealed class ConfidenceService
 {
 

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Data;
 using IncomeExpenditureTracker.Models;
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -9,8 +10,8 @@ namespace IncomeExpenditureTracker.Services.Entities;
 
 public interface IEntityService
 {
-    public Task<int> GetOrCreateEntity(string name);
-    public Task<List<Entity>> GetAllEntities();
-    public Task UpdateEntity(Entity entity);
-    public Task DeleteEntity(int entityId);
+    Task<int> GetOrCreateEntity(string name, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task<List<Entity>> GetAllEntities(IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task UpdateEntity(Entity entity, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task DeleteEntity(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null);
 }
