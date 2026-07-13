@@ -1,8 +1,10 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Dapper;
+using System.Linq;
+using System.Data;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Database;
 
@@ -28,9 +30,12 @@ public class TransactionService : ITransactionService
 {
     private readonly IDatabaseService _database;
 
-    public TransactionService(IDatabaseService database)
+    private readonly ILogger<TransactionService> _logger;
+
+    public TransactionService(IDatabaseService database, ILogger<TransactionService> logger)
     {
-        _database = database;
+        _database = database ?? throw new ArgumentNullException(nameof(database));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     // ------------------------------------------------------------
@@ -51,67 +56,57 @@ public class TransactionService : ITransactionService
     //
     // If any insert fails → entire batch rolls back.
     // ------------------------------------------------------------
-    public async Task InsertTransactions(List<Transaction> transactions)
+    public async Task InsertTransactionsAsync(
+        List<Transaction> transactions,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null)
     {
         if (transactions == null || transactions.Count == 0)
             return;
 
         try
         {
-            // Example usage in your TransactionService
-
-            await _database.ExecuteWithRetryAsync(async (connection) =>
+            var now = DateTime.UtcNow;
+            foreach (var txn in transactions)
             {
-                await using var dbTransaction = await connection.BeginTransactionAsync();
+                // Ensure CreatedDate is set. Transaction.CreatedDate is a DateTime.
+                if (txn.CreatedDate == default)
+                {
+                    txn.CreatedDate = now;
+                }
+            }
 
-                // Execute your batch inserts here using Dapper or commands
-
-                var sql = @"
+            const string sql = @"
                 INSERT INTO Transactions
                 (
-                    Date,
-                    Account,
-                    Description,
-                    Entity,
-                    Credit,
-                    Debit,
-                    TransactionType,
-                    ImportBatchId,
-                    TagId
+                    Date, Account, AccountId, Description, Entity,
+                    Credit, Debit, TransactionType, ImportBatchId,
+                    TagId, TransactionHash, CreatedDate
                 )
                 VALUES
                 (
-                    @Date,
-                    @Account,
-                    @Description,
-                    @Entity,
-                    @Credit,
-                    @Debit,
-                    @TransactionType,
-                    @ImportBatchId,
-                    @TagId
+                    @Date, @Account, @AccountId, @Description, @Entity,
+                    @Credit, @Debit, @TransactionType, @ImportBatchId,
+                    @TagId, @TransactionHash, @CreatedDate
                 );";
 
-                // Dapper will iterate over the collection and
-                // execute the insert efficiently.
-                await connection.ExecuteAsync(sql, transactions, dbTransaction);
-
-                await dbTransaction.CommitAsync();
-            });
-
+            if (conn != null && tx != null)
+            {
+                await conn.ExecuteAsync(sql, transactions, transaction: tx);
+                _logger.LogDebug("Bulk inserted {Count} transactions within parent transaction boundary.", transactions.Count);
+            }
+            else
+            {
+                await _database.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+                {
+                    await connection.ExecuteAsync(sql, transactions, transaction: transaction);
+                });
+                _logger.LogInformation("Successfully completed standalone bulk insert of {Count} transactions.", transactions.Count);
+            }
         }
         catch (Exception ex)
         {
-            // ------------------------------------------------------------
-            // ERROR HANDLING
-            // ------------------------------------------------------------
-            // If batch insertion fails we rollback automatically
-            // because the transaction will be disposed without commit.
-            //
-            // We log the error and rethrow it so the caller
-            // (StatementImportService) can stop the import process.
-            // ------------------------------------------------------------
-            Console.WriteLine($"[TransactionService] Batch insert failed: {ex.Message}");
+            _logger.LogError(ex, "Failed to execute bulk transaction insert for {Count} records.", transactions.Count);
             throw;
         }
     }
@@ -125,26 +120,31 @@ public class TransactionService : ITransactionService
     // • Viewing imported statement
     // • Debugging import results
     // ------------------------------------------------------------
-    public async Task<List<Transaction>> GetByBatchId(int batchId)
+    public async Task<List<Transaction>> GetByBatchIdAsync(
+        int batchId,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null)
     {
         try
         {
-            return await _database.ExecuteWithRetryAsync(async (connection) =>
+            return await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                var sql = @"
-                    SELECT *
-                    FROM Transactions
+                const string sql = @"
+                    SELECT * FROM Transactions
                     WHERE ImportBatchId = @BatchId
-                    ORDER BY Date
-                ";
+                    ORDER BY Date ASC;";
 
-                var result = await connection.QueryAsync<Transaction>(sql, new { BatchId = batchId });
+                var result = await connection.QueryAsync<Transaction>(
+                    sql,
+                    new { BatchId = batchId },
+                    transaction: transaction);
+
                 return result.ToList();
-            });
+            }, conn, tx);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[TransactionService] Failed to fetch batch transactions: {ex.Message}");
+            _logger.LogError(ex, "Failed to fetch transactions for Batch ID {BatchId}.", batchId);
             throw;
         }
     }
@@ -158,24 +158,140 @@ public class TransactionService : ITransactionService
     // • User imported wrong file
     // • Duplicate import occurred
     // ------------------------------------------------------------
-    public async Task DeleteByBatchId(int batchId)
+    public async Task DeleteByBatchIdAsync(
+        int batchId,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null)
     {
         try
         {
-            await _database.ExecuteWithRetryAsync(async (connection) =>
+            await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                var sql = @"
-                    DELETE FROM Transactions
-                    WHERE ImportBatchId = @BatchId
-                ";
+                const string sql = "DELETE FROM Transactions WHERE ImportBatchId = @BatchId;";
+                await connection.ExecuteAsync(sql, new { BatchId = batchId }, transaction: transaction);
+                return true;
+            }, conn, tx);
 
-                await connection.ExecuteAsync(sql, new { BatchId = batchId });
-            });
+            _logger.LogInformation("Deleted all transaction records for Batch ID {BatchId}.", batchId);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[TransactionService] Failed to delete batch transactions: {ex.Message}");
             throw;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // DASHBOARD RETRIEVAL IMPLEMENTATIONS
+    // -------------------------------------------------------------------------
+
+    public async Task<List<Transaction>> GetAllTransactionsAsync(
+        int? limit = null,
+        int? offset = null,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null)
+    {
+        try
+        {
+            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            {
+                var sql = "SELECT * FROM Transactions ORDER BY Date DESC";
+                if (limit.HasValue)
+                {
+                    sql += " LIMIT @Limit";
+                    if (offset.HasValue)
+                    {
+                        sql += " OFFSET @Offset";
+                    }
+                }
+                sql += ";";
+
+                var result = await connection.QueryAsync<Transaction>(
+                    sql,
+                    new { Limit = limit, Offset = offset ?? 0 },
+                    transaction: transaction);
+
+                return result.ToList();
+            }, conn, tx);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch paginated transaction history.");
+            throw;
+        }
+    }
+
+    public async Task<List<Transaction>> GetByAccountIdAsync(
+        int accountId,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null)
+    {
+        try
+        {
+            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            {
+                const string sql = @"
+                    SELECT * FROM Transactions
+                    WHERE AccountId = @AccountId
+                    ORDER BY Date DESC;";
+
+                var result = await connection.QueryAsync<Transaction>(
+                    sql,
+                    new { AccountId = accountId },
+                    transaction: transaction);
+
+                return result.ToList();
+            }, conn, tx);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch transactions for Account ID {AccountId}.", accountId);
+            throw;
+        }
+    }
+
+    public async Task<List<Transaction>> GetByEntityNameAsync(
+        string entityName,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null)
+    {
+        if (string.IsNullOrWhiteSpace(entityName))
+            return new List<Transaction>();
+
+        try
+        {
+            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            {
+                const string sql = @"
+                    SELECT * FROM Transactions
+                    WHERE Entity = @EntityName
+                    ORDER BY Date DESC;";
+
+                var result = await connection.QueryAsync<Transaction>(
+                    sql,
+                    new { EntityName = entityName.Trim() },
+                    transaction: transaction);
+
+                return result.ToList();
+            }, conn, tx);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch transactions for Entity '{EntityName}'.", entityName);
+            throw;
+        }
+    }
+
+    private async Task<T> ExecuteDbActionAsync<T>(
+        Func<IDbConnection, IDbTransaction?, Task<T>> action,
+        IDbConnection? existingConn,
+        IDbTransaction? existingTx)
+    {
+        if (existingConn != null)
+        {
+            return await action(existingConn, existingTx);
+        }
+
+        return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
     }
 }

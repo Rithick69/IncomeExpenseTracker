@@ -71,6 +71,11 @@ public static class ServiceRegistration
         services.AddSingleton<IStatementLoader, StatementLoader>();
         services.AddSingleton<StatementManager>();
 
+        // ---------------------------------------------------------
+        // Tagging
+        // ---------------------------------------------------------
+        services.AddSingleton<IRuleBook, RuleBook>();
+
         // Un-comment or add this once we write the edit session logic:
         // services.AddTransient<StatementEditSessionService>();
     }

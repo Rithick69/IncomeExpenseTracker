@@ -1,20 +1,45 @@
 using System;
+using System.Data;
 using System.Threading.Tasks;
-using Microsoft.Data.Sqlite;
+
 namespace IncomeExpenditureTracker.Services.Database;
 
-// This interface defines the contract for a database service that provides
-// a connection to the SQLite database used by the application.
-// By using an interface, we can easily swap out the implementation of the database service
-// in the future if needed (e.g., for testing or if we want to switch to a different database).
-
+/// <summary>
+/// Provides centralized, resilient SQLite database access.
+/// Enforces WAL mode, foreign key constraints, and automatic retry wrappers
+/// to handle SQLITE_BUSY lock contention during concurrent background operations.
+/// </summary>
 public interface IDatabaseService
 {
-    SqliteConnection GetConnection();
+    /// <summary>
+    /// Yields an open, configured database connection with PRAGMA foreign_keys = ON
+    /// and PRAGMA journal_mode = WAL applied.
+    /// Best suited for lock-free, read-only queries (e.g., populating RAM caches or UI grids).
+    /// </summary>
+    Task<IDbConnection> GetOpenConnectionAsync();
 
-    // Executes an action with automatic retries for locked databases
-    Task ExecuteWithRetryAsync(Func<SqliteConnection, Task> dbOperation, int maxRetries = 3);
+    /// <summary>
+    /// Executes an asynchronous database operation within an exponential backoff retry loop.
+    /// Automatically retries if transient SQLite lock contention (SQLITE_BUSY / SQLITE_LOCKED) occurs.
+    /// Best suited for single-table atomic writes (e.g., adding a synonym or tag rule).
+    /// </summary>
+    Task ExecuteWithRetryAsync(Func<IDbConnection, Task> action);
 
-    // Executes a query that returns a result with automatic retries
-    Task<T> ExecuteWithRetryAsync<T>(Func<SqliteConnection, Task<T>> dbOperation, int maxRetries = 3);
+    /// <summary>
+    /// Executes an asynchronous database operation that returns a result within a retry loop.
+    /// </summary>
+    Task<T> ExecuteWithRetryAsync<T>(Func<IDbConnection, Task<T>> action);
+
+    /// <summary>
+    /// Initiates an explicit SQLite database transaction wrapped in a retry loop.
+    /// Passes the active connection and transaction down to domain repositories.
+    /// If any exception occurs, the entire transaction is explicitly rolled back.
+    /// Best suited for multi-table batch imports (e.g., StatementImportService).
+    /// </summary>
+    Task ExecuteInTransactionWithRetryAsync(Func<IDbConnection, IDbTransaction, Task> action);
+
+    /// <summary>
+    /// Initiates an explicit SQLite database transaction that returns a result, wrapped in a retry loop.
+    /// </summary>
+    Task<T> ExecuteInTransactionWithRetryAsync<T>(Func<IDbConnection, IDbTransaction, Task<T>> action);
 }

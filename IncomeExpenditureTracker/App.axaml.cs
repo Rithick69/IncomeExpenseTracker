@@ -35,7 +35,7 @@ public partial class App : Application
 
 
     // This method runs when the Avalonia framework has finished initializing
-    public override void OnFrameworkInitializationCompleted()
+    public override async void OnFrameworkInitializationCompleted()
     {
         // ---------------------------------------------------------
         // STEP 1: Configure Dependency Injection
@@ -54,7 +54,7 @@ public partial class App : Application
         var databaseInitializer =
             Services.GetRequiredService<DatabaseInitializer>();
 
-        databaseInitializer.Initialize();
+        await databaseInitializer.InitializeAsync();
 
         // ---------------------------------------------------------
         // STEP 3: Setup the main application window

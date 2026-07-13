@@ -1,7 +1,9 @@
 using System;
-using System.Collections.Generic;
-using IncomeExpenditureTracker.Models;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using Microsoft.Extensions.Logging;
+using IncomeExpenditureTracker.Models;
+
 
 namespace IncomeExpenditureTracker.Services.Tagging;
 
@@ -46,7 +48,7 @@ public class TagEngine
     //
     // tokenRows[i] corresponds to transactions[i]
     // ------------------------------------------------------------
-    public void ProcessTransactions(List<Transaction> transactions, List<List<string>> tokenRows)
+    public async Task ProcessTransactions(List<Transaction> transactions, List<List<string>> tokenRows)
     {
         try
         {
@@ -56,13 +58,13 @@ public class TagEngine
             if (transactions.Count != tokenRows.Count)
                 throw new Exception("Transaction count does not match token row count.");
 
-            var ruleIndex = _ruleBook.RuleIndex;
+            var ruleIndex = await _ruleBook.GetRuleIndexAsync();
 
             if (ruleIndex == null || ruleIndex.Count == 0)
                 throw new Exception("RuleBook is empty. Rules must be loaded before tagging.");
 
             // Fallback tag used when no rule matches
-            var miscTagId = _ruleBook.MiscTagId;
+            var miscTagId = await _ruleBook.GetMiscTagIdAsync();
 
             // ------------------------------------------------------------
             // PARALLEL ROW PROCESSING

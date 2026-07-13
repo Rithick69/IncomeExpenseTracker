@@ -5,5 +5,5 @@ namespace IncomeExpenditureTracker.Services.Importing;
 
 public interface IStatementImport<in TDocument>
 {
-    public Task ImportConfirmedStatementAsync(TDocument document, StatementPreview approvedPreview);
+    Task ImportConfirmedStatementAsync(TDocument document, StatementPreview approvedPreview);
 }
