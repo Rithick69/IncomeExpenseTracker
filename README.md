@@ -18,11 +18,18 @@ Unlike bloated financial advisory apps that rely on subjective heuristics, this 
 
 - **🛡️ Ironclad OS Resource Management:** Strictly enforced `IDisposable` patterns and atomic `DiscardFile` routines guarantee Windows OS file locks are released immediately upon stream transfer, error trapping, or cancellation—allowing users to move or rename files in Explorer without restarting the app.
 
-- **🧠 User-Confirmed Self-Learning:** Uses an atomic `SynonymService` to dynamically learn new bank headers and category rules. Learning triggers **only** after explicit user verification upon completing a staging session, executing asynchronously on background threads.
+- **🧠 User-Confirmed Symmetrical Self-Learning:** Uses atomic services (`SynonymService` and `TagService`) to dynamically learn new bank headers, category mappings, and merchant keyword rules. Learning triggers **only** after explicit user verification, executing asynchronously on background threads while leveraging `DescriptionParser` to guarantee 100% token symmetry between extraction and learning pipelines.
 
 - **🛡️ Concurrency & Stampede Defense:** All reference and lookup services utilize an async lazy cache registry (`ConcurrentDictionary<string, Lazy<Task<T>>>`) with automatic fault eviction, guaranteeing that concurrent threads hit the database exactly once during multi-file staging without caching transient I/O failures.
-- **🔒 Master Transaction Atomicity & Single Disk Sync:** Batch persistence executes entirely under a single SQLite master transaction (`conn, tx`), holding all entity creation, account linking, and Dapper bulk inserts in the WAL buffer for a single filesystem disk synchronization and 100% all-or-nothing rollback protection.
-- **⚡ Race-Condition Free Upserts & Stateless WAL Queries:** Entity and account services execute atomic SQLite upsert SQL (`INSERT OR IGNORE`) to prevent concurrent collision exceptions, while dashboard queries hit native C-compiled B-tree indexes (`idx_transactions_accountid`, `idx_transactions_entity`) for sub-2-millisecond retrievals without RAM heap bloat.
+
+- **🔒 Master Transaction Atomicity & Zero-Lock Math:** High-volume ClosedXML extraction, string tokenization, and parallel tagging execute entirely in RAM prior to opening SQLite write locks. Batch persistence then executes under a single master transaction (`conn, tx`), holding all entity creation, account linking, and Dapper bulk inserts in the WAL buffer for a single filesystem disk synchronization and 100% all-or-nothing rollback protection.
+
+- **⚡ Race-Condition Free Upserts & Stateless WAL Queries:** Entity, account, and tagging services execute atomic SQLite upsert SQL (`INSERT OR IGNORE`) to prevent concurrent collision exceptions, while dashboard queries hit native C-compiled B-tree indexes (`idx_transactions_accountid`, `idx_transactions_entity`) for sub-2-millisecond retrievals without RAM heap bloat.
+
+- **🎯 Deterministic Tagging & Ambiguity Guardrails:** Evaluates multi-keyword merchant descriptions using a 3-tier matrix (Database Priority $\rightarrow$ Match Count $\rightarrow$ Ambiguity Fallback). If multiple tags tie on both priority and keyword hits, the engine refuses to guess and explicitly assigns a fallback `Misc` tag to prevent silent misclassification.
+
+- **🏎️ Zero-Allocation Tokenization & Thread-Local Memory:** `DescriptionParser` replaces regex with zero-allocation character math (`char.IsDigit`) and space-joined sliding windows. `TagEngine` leverages C#'s `Parallel.For` thread-local state overload to recycle working dictionaries across CPU cores, eliminating thousands of per-row Garbage Collection heap allocations.
+
 - **📐 $O(1)$ Coordinate-Driven Math:** High-volume transaction extraction loops operate strictly on boundary-resolved integer coordinates (`TransactionColumnCoordinates`), completely bypassing slow string dictionary lookups.
 
 - **🌍 International & Formatting Agnostic:** Bulletproof cell parsing (`GetDecimal`) handles global number formatting (e.g., `1.250,00`), standardizes Debit/Credit columns (Single or Dual column mode), and automatically sanitizes accounting parentheses, trailing minus signs, and HTML non-breaking spaces.
@@ -76,7 +83,8 @@ The backend is engineered around strict separation of concerns and high-concurre
 4. **Open-Closed Schema Flexibility:** All data transfer across extraction boundaries relies on namespaced, case-insensitive dictionaries (`Dictionary<string, DetectedField>`) using `Col:*` and `Meta:*` prefixes, eliminating rigid C# domain properties and brittle `switch` statements.
 
 5. **Concurrency & Stampede Defense:** All reference and lookup services implement thread-safe lazy caching with automatic fault eviction to prevent multiple threads from triggering redundant SQLite reads during multi-file staging.
-6. **Master Transaction Boundaries:** Batch persistence routines hold all operations (entity linking, account creation, batch auditing, bulk transaction insertion) under a single, all-or-nothing database transaction token to guarantee atomicity and minimize filesystem disk synchronization overhead.
+
+6. **Master Transaction Boundaries & Decoupled Math:** CPU-heavy extraction, string tokenization, and rule matching execute in memory before database transactions open. Batch persistence routines then hold all operations (entity linking, account creation, batch auditing, bulk transaction insertion) under a single, all-or-nothing database transaction token to guarantee atomicity and minimize filesystem disk synchronization overhead.
 
 ---
 
@@ -86,13 +94,13 @@ The solution is structured into modular responsibilities across domain entities,
 
 ```plaintext
 Models/
-├── PreviewTracker (Global Hand-off Bundle: FinalPreview + ColumnCorrections)
+├── PreviewTracker (Global Hand-off Bundle: FinalPreview + ColumnCorrections + TagCorrections)
 └── Utilities/
-     └── RuleBookSnapshot (Immutable keyword rule indexing & MiscTagId bundle)
+     └── RuleBookSnapshot (Immutable keyword rule indexing, Stack-Allocated Structs & MiscTagId bundle)
 Services/
 ├── Database/
 │    ├── DatabaseService / IDatabaseService
-│    └── DatabaseInitializer (Seeds baseline synonyms by Category; manages B-Tree indexes)
+│    └── DatabaseInitializer (Seeds baseline synonyms/Misc tag; manages B-Tree indexes)
 ├── DependencyInjection/
 │    └── ServiceRegistration
 ├── Entities/
@@ -100,11 +108,11 @@ Services/
 │    └── TransactionService / ImportBatchService (Stateless B-Tree WAL queries; Dapper bulk inserts)
 ├── Helpers/
 │    ├── HeaderDetector / FieldMapper (Zero-Leak Pre-Seeding)
-│    ├── DescriptionParser
+│    ├── DescriptionParser (Zero-Allocation Digit Checks & Space-Joined Sliding Windows)
 │    └── SynonymService (Atomic CRUD, Self-Learning, Category Discriminators & Lazy Caching)
 ├── Importing/
 │    ├── ExcelStatementExtractor
-│    └── ExcelStatementImportService (Master Transaction Orchestration & Bulk Persistence)
+│    └── ExcelStatementImportService (Zero-Lock Extraction/Tagging -> Master Transaction Persistence)
 ├── PreviewInsights/
 │    └── ConfidenceService (Proportional Dynamic Engine)
 ├── StatementManagement/
@@ -112,7 +120,8 @@ Services/
 │    ├── StatementManager (Thread-Safe Concurrent Staging, OS Lock Manager & Centralized Error Sink)
 │    └── StatementEditSession (In-Memory Staging Scratchpad)
 ├── Tagging/
-│    └── RuleBook (Immutable RAM Snapshots & Async Lazy Caching) / TagEngine / TagService (Planned)
+│    ├── TagService (Atomic CRUD, Stampede-Defended Caching & Symmetrical Self-Learning)
+│    └── TagEngine (Thread-Local Memory Recycling, Match-Count Scoring & Ambiguity Resolution)
 └── TransactionExtractor/
      └── ExcelTransactionExtractor (GetDecimal Cell Parser & O(1) Coordinate Structs)
 
@@ -124,7 +133,7 @@ Services/
 
 The ingestion pipeline orchestrates concurrent workbook loading, in-memory analysis, user verification, and atomic batch persistence:
 
-```
+```plaintext
 [Avalonia UI]
    │ (Selects up to 5 Excel files)
    ▼
@@ -137,15 +146,23 @@ The ingestion pipeline orchestrates concurrent workbook loading, in-memory analy
    │                               ├─► [ExcelTransactionExtractor] (O(1) Coordinate Math)
    │                               └─► [ConfidenceService] (Trustworthiness Scoring)
    ▼
-[StatementEditSession] (User verifies grid & adjusts column mappings via UI dropdowns)
+[StatementEditSession] (User verifies grid & adjusts column/tag mappings via UI dropdowns)
    │
    ▼
 [CommitStagedFileAsync]
-   ├─► [Background Thread via Task.Run()] ──► [SynonymService.LearnFromCorrectionAsync()]
-   ├─► [Master ExecuteInTransaction Block] ─► [ExcelStatementImportService] (Atomic Batch Persistence)
-   │                                            ├─► [EntityService & AccountService] (Atomic Upserts)
-   │                                            ├─► [TagEngine] (Evaluates RuleBookSnapshot)
-   │                                            └─► [TransactionService] (Dapper Bulk Inserts)
+   ├─► [PHASE 1: 100% In-Memory Math — Zero DB Write Locks Held]
+   │        ├─► [DescriptionParser] (Space-Joined Sliding Windows & Zero-Allocation Math)
+   │        └─► [TagEngine] (Thread-Local Recycling -> Priority/Match-Count Scoring -> Ambiguity Guardrails)
+   │
+   ├─► [PHASE 2: Master ExecuteInTransaction Block — Pure Sequential I/O]
+   │        └─► [ExcelStatementImportService] (Atomic Batch Persistence)
+   │                 ├─► [EntityService & AccountService] (Atomic Upserts & Foreign Key Linking)
+   │                 └─► [TransactionService] (High-Speed Parameterized Dapper Bulk Inserts)
+   │
+   ├─► [PHASE 3: Non-Blocking Background Dispatch via Task.Run()]
+   │        ├─► [SynonymService.LearnFromCorrectionAsync()]
+   │        └─► [TagService.LearnRuleFromOverrideAsync()] (Uses DescriptionParser for Token Symmetry)
+   │
    └─► [finally Clause] ────────────────────► [DiscardFile -> Dispose Stream -> Release OS Lock]
 
 ```
@@ -154,7 +171,7 @@ The ingestion pipeline orchestrates concurrent workbook loading, in-memory analy
 
 ## 🗺️ Roadmap & Development Progress
 
-### ✅ Completed Milestones (Phase 1 & Phase 2)
+### ✅ Completed Milestones (Phase 1, Phase 2 & Phase 3)
 
 - [x] Modular service structure and interface-driven Dependency Injection registry.
 
@@ -173,19 +190,33 @@ The ingestion pipeline orchestrates concurrent workbook loading, in-memory analy
 - [x] Non-blocking background learning dispatch to preserve instant UI responsiveness.
 
 - [x] Async lazy cache registry (`ConcurrentDictionary<string, Lazy<Task<T>>>`) with fault eviction across reference services.
+
 - [x] Race-condition free atomic SQLite upserts (`INSERT OR IGNORE`) and transaction-aware RAM cache bypasses (`if (tx != null)`).
+
 - [x] Master import orchestration under a single database transaction (`ExecuteInTransactionWithRetryAsync`) with 100% all-or-nothing atomicity and single filesystem disk sync.
+
 - [x] High-speed parameterized Dapper bulk inserts and stateless, B-tree indexed WAL dashboard queries (< 2ms execution).
-- [x] Immutable `RuleBookSnapshot` records with pre-sorted keyword rules for zero-contention $O(1)$ tagging.
 
-### 🚧 Current Focus (Phase 3: Tagging Expansion)
+- [x] **Phase 3 Complete: Unified `ITagService` & `TagService` Architecture:** Merged legacy `RuleBook` into `TagService` as the single source of truth for tag persistence and rule delivery. Implemented atomic CRUD methods with 32-bit `int` IDs, stampede-defended RAM caching (`ConcurrentDictionary`), and automatic fault eviction.
 
-- [ ] Implement `ITagService` with atomic CRUD methods, priority-based self-learning, and async lazy caching with fault eviction.
-- [ ] Allow `StatementEditSession` to pass manual category overrides to the database upon import confirmation.
+- [x] **Phase 3 Complete: Zero-Allocation `DescriptionParser` Refactor:** Resolved the 2-character word bug (`< 2` instead of `<= 2`) to preserve short acronyms (e.g., `OF`, `HP`, `SBI`). Replaced high-volume `Regex.IsMatch` loops with zero-allocation `word.All(char.IsDigit)` checks, eliminated redundant length sorting overhead, and standardized on space-joined sliding windows (`MAX_TOKEN_WINDOW = 4`) to match natural human database keywords.
 
-### 🔮 Future Roadmap (Phase 4 & Phase 5)
+- [x] **Phase 3 Complete: Hardware-Level Memory Guardrails:** Declared `TagRuleDTO` as a stack-allocated `readonly record struct` and utilized array-backed indexing (`TagRuleDTO[]`) in `RuleBookSnapshot` to eliminate heap bloat. Integrated C#'s `Parallel.For` thread-local state overload in `TagEngine` to recycle working dictionaries across CPU cores, achieving zero per-row GC allocations across multi-thousand row batches.
 
-- [ ] **Phase 4: Headless Workflow Integration Testing:** Build an automated, UI-less test harness using real-world, multi-year bank and credit card Excel statements to validate concurrent staging, stampede defense under load, duplicate hash detection, and atomic rollback recovery.
+- [x] **Phase 3 Complete: 3-Tier Deterministic Scoring & Ambiguity Engine:** Replaced "first match wins" with a holistic scoring algorithm evaluating all tokens per row. Resolves category collisions via **Tier 1: Highest Priority** and **Tier 2: Most Keyword Matches**. Enforces **Tier 3: Ambiguity Guardrail**, explicitly dropping transactions to `MiscTagId` when different tags tie on both priority and match count to prevent silent categorization corruption.
+
+- [x] **Phase 3 Complete: Symmetrical Background Self-Learning:** Built `LearnRuleFromOverrideAsync` to execute via `Task.Run()` after statement commits. Injects `DescriptionParser` directly into `TagService` to tokenize user overrides, extracting the exact same space-joined keyword strings used during ingestion to guarantee 100% token symmetry.
+
+- [x] **Phase 3 Complete: Zero-Lock Import Orchestration:** Decoupled ClosedXML cell extraction, string tokenization, and `TagEngine` execution from the database write lock. By passing temporary placeholders during in-memory processing and stamping real database IDs inside the transaction, the SQLite write lock is held strictly for sub-second, sequential Dapper bulk insertions.
+
+### 🚧 Current Focus (Phase 4: Headless Workflow Integration Testing)
+
+- [ ] **Phase 4: Automated Test Harness:** Build an automated, UI-less test harness using real-world, multi-year bank and credit card Excel statements.
+
+- [ ] **Phase 4: Concurrency & Stress Validation:** Validate multi-file concurrent staging (`StageFilesAsync`), stampede defense under load, duplicate hash detection, and all-or-nothing rollback recovery without UI dependencies.
+
+### 🔮 Future Roadmap (Phase 5)
+
 - [ ] **Phase 5: Reactive UI Messenger & MVVM Refactor:** Establish an application-wide messaging broker (`IMessenger` / Event Aggregator) to synchronize standalone management views with active staging sessions. Refactor `StatementManager` to record errors and emit UI toast/modal notifications, and build out the Avalonia UI ViewModels using transient `ObservableCollection` caching.
 
 ---
@@ -246,7 +277,8 @@ When contributing or utilizing AI assistants for further development on this rep
 5. **Guaranteed Disposal:** Always wrap stream manipulation and database commit sequences in strict `try/finally` blocks invoking explicit `.Dispose()` or `DiscardFile()` routines.
 
 6. **Defend Against Cache Stampedes:** All caching mechanisms must utilize thread-safe structures (e.g., `ConcurrentDictionary<string, Lazy<Task<T>>>`) with explicit fault eviction to prevent redundant I/O during concurrent multi-file processing.
-7. **Enforce Master Transaction Atomicity:** Multi-step database persistence (such as statement imports) must execute entirely within a single database transaction token (`conn, tx`), ensuring complete rollback capability and minimal filesystem synchronization overhead.
+
+7. **Enforce Master Transaction Atomicity & Zero-Lock Math:** Heavy CPU tasks (tokenization, tagging, cell parsing) must execute in RAM before database transactions open. Multi-step database persistence must execute entirely within a single database transaction token (`conn, tx`), ensuring complete rollback capability and minimal filesystem synchronization overhead.
 
 ---
 

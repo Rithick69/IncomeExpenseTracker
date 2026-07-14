@@ -47,8 +47,6 @@ public static class ServiceRegistration
         services.AddTransient<IHeaderDetector<IXLWorksheet>, HeaderDetector>();
         services.AddTransient<ITransactionExtractor<IXLWorksheet>, ExcelTransactionExtractor>();
         services.AddTransient<ConfidenceService>();
-        services.AddTransient<DescriptionParser>();
-        services.AddTransient<TagEngine>();
 
         // ---------------------------------------------------------
         // Entities
@@ -74,7 +72,9 @@ public static class ServiceRegistration
         // ---------------------------------------------------------
         // Tagging
         // ---------------------------------------------------------
-        services.AddSingleton<IRuleBook, RuleBook>();
+        services.AddSingleton<ITagService, TagService>();
+        services.AddTransient<TagEngine>();
+        services.AddTransient<DescriptionParser>();
 
         // Un-comment or add this once we write the edit session logic:
         // services.AddTransient<StatementEditSessionService>();

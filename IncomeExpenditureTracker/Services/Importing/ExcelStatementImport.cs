@@ -75,13 +75,50 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
             string accountType = GetMetaValue(fields, "Meta:ACCOUNT_TYPE", "Checking");
             string currency = GetMetaValue(fields, "Meta:CURRENCY", "INR");
 
+            // -------------------------------------------------------------------------
+            // CPU Intensive Tasks
+            // -------------------------------------------------------------------------
+
+            // -------------------------------------------------------------------------
+            // 1. PURE INTEGER-INDEXED TRANSACTION EXTRACTION
+            // -------------------------------------------------------------------------
+            // Passing resolved integer coordinates avoids 2,500+ dictionary string lookups
+
+            var transactions = _transactionExtractor.ExtractTransactions(
+                worksheet,
+                previewMap.HeaderRow,
+                previewMap.Fields
+            );
+
+            if (transactions.Count == 0)
+            {
+                _logger.LogWarning("No valid transactions extracted from worksheet. Aborting import transaction.");
+                return;
+            }
+
+            // -------------------------------------------------------------------------
+            // 2. IN-MEMORY TOKENIZATION & TAGGING
+            // -------------------------------------------------------------------------
+
+            var tokenRows = new List<List<string>>(transactions.Count);
+
+            foreach (var txn in transactions)
+            {
+                var tokens = _descriptionParser.ExtractTokens(txn.Description);
+                tokenRows.Add(tokens);
+            }
+
+            await _tagEngine.ProcessTransactions(transactions, tokenRows);
+
+            // DB Tasks
+
             await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx) =>
             {
 
                 // Ensure the account and entity exist in the database, creating them if necessary
 
                 // -------------------------------------------------------------------------
-                // 2. DATABASE METADATA PERSISTENCE
+                // 3. DATABASE METADATA PERSISTENCE
                 // -------------------------------------------------------------------------
                 var entityId = await _entityService.GetOrCreateEntity(entityName, conn, tx);
 
@@ -97,38 +134,7 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
                 }, conn, tx);
 
                 // -------------------------------------------------------------------------
-                // 3. PURE INTEGER-INDEXED TRANSACTION EXTRACTION
-                // -------------------------------------------------------------------------
-                // Passing resolved integer coordinates avoids 2,500+ dictionary string lookups
-                var transactions = _transactionExtractor.ExtractTransactions(
-                    worksheet,
-                    previewMap.HeaderRow,
-                    previewMap.Fields,
-                    accountId
-                );
-
-                if (transactions.Count == 0)
-                {
-                    _logger.LogWarning("No valid transactions extracted from worksheet. Aborting import transaction.");
-                    return;
-                }
-
-                // -------------------------------------------------------------------------
-                // 4. IN-MEMORY TOKENIZATION & TAGGING
-                // -------------------------------------------------------------------------
-
-                var tokenRows = new List<List<string>>(transactions.Count);
-
-                foreach (var txn in transactions)
-                {
-                    var tokens = _descriptionParser.ExtractTokens(txn.Description);
-                    tokenRows.Add(tokens);
-                }
-
-                await _tagEngine.ProcessTransactions(transactions, tokenRows);
-
-                // -------------------------------------------------------------------------
-                // 5. BATCH CREATION & HASHING
+                // 4. BATCH CREATION & HASHING
                 // -------------------------------------------------------------------------
                 // Extract filename safely without file I/O locks
                 string fileName = !string.IsNullOrWhiteSpace(previewMap.FileName)
@@ -144,10 +150,11 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
                 {
                     txn.ImportBatchId = batchId;
                     txn.TransactionHash = GenerateHash(txn);
+                    txn.AccountId = accountId;
                 }
 
                 // -------------------------------------------------------------------------
-                // 6. HIGH-PERFORMANCE CHUNKED INSERTION
+                // 5. HIGH-PERFORMANCE CHUNKED INSERTION
                 // -------------------------------------------------------------------------
                 // Using .Chunk() (.NET 6+) or List.GetRange avoids .Skip().Take() GC overhead
 

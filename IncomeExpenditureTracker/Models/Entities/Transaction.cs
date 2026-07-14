@@ -22,7 +22,7 @@ public class Transaction
     // "HDFC Bank"
     // "SBI Savings"
     // "ICICI Credit Card"
-    public string Account { get; set; } = "";
+    // public string Account { get; set; } = "";
 
     // Foreign key reference to the Account table.
     public int AccountId { get; set; }
