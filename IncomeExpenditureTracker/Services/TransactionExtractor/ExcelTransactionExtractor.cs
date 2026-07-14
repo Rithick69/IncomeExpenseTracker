@@ -194,7 +194,7 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
     // ------------------------------------------------------------
     // Extracts all transactions from the worksheet.
     //-------------------------------------------------------------
-    public List<Transaction> ExtractTransactions(IXLWorksheet worksheet, int headerRow, Dictionary<string, DetectedField> previewFields, int accountId)
+    public List<Transaction> ExtractTransactions(IXLWorksheet worksheet, int headerRow, Dictionary<string, DetectedField> previewFields)
     {
         try
         {
@@ -242,7 +242,6 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
 
                 var transaction = new Transaction
                 {
-                    AccountId = accountId,
                     Date = parsedRow.Date,
                     Description = parsedRow.Description,
                     Debit = parsedRow.Debit,

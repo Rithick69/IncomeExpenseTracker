@@ -79,13 +79,13 @@ public class TransactionService : ITransactionService
             const string sql = @"
                 INSERT INTO Transactions
                 (
-                    Date, Account, AccountId, Description, Entity,
+                    Date, AccountId, Description, Entity,
                     Credit, Debit, TransactionType, ImportBatchId,
                     TagId, TransactionHash, CreatedDate
                 )
                 VALUES
                 (
-                    @Date, @Account, @AccountId, @Description, @Entity,
+                    @Date, @AccountId, @Description, @Entity,
                     @Credit, @Debit, @TransactionType, @ImportBatchId,
                     @TagId, @TransactionHash, @CreatedDate
                 );";

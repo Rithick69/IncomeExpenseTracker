@@ -100,7 +100,7 @@ public class DatabaseInitializer
 
                 CREATE TABLE IF NOT EXISTS Tags (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Name TEXT NOT NULL,
+                    Name TEXT NOT NULL UNIQUE,
                     SubCategoryId INTEGER,
                     FOREIGN KEY(SubCategoryId) REFERENCES SubCategories(Id)
                 );
@@ -126,6 +126,27 @@ public class DatabaseInitializer
                     Priority INTEGER DEFAULT 10,
                     FOREIGN KEY(TagId) REFERENCES Tags(Id)
                 );
+
+                -- SQLite B-tree indexes to speed up self-learning queries and joins
+
+                CREATE INDEX IF NOT EXISTS idx_tagrules_keyword ON TagRules(Keyword);
+                CREATE INDEX IF NOT EXISTS idx_tagrules_tagid ON TagRules(TagId);
+
+                INSERT OR IGNORE INTO Tags (Id, Name, SubCategoryId) VALUES (1, 'Misc', NULL);
+
+                ------------------------------------------------------------
+                -- Unified View for Tag, SubCategory, Category
+                ------------------------------------------------------------
+
+                CREATE VIEW IF NOT EXISTS vw_TagTaxonomy AS
+                SELECT
+                    t.Id AS TagId,
+                    t.Name AS TagName,
+                    s.Name AS SubcategoryName,
+                    c.Name AS CategoryName
+                FROM Tags t
+                JOIN Subcategories s ON t.SubcategoryId = s.Id
+                JOIN Categories c ON s.CategoryId = c.Id;
 
                 ------------------------------------------------------------
                 -- ENTITIES
@@ -181,7 +202,6 @@ public class DatabaseInitializer
                 CREATE TABLE IF NOT EXISTS Transactions (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Date TEXT NOT NULL,
-                    Account TEXT,
                     AccountId INTEGER,
                     Description TEXT,
                     Entity TEXT,
