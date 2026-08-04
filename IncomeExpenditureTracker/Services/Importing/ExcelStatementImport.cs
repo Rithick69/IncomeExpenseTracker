@@ -173,7 +173,7 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
         catch (Exception ex)
         {
             _logger.LogError(ex, "Fatal error occurred while importing statement file '{FileName}'. Aborting workflow.", previewMap?.FileName);
-            throw;
+            throw new InvalidOperationException($"Failed to import the statement file '{previewMap?.FileName}'. The file may be corrupted or contain invalid data.", ex);
         }
     }
     private string GenerateHash(Transaction txn)

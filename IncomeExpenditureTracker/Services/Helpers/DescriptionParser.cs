@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using System.Text.RegularExpressions;
 
 namespace IncomeExpenditureTracker.Services.Helpers;
 
@@ -52,9 +53,12 @@ public class DescriptionParser
             // Normalize description
             description = description.ToUpperInvariant();
 
-            description = description.Replace("/", " ")
-                                    .Replace("-", " ")
-                                    .Replace(".", " ");
+            // Replace your manual .Replace() chain with this:
+            // This removes all digits (0-9) and special symbols (#, *, etc.), converting them to spaces.
+            description = Regex.Replace(description, @"[^a-zA-Z\s]", " ");
+
+            // Collapse multiple spaces into a single space and trim the edges
+            description = Regex.Replace(description, @"\s+", " ").Trim();
 
             var words = description.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 

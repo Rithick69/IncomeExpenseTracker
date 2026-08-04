@@ -42,7 +42,12 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
 
         // _synonyms is an IReadOnlyDictionary<string, Synonyms>, so ToDictionary receives KeyValuePair entries.
         // Use kv.Value to access the Synonyms object inside each KeyValuePair.
-        _synonymFieldMap = _synonyms.ToDictionary(kv => kv.Value.Synonym, kv => kv.Value.FieldType);
+        // FIX: Normalize database keys and enforce case-insensitive lookups
+        _synonymFieldMap = _synonyms.ToDictionary(
+            kv => Normalize(kv.Value.Synonym),
+            kv => kv.Value.FieldType,
+            StringComparer.OrdinalIgnoreCase
+        );
 
         _isInitialized = true;
     }
@@ -66,15 +71,26 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
             int bestRow = -1; // Zero-based index of the best header row found so far
             int bestScore = 0;
 
-            int windowSize = 3;
+            int windowSize = 1; // Set windowSize to 1 so each row is evaluated on its own merit!
 
             int maxRows = Math.Min(20, worksheet.LastRowUsed()?.RowNumber() ?? 20);
 
-            for (int startRow = 1; startRow <= maxRows - windowSize; startRow++)
+            for (int startRow = 1; startRow <= maxRows; startRow++)
             {
+
+                // =========================================================================
+                // Don't start a window on a completely blank row!
+                // This prevents empty rows above the table from stealing credit for headers below them.
+                // =========================================================================
+                if (worksheet.Row(startRow).IsEmpty())
+                    continue;
+
                 int score = 0;
 
-                for (int r = startRow; r < startRow + windowSize; r++)
+                // Clamp the window so it doesn't read past the last row of a small test sheet
+                int endWindow = Math.Min(maxRows, startRow + windowSize - 1);
+
+                for (int r = startRow; r <= endWindow; r++)
                 {
                     int lastColumn = worksheet.Row(r).LastCellUsed()?.Address.ColumnNumber ?? 0;
 
@@ -84,6 +100,13 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
 
                         if (string.IsNullOrWhiteSpace(text))
                             continue;
+
+                        // FIX #2: Check the FULL cell text first to support multi-word synonyms like "TXN DATE"
+                        if (_synonymFieldMap.TryGetValue(text, out var fieldType))
+                        {
+                            score += _weights.TryGetValue(fieldType, out var weight) ? weight : 1;
+                            continue; // Move to next cell once matched
+                        }
 
                         // Split cell text into tokens and check each token against synonyms
                         // This allows us to detect headers even if they are combined (e.g. "Date Description Amount")
@@ -96,9 +119,9 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
 
                         foreach (var token in tokens)
                         {
-                            if (_synonymFieldMap.TryGetValue(token, out var fieldType))
+                            if (_synonymFieldMap.TryGetValue(token, out var tokenField))
                             {
-                                if (_weights.TryGetValue(fieldType, out var weight))
+                                if (_weights.TryGetValue(tokenField, out var weight))
                                 {
                                     score += weight;
                                 }
@@ -119,9 +142,6 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
                     bestScore = score;
                     bestRow = startRow - 1; // Convert to zero-based index
                 }
-
-                if (score >= 4)
-                    break;
             }
 
             if (bestRow == -1)

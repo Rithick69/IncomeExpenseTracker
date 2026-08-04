@@ -76,7 +76,8 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
             .GroupBy(s => Normalize(s.Synonym))
             .ToDictionary(
                 g => g.Key,
-                g => g.OrderByDescending(x => x.Priority).First()
+                g => g.OrderByDescending(x => x.Priority).First(),
+                StringComparer.OrdinalIgnoreCase
             );
 
         // Build token index dictionary
@@ -319,7 +320,13 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
                 var parts = text.Split(sep);
 
                 if (parts.Length > 1)
-                    return parts[1].Trim();
+                {
+                    var candidate = parts[1].Trim();
+
+                    // Only return if the right side of the separator actually contains a value
+                    if (!string.IsNullOrWhiteSpace(candidate))
+                        return candidate;
+                }
             }
         }
 
