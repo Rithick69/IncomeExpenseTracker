@@ -71,4 +71,23 @@ public class Transaction
     public string TransactionHash { get; set; } = "";
 
     public DateTime CreatedDate { get; set; }
+
+    // =========================================================================
+    // UI REVIEW & AUDIT TRAIL PROPERTIES
+    // =========================================================================
+
+    // Indicates if the row requires manual user verification in the UI.
+    // Set to true when the parser detects ambiguity, formatting errors, or a literal $0.00.
+    // Flips to false once the user rectifies the amount and saves.
+    public bool NeedsReview { get; set; }
+
+    // Stores the exact raw string extracted from the amount column(s) before parsing.
+    // Example: "INV-8675309" or "Dr: [500 approx] | Cr: []"
+    // Keep this populated even AFTER rectification to serve as a permanent audit trail.
+    public string? RawAmountText { get; set; }
+
+    // Stores the specific parser failure reason to display in UI tooltips/error badges.
+    // Example: "Ambiguous row: Contains both Debit and Credit values simultaneously."
+    // Should be cleared to null once the user resolves the issue.
+    public string? ParseErrorMessage { get; set; }
 }

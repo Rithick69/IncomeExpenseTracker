@@ -24,6 +24,9 @@ public class DatabaseService : IDatabaseService
 
     public DatabaseService(IConfiguration configuration, ILogger<DatabaseService> logger)
     {
+        // 1. Assign mandatory dependencies immediately at the top so early returns can never skip them!
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
         // Check if an external environment variable or test config explicitly overrides the DB path
         var configPath = configuration.GetConnectionString("DefaultConnection");
         if (!string.IsNullOrEmpty(configPath))
@@ -48,7 +51,6 @@ public class DatabaseService : IDatabaseService
         };
 
         _connectionString = builder.ToString();
-        _logger = logger;
     }
 
     /// <summary>

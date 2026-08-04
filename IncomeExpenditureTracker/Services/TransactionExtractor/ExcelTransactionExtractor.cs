@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Helpers;
 
 namespace IncomeExpenditureTracker.Services.TransactionExtractor;
 
@@ -32,6 +33,13 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
     // Temporary container used while parsing rows.
     // Prevents duplication between preview extraction and full import.
     // ------------------------------------------------------------
+
+    public readonly IStrictAccountParser _strictAccountParser;
+
+    public ExcelTransactionExtractor(IStrictAccountParser strictAccountParser)
+    {
+        _strictAccountParser = strictAccountParser;
+    }
 
     private static readonly string[] SummaryKeywords =
     {
@@ -72,16 +80,46 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             };
         }
 
+        // private static int GetCol(Dictionary<string, DetectedField> fields, string key)
+        // {
+        //     // Try exact match first (e.g., "Col:Date")
+        //     if (fields.TryGetValue(key, out var field))
+        //         return field.ColumnIndex;
+
+        //     // Fallback safety: try matching without the prefix just in case legacy keys slipped in
+        //     var unprefixedKey = key.Replace("Col:", "", StringComparison.OrdinalIgnoreCase);
+        //     if (fields.TryGetValue(unprefixedKey, out var fallbackField))
+        //         return fallbackField.ColumnIndex;
+
+        //     return -1;
+        // }
+
         private static int GetCol(Dictionary<string, DetectedField> fields, string key)
         {
-            // Try exact match first (e.g., "Col:Date")
+            // 1. Fast Path: Try direct hash lookup (O(1))
             if (fields.TryGetValue(key, out var field))
                 return field.ColumnIndex;
 
+            // Safely strip the "Col:" prefix only if it appears at the start of the string
+            var unprefixedKey = key.StartsWith("Col:", StringComparison.OrdinalIgnoreCase)
+                ? key.Substring(4)
+                : key;
+
             // Fallback safety: try matching without the prefix just in case legacy keys slipped in
-            var unprefixedKey = key.Replace("Col:", "", StringComparison.OrdinalIgnoreCase);
             if (fields.TryGetValue(unprefixedKey, out var fallbackField))
                 return fallbackField.ColumnIndex;
+
+            // 2. Safety Fallback: Case-insensitive scan (O(N))
+            // This catches mismatches like "col:date" vs "Col:DATE" or "Date" vs "DATE"
+            // if the dictionary was not originally initialized with StringComparer.OrdinalIgnoreCase.
+            foreach (var (dictKey, dictValue) in fields)
+            {
+                if (string.Equals(dictKey, key, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(dictKey, unprefixedKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    return dictValue.ColumnIndex;
+                }
+            }
 
             return -1;
         }
@@ -98,6 +136,11 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         public decimal Credit { get; set; }
 
         public bool IsValid { get; set; }
+
+        // UI Metadata
+        public bool NeedsReview { get; set; }
+        public string RawAmountText { get; set; } = string.Empty;
+        public string? ParseErrorMessage { get; set; }
     }
 
     // Common keywords that indicate a balance or total row, which should be ignored during transaction extraction.
@@ -246,7 +289,10 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                     Description = parsedRow.Description,
                     Debit = parsedRow.Debit,
                     Credit = parsedRow.Credit,
-                    CreatedDate = DateTime.UtcNow
+                    CreatedDate = DateTime.UtcNow,
+                    RawAmountText = parsedRow.RawAmountText,
+                    NeedsReview = parsedRow.NeedsReview,
+                    ParseErrorMessage = parsedRow.ParseErrorMessage
                 };
 
                 results.Add(transaction);
@@ -260,6 +306,12 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             return new List<Transaction>();
         }
     }
+
+    // Simple helper for safe UI/DB truncation
+    public static string? TruncateForDb(string? value, int maxLength) =>
+        string.IsNullOrEmpty(value) || value.Length <= maxLength
+            ? value
+            : value.Substring(0, maxLength - 3) + "...";
 
     // Checks if the description contains keywords that indicate this row is a balance or total row, which should be ignored.
 
@@ -345,39 +397,94 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             // -----------------------------
             if (coords.AmountCol >= 0)
             {
-                decimal amount = GetDecimal(sheetrow.Cell(coords.AmountCol + 1));
+                // =========================================================================
+                // CASE 1: SINGLE AMOUNT COLUMN (Negative = Debit, Positive = Credit)
+                // =========================================================================
+                string rawAmountText = sheetrow.Cell(coords.AmountCol + 1).GetString();
 
-                if (amount < 0)
+                AccountParseResult parseResult = _strictAccountParser.Parse(
+                    rawAmountText
+                );
+
+                result.RawAmountText = TruncateForDb(parseResult.RawText ?? string.Empty, 100) ?? string.Empty;
+                decimal amount = parseResult.Value; // Defaults to 0m if parsing failed
+
+                // Flag for review if the parser failed OR if the value is literally 0m
+                if (!parseResult.NeedsReview || amount == 0m)
                 {
-                    result.Debit = Math.Abs(amount);
+                    result.NeedsReview = true;
+                    result.ParseErrorMessage = !parseResult.NeedsReview
+                        ? TruncateForDb(parseResult.ErrorReason ?? string.Empty, 250)
+                        : "Zero-value transaction requires verification.";
+
+                    result.Debit = 0m;
                     result.Credit = 0m;
                 }
-                else if (amount > 0)
+                else
                 {
-                    result.Credit = amount;
-                    result.Debit = 0m;
+                    result.NeedsReview = false;
+                    result.ParseErrorMessage = null;
+                    if (amount < 0)
+                    {
+                        result.Debit = Math.Abs(amount);
+                        result.Credit = 0m;
+                    }
+                    else
+                    {
+                        // Safely catches positive amounts AND legitimate $0.00 transactions
+                        result.Credit = amount;
+                        result.Debit = 0m;
+                    }
                 }
             }
             else
             {
-                // -----------------------------
-                // CASE 2: SEPARATE DEBIT / CREDIT
-                // -----------------------------
-                decimal debitVal = 0m; // Initialize debit and credit values to zero
-                decimal creditVal = 0m;
+                // =========================================================================
+                // CASE 2: SEPARATE DEBIT AND CREDIT COLUMNS
+                // =========================================================================
 
-                // Zero-based column indices are used, so we add 1 when accessing ClosedXML cells.
-                if (coords.DebitCol >= 0)
-                    debitVal = Math.Abs(GetDecimal(sheetrow.Cell(coords.DebitCol + 1)));
+                AccountParseResult? debitResult = coords.DebitCol >= 0
+                    ? _strictAccountParser.Parse(sheetrow.Cell(coords.DebitCol + 1).GetString())
+                    : null;
 
-                if (coords.CreditCol >= 0)
-                    creditVal = Math.Abs(GetDecimal(sheetrow.Cell(coords.CreditCol + 1)));
+                AccountParseResult? creditResult = coords.CreditCol >= 0
+                    ? _strictAccountParser.Parse(sheetrow.Cell(coords.CreditCol + 1).GetString())
+                    : null;
 
-                // Row is valid if at least one column contains money
-                if (debitVal > 0 || creditVal > 0)
+                // Check if either column failed strict validation (ignoring empty/blank cells)
+                bool debitFailed = debitResult != null && !debitResult.NeedsReview && !string.IsNullOrWhiteSpace(debitResult.RawText);
+                bool creditFailed = creditResult != null && !creditResult.NeedsReview && !string.IsNullOrWhiteSpace(creditResult.RawText);
+
+                decimal debitVal = debitResult != null ? Math.Abs(debitResult.Value) : 0m;
+                decimal creditVal = creditResult != null ? Math.Abs(creditResult.Value) : 0m;
+
+                // Flag if parsing failed, OR if both columns ended up as 0m, OR if both contain money (contradiction)
+                if (debitFailed || creditFailed || (debitVal == 0m && creditVal == 0m) || (debitVal > 0 && creditVal > 0))
                 {
+                    // 1. Flag for UI review
+                    result.NeedsReview = true;
+                    result.RawAmountText = TruncateForDb($"Dr: [{debitResult?.RawText}] | Cr: [{creditResult?.RawText}]", 100) ?? string.Empty;
+
+                    // 2. Dump to zero during ambiguity
+                    result.Debit = 0m;
+                    result.Credit = 0m;
+
+                    if (debitFailed || creditFailed)
+                        result.ParseErrorMessage = TruncateForDb(debitFailed ? debitResult!.ErrorReason : creditResult!.ErrorReason, 250);
+                    else if (debitVal > 0 && creditVal > 0)
+                        result.ParseErrorMessage = "Ambiguous row: Contains both Debit and Credit values simultaneously.";
+                    else
+                        result.ParseErrorMessage = "Zero-value transaction requires verification.";
+                }
+                else
+                {
+
+                    // Clean, valid transaction
+                    result.NeedsReview = false;
+                    result.ParseErrorMessage = null;
                     result.Debit = debitVal;
                     result.Credit = creditVal;
+
                 }
             }
 
@@ -437,79 +544,6 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         return DateTime.TryParse(text, out date);
     }
 
-    private decimal GetDecimal(IXLCell cell)
-    {
-        if (cell == null || cell.IsEmpty())
-            return 0m;
-
-        // 1. Handle native Excel numeric cells immediately (O(1) fast path)
-        if (cell.DataType == XLDataType.Number)
-            return Convert.ToDecimal(cell.GetDouble());
-
-        // 2. Extract text, replace invisible HTML non-breaking spaces (\u00A0), and normalize
-        var text = cell.GetString().Replace("\u00A0", " ").Trim().ToUpperInvariant();
-        if (string.IsNullOrWhiteSpace(text) || text == "-" || text == "--")
-            return 0m;
-
-        // 3. Detect accounting markers (DR, CR, DB, or standalone D/C)
-        bool isDebit = text.Contains("DR") || text.Contains("DB") || text.EndsWith(" D") || text.StartsWith("D ");
-        bool isCredit = text.Contains("CR") || text.EndsWith(" C") || text.StartsWith("C ");
-
-        // 4. Strip currency symbols and text markers (Do NOT strip commas here!)
-        text = text.Replace("₹", "")
-                   .Replace("$", "")
-                   .Replace("€", "")
-                   .Replace("£", "")
-                   .Replace("DR", "")
-                   .Replace("DB", "")
-                   .Replace("CR", "")
-                   .Trim();
-
-        // Remove lingering single-character D or C markers at the string boundaries
-        if (text.EndsWith("D") || text.EndsWith("C"))
-            text = text.Substring(0, text.Length - 1).Trim();
-        if (text.StartsWith("D") || text.StartsWith("C"))
-            text = text.Substring(1).Trim();
-
-        // 5. Handle trailing minus signs (e.g., "500.00-" -> "-500.00")
-        bool hasTrailingMinus = false;
-        if (text.EndsWith("-"))
-        {
-            hasTrailingMinus = true;
-            text = text.TrimEnd('-').Trim();
-        }
-
-        // 6. Handle accounting parentheses for negative numbers: "(500.00)" -> "-500.00"
-        if (text.StartsWith("(") && text.EndsWith(")"))
-        {
-            text = "-" + text.Substring(1, text.Length - 2).Trim();
-        }
-        else if (hasTrailingMinus && !text.StartsWith("-"))
-        {
-            text = "-" + text;
-        }
-
-        // 7. Parse decimal with robust NumberStyles (Allows native thousands separators)
-        const NumberStyles styles = NumberStyles.AllowDecimalPoint |
-                                    NumberStyles.AllowThousands |
-                                    NumberStyles.AllowLeadingSign |
-                                    NumberStyles.AllowParentheses;
-
-        if (!decimal.TryParse(text, styles, CultureInfo.InvariantCulture, out var value) &&
-            !decimal.TryParse(text, styles, CultureInfo.CurrentCulture, out value))
-        {
-            return 0m;
-        }
-
-        // 8. Apply explicit debit/credit sign overrides ONLY if markers were detected
-        if (isDebit)
-            return -Math.Abs(value);
-
-        if (isCredit)
-            return Math.Abs(value);
-
-        return value;
-    }
     private bool IsValidRow(ParsedTransactionRow t)
     {
         if (t == null)
@@ -521,8 +555,13 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         if (string.IsNullOrWhiteSpace(t.Description))
             return false;
 
-        if (t.Debit == 0 && t.Credit == 0)
-            return false;
+        // =========================================================================
+        // REMOVED: if (t.Debit == 0 && t.Credit == 0) return false;
+        // =========================================================================
+        // We NO LONGER drop zero-value rows here.
+        // Garbage text, contradictions, and literal zeroes are mapped to 0m
+        // so they can be safely routed to the UI with NeedsReview = true.
+        // =========================================================================
 
         return true;
     }

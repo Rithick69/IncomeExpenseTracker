@@ -21,6 +21,9 @@ public class StatementPreview
 
     public bool RequiresVerification { get; set; }
 
+    // // The UI binds its error grid/badges directly to this sink!
+    // public StatementErrorSink Diagnostics { get; set; } = new();
+
     // public DetectedField DateField { get; set; } = new();
 
     // public DetectedField DescriptionField { get; set; } = new();

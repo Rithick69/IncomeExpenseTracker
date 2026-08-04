@@ -116,19 +116,25 @@ public class StatementManager : IDisposable
                 // Add to our successful list for the UI grid
                 successes.Add(new PendingFilePreview(fileId, fileName, sheetNames));
             }
+            catch (IOException ex)
+            {
+                // TIER 2 SINK: Specifically trap OS-level file locks
+                _logger.LogWarning(ex, "OS file lock encountered on '{FileName}'.", fileName);
+
+                // Note: Ensure FileStagingError model matches these parameters
+                failures.Add(new FileStagingError(fileId, fileName, ErrorSeverity.Warning,
+                    "This file is currently locked by another program (e.g., Excel). Please close it and try again.", ex));
+
+                DiscardFile(fileId); // Centralized OS lock release
+            }
             catch (Exception ex)
             {
-                // RESILIENT ERROR TRAPPING: Trap failure per-file without aborting the rest of the batch!
-                _logger.LogWarning(ex, "Failed to load file '{FileName}' during staging. Adding to failure list for UI notification.", fileName);
+                // TIER 2 SINK: Trap catastrophic/unknown ClosedXML faults
+                _logger.LogError(ex, "Catastrophic failure staging '{FileName}'.", fileName);
 
-                // Defensive cleanup: If the file was partially added before crashing, pull it out and dispose it
-                if (_pendingStatements.TryRemove(fileId, out var orphanedResult))
-                {
-                    orphanedResult.Dispose();
-                }
-
-                // Record the error so the UI ViewModel can show a toast/popup notification to the user
-                failures.Add(new FileStagingError(fileName, path, ex.Message, ex));
+                failures.Add(new FileStagingError(fileId, fileName, ErrorSeverity.Fatal,
+                    "An unexpected error occurred while reading the file. It may be corrupted or unsupported.", ex));
+                DiscardFile(fileId); // Ensure any partially loaded file is cleaned up
             }
             finally
             {
@@ -190,29 +196,41 @@ public class StatementManager : IDisposable
                 $"Worksheet '{targetSheetName}' was not found in workbook '{stagedFile.FileName}'.");
         }
 
+        try
+        {
+            // STEP 3: EXECUTE IN-MEMORY EXTRACTION ANALYSIS
+            // We call your extractor's Analyse method, passing both the in-memory document AND the FileName string.
+            // Guardrail Compliance: The extractor reads cells from 'targetDocument'. The 'stagedFile.FileName' string
+            // is utilized strictly as metadata (e.g., attaching the source file name to the DTO or hashing)
+            // without ever performing redundant file I/O on disk.
+            // This step emits the 20-row visual grid and the namespaced Dictionary<string, DetectedField> schema.
+            _logger.LogDebug("Executing cell extraction and schema analysis on sheet '{SheetName}' for file '{FileName}'...", targetDocument.Name, stagedFile.FileName);
+            StatementPreview preview = await _statementExtractor.Analyze(targetDocument, stagedFile.FileName);
 
-        // STEP 3: EXECUTE IN-MEMORY EXTRACTION ANALYSIS
-        // We call your extractor's Analyse method, passing both the in-memory document AND the FileName string.
-        // Guardrail Compliance: The extractor reads cells from 'targetDocument'. The 'stagedFile.FileName' string
-        // is utilized strictly as metadata (e.g., attaching the source file name to the DTO or hashing)
-        // without ever performing redundant file I/O on disk.
-        // This step emits the 20-row visual grid and the namespaced Dictionary<string, DetectedField> schema.
-        _logger.LogDebug("Executing cell extraction and schema analysis on sheet '{SheetName}' for file '{FileName}'...", targetDocument.Name, stagedFile.FileName);
-        StatementPreview preview = await _statementExtractor.Analyze(targetDocument, stagedFile.FileName);
-
-        // STEP 4: INITIALIZE THE IN-MEMORY EDITING SCRATCHPAD
-        // Before returning to the UI, we hand off the generated preview DTO to the StatementEditSession.
-        // This session acts as a lightweight "shopping cart" that will hold user column re-mappings,
-        // tag overrides, and row exclusions in memory until explicit commit confirmation.
-        // Per our rules, this initialization executes ZERO SQLite database writes.
-        _logger.LogDebug("Initializing StatementEditSession scratchpad with 0-based coordinate mappings.");
-        _statementEditSession.Initialize(preview);
+            // STEP 4: INITIALIZE THE IN-MEMORY EDITING SCRATCHPAD
+            // Before returning to the UI, we hand off the generated preview DTO to the StatementEditSession.
+            // This session acts as a lightweight "shopping cart" that will hold user column re-mappings,
+            // tag overrides, and row exclusions in memory until explicit commit confirmation.
+            // Per our rules, this initialization executes ZERO SQLite database writes.
+            _logger.LogDebug("Initializing StatementEditSession scratchpad with 0-based coordinate mappings.");
+            _statementEditSession.Initialize(preview);
 
 
-        // STEP 5: RETURN TO UI FOR RENDERING
-        // The Avalonia UI binds to this DTO to render dropdown mappings (using 0-based integer indexing)
-        // and displays warning badges if required core columns were flagged as undetected (-1 index).
-        return preview;
+            // STEP 5: RETURN TO UI FOR RENDERING
+            // The Avalonia UI binds to this DTO to render dropdown mappings (using 0-based integer indexing)
+            // and displays warning badges if required core columns were flagged as undetected (-1 index).
+            return preview;
+        }
+        catch (Exception ex)
+        {
+            // TIER 2 SINK: Trap extraction blowups, clean up the file lock, and package the error
+            _logger.LogError(ex, "Extraction analysis failed catastrophically for file '{FileName}'.", stagedFile.FileName);
+
+            // Immediately release OS lock since this file is now in an unrecoverable state
+            DiscardFile(fileId);
+
+            throw new InvalidOperationException($"Failed to analyze the document '{stagedFile.FileName}'. The file structure may be severely corrupted.", ex);
+        }
     }
 
     /// <summary>
