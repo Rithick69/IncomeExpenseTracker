@@ -15,4 +15,6 @@ public interface IImportBatchService
         int? accountId = null,
         IDbConnection? conn = null,
         IDbTransaction? tx = null);
+
+    Task DeleteBatchAsync(int batchId, IDbConnection? conn = null, IDbTransaction? tx = null);
 }

@@ -110,6 +110,32 @@ public class TagService : ITagService
         }
     }
 
+    public async Task<int> GetTagIdByName(string name, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Tag name cannot be empty.", nameof(name));
+
+        const string sql = "SELECT Id FROM Tags WHERE Name = @Name LIMIT 1;";
+
+        try
+        {
+            if (conn != null && tx != null)
+            {
+                _logger.LogDebug("Executing transactional GetTagIdByName for tag: {TagName}", name);
+                return await conn.ExecuteScalarAsync<int>(sql, new { Name = name }, tx);
+            }
+
+            _logger.LogDebug("Executing standalone GetTagIdByName for tag: {TagName}", name);
+            return await _databaseService.ExecuteWithRetryAsync(c =>
+                c.ExecuteScalarAsync<int>(sql, new { Name = name }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to GetTagIdByName for tag '{TagName}'.", name);
+            throw;
+        }
+    }
+
     public async Task UpdateTagAsync(int tagId, string name, int? subCategoryId = null)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -133,20 +159,27 @@ public class TagService : ITagService
         }
     }
 
-    public async Task DeleteTagAsync(int tagId)
+    public async Task DeleteTagAsync(int tagId, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         try
         {
             _logger.LogInformation("Attempting deletion for TagId {TagId}.", tagId);
 
-            await _databaseService.ExecuteWithRetryAsync(async conn =>
+            if (conn != null && tx != null)
             {
-                // 1. Delete associated rules first to keep schema clean
-                await conn.ExecuteAsync("DELETE FROM TagRules WHERE TagId = @Id;", new { Id = tagId });
-
-                // 2. Delete tag (Will throw SQLite FK Exception if historical transactions reference this TagId!)
-                await conn.ExecuteAsync("DELETE FROM Tags WHERE Id = @Id;", new { Id = tagId });
-            });
+                _logger.LogDebug("Executing transactional DeleteTagAsync for TagId {TagId}.", tagId);
+                await conn.ExecuteAsync("DELETE FROM TagRules WHERE TagId = @Id;", new { Id = tagId }, tx);
+                await conn.ExecuteAsync("DELETE FROM Tags WHERE Id = @Id;", new { Id = tagId }, tx);
+            }
+            else
+            {
+                _logger.LogDebug("Executing standalone DeleteTagAsync for TagId {TagId}.", tagId);
+                await _databaseService.ExecuteWithRetryAsync(async c =>
+                {
+                    await c.ExecuteAsync("DELETE FROM TagRules WHERE TagId = @Id;", new { Id = tagId });
+                    await c.ExecuteAsync("DELETE FROM Tags WHERE Id = @Id;", new { Id = tagId });
+                });
+            }
 
             InvalidateCache();
             _logger.LogInformation("Successfully deleted TagId {TagId} and its associated rules.", tagId);
@@ -228,6 +261,33 @@ public class TagService : ITagService
         }
     }
 
+    public async Task DeleteRulesByTagId(int tagId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        const string sql = "DELETE FROM TagRules WHERE TagId = @TagId;";
+
+        try
+        {
+            _logger.LogDebug("Deleting all rules for TagId {TagId}.", tagId);
+
+            if (conn != null && tx != null)
+            {
+                await conn.ExecuteAsync(sql, new { TagId = tagId }, tx);
+            }
+            else
+            {
+                await _databaseService.ExecuteWithRetryAsync(c =>
+                    c.ExecuteAsync(sql, new { TagId = tagId }));
+            }
+
+            InvalidateCache();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete rules for TagId {TagId}.", tagId);
+            throw;
+        }
+    }
+
     public async Task DeleteRuleAsync(int ruleId)
     {
         const string sql = "DELETE FROM TagRules WHERE Id = @Id;";
@@ -294,6 +354,50 @@ public class TagService : ITagService
         {
             // Log warning instead of rethrowing to ensure background learning failures never crash the UI
             _logger.LogError(ex, "Background self-learning failed for description '{Description}' and TagId {TagId}.", rawDescription, targetTagId);
+            throw;
+        }
+    }
+
+    public async Task FloatTagsBySubCategoryAsync(int subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        try
+        {
+            const string sql = "UPDATE Tags SET SubCategoryId = NULL WHERE SubCategoryId = @SubCategoryId;";
+
+            if (conn != null)
+                await conn.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }, tx);
+            else
+                await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }));
+
+            InvalidateCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to float tags for SubCategoryId {SubCategoryId}.", subCategoryId);
+            throw;
+        }
+    }
+
+    public async Task FloatTagsByCategoryAsync(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        try
+        {
+            const string sql = @"
+                UPDATE Tags
+                SET SubCategoryId = NULL
+                WHERE SubCategoryId IN (SELECT Id FROM SubCategories WHERE CategoryId = @CategoryId);";
+
+            if (conn != null)
+                await conn.ExecuteAsync(sql, new { CategoryId = categoryId }, tx);
+            else
+                await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { CategoryId = categoryId }));
+
+            InvalidateCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to float tags for CategoryId {CategoryId}.", categoryId);
+            throw;
         }
     }
 }

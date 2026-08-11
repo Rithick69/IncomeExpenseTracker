@@ -14,4 +14,9 @@ public interface IEntityService
     Task<List<Entity>> GetAllEntities(IDbConnection? conn = null, IDbTransaction? tx = null);
     Task UpdateEntity(Entity entity, IDbConnection? conn = null, IDbTransaction? tx = null);
     Task DeleteEntity(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null);
+
+    /// <summary>
+    /// Evaluates if the Entity has any linked Accounts to enforce structural hard blocks.
+    /// </summary>
+    Task<bool> HasChildAccountsAsync(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null);
 }

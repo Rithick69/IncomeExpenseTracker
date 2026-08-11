@@ -27,7 +27,7 @@ public class Account
 
     public string Currency { get; set; } = "";
 
-    public DateTime CreatedDate { get; set; }
+    public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 
     public string CreditLimit { get; set; } = "";
 

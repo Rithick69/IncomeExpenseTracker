@@ -19,45 +19,49 @@ public interface ITransactionService
         IDbConnection? conn = null,
         IDbTransaction? tx = null);
 
-    Task<List<Transaction>> GetByBatchIdAsync(
-        int batchId,
-        IDbConnection? conn = null,
-        IDbTransaction? tx = null);
-
     Task DeleteByBatchIdAsync(
         int batchId,
         IDbConnection? conn = null,
         IDbTransaction? tx = null);
 
-    // -------------------------------------------------------------------------
-    // STATELESS DASHBOARD RETRIEVAL METHODS
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // BATCH UPDATES & ORCHESTRATION SUPPORT
+    // =========================================================================
 
     /// <summary>
-    /// Retrieves historical transactions ordered by date descending .
+    /// Executes a high-speed Dapper bulk update to apply UI corrections.
+    /// (Tags, Dates, Amounts, Entities). Clears the NeedsReview flag automatically.
+    /// </summary>
+    Task UpdateTransactionsBulkAsync(
+        IEnumerable<TransactionCorrectionDTO> corrections,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null);
+
+    /// <summary>
+    /// Re-parents all transactions associated with a deleted Tag to a fallback Tag.
+    /// </summary>
+    Task ReassignTransactionsToFallbackTagAsync(
+        int oldTagId,
+        int fallbackTagId,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null);
+
+    /// <summary>
+    /// Retrieves transactions based on optional filters: BatchId, AccountId, and SearchText.
     /// Supports optional SQL limit and offset for UI grid pagination.
+    /// Executes via B-tree indexes for performance.
     /// </summary>
-    Task<List<Transaction>> GetAllTransactionsAsync(
-        int? limit = null,
-        int? offset = null,
+    Task<List<Transaction>> GetFilteredTransactionsAsync(
+        TransactionFilterArgs args,
         IDbConnection? conn = null,
         IDbTransaction? tx = null);
 
     /// <summary>
-    /// Retrieves all transactions linked to a specific bank account or credit card [source: 2, 6].
-    /// Executes via B-tree index idx_transactions_accountid.
+    /// Retrieves the count of transactions based on optional filters: BatchId, AccountId, and SearchText.
+    /// Executes via B-tree indexes for performance.
     /// </summary>
-    Task<List<Transaction>> GetByAccountIdAsync(
-        int accountId,
-        IDbConnection? conn = null,
-        IDbTransaction? tx = null);
-
-    /// <summary>
-    /// Retrieves all transactions linked to a specific financial institution or merchant entity [source: 2, 6].
-    /// Executes via B-tree index idx_transactions_entity.
-    /// </summary>
-    Task<List<Transaction>> GetByEntityNameAsync(
-        string entityName,
+    Task<int> GetFilteredTransactionCountAsync(
+        TransactionFilterArgs args,
         IDbConnection? conn = null,
         IDbTransaction? tx = null);
 }

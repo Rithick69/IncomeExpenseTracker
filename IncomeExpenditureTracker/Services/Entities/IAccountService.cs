@@ -17,6 +17,17 @@ public interface IAccountService
 {
     Task<int> GetOrCreateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null);
     Task<List<Account>> GetAllAccounts(IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task<List<Account>> GetAccountsByEntityId(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null);
     Task UpdateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null);
     Task DeleteAccount(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null);
+
+    /// <summary>
+    /// Evaluates if the Account has any imported Transactions to enforce structural hard blocks.
+    /// </summary>
+    Task<bool> HasTransactionsAsync(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null);
+
+    /// <summary>
+    /// Re-parents all Accounts from a deleted Entity to Unassigned Entity (Id = 0) to maintain data integrity and avoid orphaned records.
+    /// </summary>
+    Task ReassignAccountsAsync(int sourceEntityId, int targetEntityId, IDbConnection? conn = null, IDbTransaction? tx = null);
 }

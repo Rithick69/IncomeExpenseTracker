@@ -43,8 +43,8 @@ public class DatabaseInitializer
             // -------------------------------------------------------------------------
             // We route all DDL (CREATE TABLE / CREATE INDEX) through ExecuteWithRetryAsync.
             // As noted in the architecture, this wrapper automatically fires:
-            // "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;" upon opening [source: 2],
-            // guaranteeing WAL concurrency mode and relational constraints are active [source: 2].
+            // "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;" upon opening,
+            // guaranteeing WAL concurrency mode and relational constraints are active.
             // -------------------------------------------------------------------------
             await _database.ExecuteWithRetryAsync(async (connection) =>
             {
@@ -61,7 +61,8 @@ public class DatabaseInitializer
 
                 CREATE TABLE IF NOT EXISTS Categories (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Name TEXT NOT NULL UNIQUE
+                    Name TEXT UNIQUE,
+                    CreatedDate DATETIME DEFAULT (datetime('now'))
                 );
 
                 ------------------------------------------------------------
@@ -81,9 +82,11 @@ public class DatabaseInitializer
 
                 CREATE TABLE IF NOT EXISTS SubCategories (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Name TEXT NOT NULL,
+                    Name TEXT,
                     CategoryId INTEGER,
+                    CreatedDate DATETIME DEFAULT (datetime('now')),
                     FOREIGN KEY(CategoryId) REFERENCES Categories(Id)
+                    UNIQUE(Name, CategoryId)
                 );
 
                 ------------------------------------------------------------
@@ -102,6 +105,7 @@ public class DatabaseInitializer
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL UNIQUE,
                     SubCategoryId INTEGER,
+                    CreatedDate DATETIME DEFAULT (datetime('now')),
                     FOREIGN KEY(SubCategoryId) REFERENCES SubCategories(Id)
                 );
 
@@ -124,6 +128,7 @@ public class DatabaseInitializer
                     Keyword TEXT NOT NULL,
                     TagId INTEGER,
                     Priority INTEGER DEFAULT 10,
+                    CreatedDate DATETIME DEFAULT (datetime('now')),
                     FOREIGN KEY(TagId) REFERENCES Tags(Id)
                 );
 
@@ -131,8 +136,6 @@ public class DatabaseInitializer
 
                 CREATE INDEX IF NOT EXISTS idx_tagrules_keyword ON TagRules(Keyword);
                 CREATE INDEX IF NOT EXISTS idx_tagrules_tagid ON TagRules(TagId);
-
-                INSERT OR IGNORE INTO Tags (Id, Name, SubCategoryId) VALUES (1, 'Misc', NULL);
 
                 ------------------------------------------------------------
                 -- Unified View for Tag, SubCategory, Category
@@ -159,7 +162,7 @@ public class DatabaseInitializer
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL UNIQUE,
                     Country TEXT,
-                    CreatedDate TEXT
+                    CreatedDate DATETIME DEFAULT (datetime('now'))
                 );
 
                 ------------------------------------------------------------
@@ -177,7 +180,7 @@ public class DatabaseInitializer
                     EntityName TEXT,
                     AccountType TEXT,
                     Currency TEXT,
-                    CreatedDate DATETIME,
+                    CreatedDate DATETIME DEFAULT (datetime('now')),
                     CreditLimit TEXT,
                     FOREIGN KEY(EntityId) REFERENCES Entities(Id)
                 );
@@ -192,7 +195,7 @@ public class DatabaseInitializer
                 --
                 -- Important fields:
                 --
-                -- Entity → extracted counterparty (for readability)
+                -- Source → extracted counterparty (for readability)
                 -- Credit → money received
                 -- Debit → money spent
                 --
@@ -204,14 +207,14 @@ public class DatabaseInitializer
                     Date TEXT NOT NULL,
                     AccountId INTEGER,
                     Description TEXT,
-                    Entity TEXT,
+                    Source TEXT,
                     Credit REAL,
                     Debit REAL,
                     TransactionType TEXT,
                     ImportBatchId INTEGER,
                     TagId INTEGER,
                     TransactionHash TEXT,
-                    CreatedDate TEXT,
+                    CreatedDate DATETIME DEFAULT (datetime('now')),
                     NeedsReview BOOLEAN,
                     RawAmountText TEXT,
                     ParseErrorMessage TEXT,
@@ -220,7 +223,7 @@ public class DatabaseInitializer
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_transactions_accountid ON Transactions(AccountId);
-                CREATE INDEX IF NOT EXISTS idx_transactions_entity ON Transactions(Entity);
+                CREATE INDEX IF NOT EXISTS idx_transactions_source ON Transactions(Source);
 
                 ------------------------------------------------------------
                 -- IMPORT BATCHES
@@ -233,7 +236,7 @@ public class DatabaseInitializer
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     FileName TEXT,
                     Source TEXT,
-                    ImportDate TEXT,
+                    ImportDate DATETIME DEFAULT (datetime('now')),
                     AccountId INTEGER,
                     FOREIGN KEY(AccountId) REFERENCES Accounts(Id)
                 );
@@ -253,11 +256,25 @@ public class DatabaseInitializer
                     Synonym TEXT NOT NULL,
                     Priority INTEGER DEFAULT 10,
                     Category TEXT NOT NULL,
-                    UNIQUE(FieldType, Synonym, Category)
+                    CreatedDate DATETIME DEFAULT (datetime('now')),
+                    CONSTRAINT unique_synonym UNIQUE(FieldType, Synonym, Category)
                 );";
 
                 // Execute schema DDL asynchronously
                 await connection.ExecuteAsync(schemaDdl);
+            });
+
+            await _database.ExecuteWithRetryAsync(async (c) =>
+            {
+                const string seedSql = @"
+                    INSERT OR IGNORE INTO Tags (Id, Name, SubCategoryId)
+                        VALUES (999, @MiscTag, NULL);
+                ";
+
+                await c.ExecuteAsync(seedSql, new
+                {
+                    MiscTag = SystemConstants.MiscTag
+                });
             });
 
             // -------------------------------------------------------------------------

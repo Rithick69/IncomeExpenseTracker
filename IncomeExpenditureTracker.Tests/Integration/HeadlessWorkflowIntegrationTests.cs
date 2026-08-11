@@ -91,7 +91,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // User creates a 'Groceries' tag and a 'Misc' tag
             int groceriesTagId = await _tagService.GetOrCreateTagAsync("Groceries", 1);
-            int miscTagId = await _tagService.GetOrCreateTagAsync("Misc", 99);
+            int miscTagId = await _tagService.GetOrCreateTagAsync("Misc", 999);
 
             // User manually adds a baseline rule
             await _tagService.AddRuleAsync("WALMART", groceriesTagId, 10);

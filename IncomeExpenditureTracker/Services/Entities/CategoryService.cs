@@ -13,39 +13,38 @@ using IncomeExpenditureTracker.Services.Database;
 namespace IncomeExpenditureTracker.Services.Entities;
 
 // ------------------------------------------------------------
-// ENTITY SERVICE
+// CATEGORY SERVICE
 // ------------------------------------------------------------
-// Handles CRUD operations for Entities.
+// Handles CRUD operations for Categories.
 //
-// Entities represent financial institutions such as:
-// • Banks
-// • Credit card providers
-// • Wallet services
+// Categories represent broad financial classifications such as:
+// • Income
+// • Expenses
 //-------------------------------------------------------------
-public class EntityService : IEntityService
+public class CategoryService : ICategoryService
 {
     private readonly IDatabaseService _database;
-    private readonly ILogger<EntityService> _logger;
+    private readonly ILogger<CategoryService> _logger;
 
-    private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _entityIdCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _categoryIdCache = new(StringComparer.OrdinalIgnoreCase);
 
-    public EntityService(IDatabaseService database, ILogger<EntityService> logger)
+    public CategoryService(IDatabaseService database, ILogger<CategoryService> logger)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     // ------------------------------------------------------------
-    // FIND OR CREATE ENTITY
+    // FIND OR CREATE Category
     // ------------------------------------------------------------
     /// <summary>
-    /// Resolves an existing Entity ID or atomically creates a new one in O(1) memory or a single SQL execution.
+    /// Resolves an existing Category ID or atomically creates a new one in O(1) memory or a single SQL execution.
     /// Accepts optional transaction boundaries for all-or-nothing batch imports.
     /// </summary>
-    public async Task<int> GetOrCreateEntity(string name, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<int> GetOrCreateCategory(string name, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         if (string.IsNullOrWhiteSpace(name))
-            throw new ArgumentException("Entity name cannot be empty.", nameof(name));
+            throw new ArgumentException("Category name cannot be empty.", nameof(name));
 
         var normalizedName = name.Trim().ToUpperInvariant();
 
@@ -60,11 +59,11 @@ public class EntityService : IEntityService
                 // We read from the RAM cache if available, but if it is a cache MISS, we MUST execute
                 // directly against the DB without saving the new ID back to our global RAM cache.
                 // Why? If the batch import later throws an exception and rolls back, any newly inserted
-                // Entity ID vanishes from SQLite. If we cached it in RAM, subsequent tasks would crash with FK violations!
+                // Category ID vanishes from SQLite. If we cached it in RAM, subsequent tasks would crash with FK violations!
                 // -------------------------------------------------------------------------
                 if (tx != null)
                 {
-                    if (_entityIdCache.TryGetValue(normalizedName, out var existingLazy) && !existingLazy.Value.IsFaulted)
+                    if (_categoryIdCache.TryGetValue(normalizedName, out var existingLazy) && !existingLazy.Value.IsFaulted)
                     {
                         return await existingLazy.Value;
                     }
@@ -73,7 +72,7 @@ public class EntityService : IEntityService
                 }
 
                 // Standard autocommit execution: safe to use GetOrAdd stampede protection
-                var lazyId = _entityIdCache.GetOrAdd(normalizedName, key =>
+                var lazyId = _categoryIdCache.GetOrAdd(normalizedName, key =>
                     new Lazy<Task<int>>(() => ExecuteUpsertInternalAsync(name, conn, tx), LazyThreadSafetyMode.ExecutionAndPublication));
 
                 return await lazyId.Value;
@@ -82,49 +81,46 @@ public class EntityService : IEntityService
         catch (Exception ex)
         {
             // Fault Eviction: Remove poisoned keys so subsequent requests can retry cleanly
-            _logger.LogError(ex, "Failed to resolve or create entity '{EntityName}'. Evicting cache key.", normalizedName);
-            _entityIdCache.TryRemove(normalizedName, out _);
+            _logger.LogError(ex, "Failed to resolve or create category '{CategoryName}'. Evicting cache key.", normalizedName);
+            _categoryIdCache.TryRemove(normalizedName, out _);
             throw;
         }
     }
 
     // ------------------------------------------------------------
-    // GET ALL ENTITIES
+    // GET ALL CATEGORIES
     // ------------------------------------------------------------
-    public async Task<List<Entity>> GetAllEntities(IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<List<Category>> GetAllCategories(IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         try
         {
             return await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                var entities = await connection.QueryAsync<Entity>(
-                    "SELECT Id, Name, Country, CreatedDate FROM Entities ORDER BY Name ASC",
+                var categories = await connection.QueryAsync<Category>(
+                    "SELECT Id, Name FROM Categories ORDER BY Name ASC",
                     transaction: transaction);
 
-                return entities.ToList();
+                return categories.ToList();
             }, conn, tx);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to fetch entities.");
+            _logger.LogError(ex, "Failed to fetch categories.");
             throw;
         }
     }
 
     // ------------------------------------------------------------
-    // UPDATE ENTITY
+    // UPDATE CATEGORY
     // ------------------------------------------------------------
-    public async Task UpdateEntity(Entity entity, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task UpdateCategory(Category category, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         try
         {
             var updates = new List<string>();
 
-            if (!string.IsNullOrWhiteSpace(entity.Name))
+            if (!string.IsNullOrWhiteSpace(category.Name))
                 updates.Add("Name = @Name");
-
-            if (!string.IsNullOrWhiteSpace(entity.Country))
-                updates.Add("Country = @Country");
 
             if (updates.Count == 0)
                 return;
@@ -137,7 +133,7 @@ public class EntityService : IEntityService
 
             await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                await connection.ExecuteAsync(sql, entity, transaction: transaction);
+                await connection.ExecuteAsync(sql, category, transaction: transaction);
                 return true;
             }, conn, tx);
 
@@ -145,33 +141,33 @@ public class EntityService : IEntityService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to update entity with ID {EntityId}.", entity.Id);
+            _logger.LogError(ex, "Failed to update category with ID {CategoryId}.", category.Id);
             throw;
         }
     }
 
     // ------------------------------------------------------------
-    // DELETE ENTITY
+    // DELETE CATEGORY
     // ------------------------------------------------------------
-    public async Task DeleteEntity(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task DeleteCategory(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         try
         {
             await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                // Check if entity is used by accounts
+                // Check if category is used by subcategories
                 var usageCount = await connection.ExecuteScalarAsync<int>(
                     @"SELECT COUNT(*)
-                      FROM Accounts
-                      WHERE EntityId = @EntityId",
-                    new { EntityId = entityId }, transaction: transaction);
+                      FROM SubCategories
+                      WHERE CategoryId = @CategoryId",
+                    new { CategoryId = categoryId }, transaction: transaction);
 
                 if (usageCount > 0)
-                    throw new InvalidOperationException("Cannot delete entity because accounts reference it.");
+                    throw new InvalidOperationException("Cannot delete category because subcategories reference it.");
 
                 await connection.ExecuteAsync(
-                    @"DELETE FROM Entities WHERE Id = @EntityId",
-                    new { EntityId = entityId }, transaction: transaction);
+                    @"DELETE FROM Categories WHERE Id = @CategoryId",
+                    new { CategoryId = categoryId }, transaction: transaction);
 
                 return true;
             }, conn, tx);
@@ -180,24 +176,9 @@ public class EntityService : IEntityService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete entity with ID {EntityId}.", entityId);
+            _logger.LogError(ex, "Failed to delete category with ID {CategoryId}.", categoryId);
             throw;
         }
-    }
-
-    public async Task<bool> HasChildAccountsAsync(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null)
-    {
-        const string sql = "SELECT 1 FROM Accounts WHERE EntityId = @EntityId LIMIT 1;";
-
-        if (conn != null)
-        {
-            return await conn.ExecuteScalarAsync<bool>(sql, new { EntityId = entityId }, transaction: tx);
-        }
-
-        return await _database.ExecuteWithRetryAsync(async (c) =>
-        {
-            return await c.ExecuteScalarAsync<bool>(sql, new { EntityId = entityId });
-        });
     }
 
     /// <summary>
@@ -216,19 +197,18 @@ public class EntityService : IEntityService
             // This guarantees race-condition free execution across concurrent threads.
             // -------------------------------------------------------------------------
             var sql = @"
-                INSERT OR IGNORE INTO Entities (Name, Country, CreatedDate)
-                VALUES (@Name, @Country, @CreatedDate);
+                INSERT OR IGNORE INTO Categories (Name, CreatedDate)
+                VALUES (@Name, @CreatedDate);
 
-                SELECT Id FROM Entities WHERE Name = @Name;";
+                SELECT Id FROM Categories WHERE Name = @Name;";
 
             var id = await connection.ExecuteScalarAsync<long>(sql, new
             {
                 Name = name.Trim(),
-                Country = string.Empty,
-                CreatedDate = DateTime.UtcNow
+                CreatedDate = DateTime.UtcNow.ToString("o")
             }, transaction: transaction);
 
-            _logger.LogDebug("Resolved Entity '{EntityName}' to ID {Id}.", name, id);
+            _logger.LogDebug("Resolved Category '{CategoryName}' to ID {Id}.", name, id);
             return (int)id;
         }, conn, tx);
     }
@@ -254,7 +234,7 @@ public class EntityService : IEntityService
 
     private void InvalidateCache()
     {
-        _entityIdCache.Clear();
-        _logger.LogInformation("Evicted EntityService RAM cache due to data mutation.");
+        _categoryIdCache.Clear();
+        _logger.LogInformation("Evicted CategoryService RAM cache due to data mutation.");
     }
 }

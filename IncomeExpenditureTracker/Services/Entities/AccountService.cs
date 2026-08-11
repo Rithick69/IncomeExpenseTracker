@@ -2,6 +2,7 @@ using System;
 using Dapper;
 using System.Linq;
 using System.Data;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -76,7 +77,7 @@ public class AccountService : IAccountService
 
             // Standard lock-free stampede protection for autocommit execution
             var lazyId = _accountIdCache.GetOrAdd(cacheKey, key =>
-                new Lazy<Task<int>>(() => ExecuteUpsertInternalAsync(account, conn, tx)));
+                new Lazy<Task<int>>(() => ExecuteUpsertInternalAsync(account, conn, tx), LazyThreadSafetyMode.ExecutionAndPublication));
 
             return await lazyId.Value;
         }
@@ -109,6 +110,24 @@ public class AccountService : IAccountService
         catch (Exception ex)
         {
             _logger.LogError($"[AccountService] Failed to fetch account details: {ex.Message}");
+            throw;
+        }
+    }
+
+    public async Task<List<Account>> GetAccountsByEntityId(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        try
+        {
+            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            {
+                const string sql = "SELECT * FROM Accounts WHERE EntityId = @EntityId ORDER BY AccountNumber ASC;";
+                var accounts = await connection.QueryAsync<Account>(sql, new { EntityId = entityId }, transaction: transaction);
+                return accounts.ToList();
+            }, conn, tx);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch accounts for Entity ID {EntityId}.", entityId);
             throw;
         }
     }
@@ -210,6 +229,58 @@ public class AccountService : IAccountService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to delete account ID {Id}.", accountId);
+            throw;
+        }
+    }
+
+    public async Task<bool> HasTransactionsAsync(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        try
+        {
+            // High-speed lookup relying on idx_transactions_accountid
+            const string sql = "SELECT 1 FROM Transactions WHERE AccountId = @AccountId LIMIT 1;";
+
+            if (conn != null)
+            {
+                return await conn.ExecuteScalarAsync<bool>(sql, new { AccountId = accountId }, transaction: tx);
+            }
+
+            return await _database.ExecuteWithRetryAsync(async (c) =>
+            {
+                return await c.ExecuteScalarAsync<bool>(sql, new { AccountId = accountId });
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to check transactions for account ID {Id}.", accountId);
+            throw;
+        }
+    }
+
+    public async Task ReassignAccountsAsync(int oldEntityId, int targetEntityId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        try
+        {
+            const string sql = @"
+                UPDATE Accounts
+                SET EntityId = @targetEntityId
+                WHERE EntityId = @OldEntityId;";
+
+            if (conn != null)
+            {
+                await conn.ExecuteAsync(sql, new { OldEntityId = oldEntityId, targetEntityId }, transaction: tx);
+            }
+            else
+            {
+                await _database.ExecuteWithRetryAsync(async (c) =>
+                {
+                    await c.ExecuteAsync(sql, new { OldEntityId = oldEntityId, targetEntityId });
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reassign accounts from Entity ID {OldEntityId} to {TargetEntityId}.", oldEntityId, targetEntityId);
             throw;
         }
     }

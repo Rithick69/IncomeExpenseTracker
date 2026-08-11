@@ -88,7 +88,7 @@ public class ImportBatchService : IImportBatchService
                 {
                     FileName = fileName,
                     Source = source,
-                    ImportDate = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                    ImportDate = DateTime.UtcNow,
                     AccountId = accountId
                 }, transaction: transaction);
 
@@ -114,8 +114,63 @@ public class ImportBatchService : IImportBatchService
     }
 
     /// <summary>
+    /// Deletes an import batch record by its ID. This method is intended for use in scenarios where
+    /// an import batch needs to be removed, such as when rolling back an import operation.
+    public async Task DeleteBatchAsync(int batchId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        try
+        {
+            await ExecuteDbActionAsync(async (connection, transaction) =>
+            {
+                const string sql = "DELETE FROM ImportBatches WHERE Id = @BatchId;";
+                int rowsAffected = await connection.ExecuteAsync(sql, new { BatchId = batchId }, transaction: transaction);
+
+                if (rowsAffected == 0)
+                {
+                    _logger.LogWarning("No ImportBatch found with ID {BatchId} to delete.", batchId);
+                }
+                else
+                {
+                    _logger.LogInformation("Deleted ImportBatch with ID {BatchId}.", batchId);
+                }
+            }, conn, tx);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete import batch record with ID {BatchId}.", batchId);
+            throw;
+        }
+    }
+
+    // =========================================================================
+    // EXECUTION WRAPPERS
+    // =========================================================================
+
+    /// <summary>
+    /// Overload for operations that do NOT return a result (e.g., DELETE, UPDATE).
     /// Routes queries through the resilient ExecuteWithRetryAsync wrapper unless an active
-    /// connection and transaction are passed from a parent orchestrator[cite: 1].
+    /// connection and transaction are passed from a parent orchestrator.
+    /// </summary>
+    private async Task ExecuteDbActionAsync(
+        Func<IDbConnection, IDbTransaction?, Task> action,
+        IDbConnection? existingConn,
+        IDbTransaction? existingTx)
+    {
+        if (existingConn != null)
+        {
+            // Execute directly within the parent transaction boundary
+            await action(existingConn, existingTx);
+            return;
+        }
+
+        // Execute as a standalone, retry-protected UI operation
+        await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+    }
+
+    /// <summary>
+    /// Overload for operations that DO return a result (e.g., SELECT).
+    /// Routes queries through the resilient ExecuteWithRetryAsync wrapper unless an active
+    /// connection and transaction are passed from a parent orchestrator.
     /// </summary>
     private async Task<T> ExecuteDbActionAsync<T>(
         Func<IDbConnection, IDbTransaction?, Task<T>> action,

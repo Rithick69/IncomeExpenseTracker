@@ -80,11 +80,16 @@ namespace IncomeExpenditureTracker.Tests.Integration
             mockLoader.Setup(l => l.LoadStatementAsync(file3, null!))
                       .ReturnsAsync(CreateMockLoadResult(file3));
 
+            // Declare and initialize the transient mocks before using them
+            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
+            var mockEditSession = new Mock<IStatementEditSession>();
+            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+
             var manager = new StatementManager(
                 mockLoader.Object,
-                new Mock<IStatementExtractor<IXLWorksheet>>().Object,
-                new Mock<IStatementEditSession>().Object,
-                new Mock<IStatementImport<IXLWorksheet>>().Object,
+                () => mockExtractor.Object,    // Func<IStatementExtractor>
+                () => mockEditSession.Object,  // Func<IStatementEditSession>
+                () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
                 _logger // Injecting the xUnit bridged logger[cite: 5]
             );
@@ -124,12 +129,9 @@ namespace IncomeExpenditureTracker.Tests.Integration
             mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!))
                       .ReturnsAsync(CreateMockLoadResult(validFile));
 
-            var mockImportService = new Mock<IStatementImport<IXLWorksheet>>();
-            mockImportService
-                .Setup(i => i.ImportConfirmedStatementAsync(It.IsAny<IXLWorksheet>(), It.IsAny<StatementPreview>()))
-                .Returns(Task.CompletedTask);
-
             var mockEditSession = new Mock<IStatementEditSession>();
+            var mockImportService = new Mock<IStatementImport<IXLWorksheet>>();
+            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
 
             var mockSynonymService = new Mock<ISynonymService>();
             mockSynonymService
@@ -138,9 +140,9 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             var manager = new StatementManager(
                 mockLoader.Object,
-                new Mock<IStatementExtractor<IXLWorksheet>>().Object,
-                mockEditSession.Object,
-                mockImportService.Object,
+                () => mockExtractor.Object,
+                () => mockEditSession.Object,
+                () => mockImportService.Object,
                 mockSynonymService.Object,
                 _logger
             );
@@ -221,14 +223,19 @@ namespace IncomeExpenditureTracker.Tests.Integration
             mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!))
                       .ReturnsAsync(CreateMockLoadResult(validFile));
 
+            // Declare and initialize the transient mocks before using them
+            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
+            var mockEditSession = new Mock<IStatementEditSession>();
+            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+
             var manager = new StatementManager(
                 mockLoader.Object,
-                new Mock<IStatementExtractor<IXLWorksheet>>().Object,
-                new Mock<IStatementEditSession>().Object,
-                new Mock<IStatementImport<IXLWorksheet>>().Object,
+                () => mockExtractor.Object,    // Func<IStatementExtractor>
+                () => mockEditSession.Object,  // Func<IStatementEditSession>
+                () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger
-            );
+                _logger // Injecting the xUnit bridged logger[cite: 5]
+            ); ;
 
             var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!);
             Guid stagedFileId = stagingResult.Successes.First().Id;
@@ -260,18 +267,23 @@ namespace IncomeExpenditureTracker.Tests.Integration
             mockLoader.Setup(l => l.LoadStatementAsync(corruptFile, null!))
                       .ReturnsAsync(CreateMockLoadResult(corruptFile));
 
+            // Declare and initialize the transient mocks before using them
             var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
+            var mockEditSession = new Mock<IStatementEditSession>();
+            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+
             mockExtractor.Setup(e => e.Analyze(It.IsAny<IXLWorksheet>(), It.IsAny<string>(), It.IsAny<bool>()))
                          .ThrowsAsync(new Exception("Simulated catastrophic closedXML failure."));
 
             var manager = new StatementManager(
                 mockLoader.Object,
-                mockExtractor.Object,
-                new Mock<IStatementEditSession>().Object,
-                new Mock<IStatementImport<IXLWorksheet>>().Object,
+                () => mockExtractor.Object,    // Func<IStatementExtractor>
+                () => mockEditSession.Object,  // Func<IStatementEditSession>
+                () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger
+                _logger // Injecting the xUnit bridged logger
             );
+
 
             var stagingResult = await manager.StageFilesAsync(new List<string> { corruptFile }, null!);
             Guid stagedFileId = stagingResult.Successes.First().Id;
@@ -295,14 +307,17 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // EXPECTATION: It must throw a KeyNotFoundException immediately.
             // =================================================================================
 
-            // Arrange
+            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
+            var mockEditSession = new Mock<IStatementEditSession>();
+            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+
             var manager = new StatementManager(
                 new Mock<IStatementLoader>().Object,
-                new Mock<IStatementExtractor<IXLWorksheet>>().Object,
-                new Mock<IStatementEditSession>().Object,
-                new Mock<IStatementImport<IXLWorksheet>>().Object,
+                () => mockExtractor.Object,    // Func<IStatementExtractor>
+                () => mockEditSession.Object,  // Func<IStatementEditSession>
+                () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger
+                _logger // Injecting the xUnit bridged logger
             );
 
             Guid ghostFileId = Guid.NewGuid();
@@ -322,14 +337,17 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // DECISION: Pass a list of 6 file paths. It must reject the batch instantly.
             // =================================================================================
 
-            // Arrange
+            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
+            var mockEditSession = new Mock<IStatementEditSession>();
+            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+
             var manager = new StatementManager(
                 new Mock<IStatementLoader>().Object,
-                new Mock<IStatementExtractor<IXLWorksheet>>().Object,
-                new Mock<IStatementEditSession>().Object,
-                new Mock<IStatementImport<IXLWorksheet>>().Object,
+                () => mockExtractor.Object,    // Func<IStatementExtractor>
+                () => mockEditSession.Object,  // Func<IStatementEditSession>
+                () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger
+                _logger // Injecting the xUnit bridged logger
             );
 
             // Create a dummy list of 6 strings
