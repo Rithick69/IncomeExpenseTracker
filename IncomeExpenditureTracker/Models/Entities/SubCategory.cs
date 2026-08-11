@@ -1,3 +1,4 @@
+using System;
 namespace IncomeExpenditureTracker.Models;
 
 // ------------------------------------------------------------
@@ -31,4 +32,6 @@ public class SubCategory
 
     // Foreign key linking to Category
     public int CategoryId { get; set; }
+
+    public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 }

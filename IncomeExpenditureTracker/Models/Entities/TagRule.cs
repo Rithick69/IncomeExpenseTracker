@@ -39,4 +39,6 @@ public class TagRule
     // If both match, MUTUALFUNDS wins.
     // ------------------------------------------------------------
     public int Priority { get; set; }
+
+    public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 }

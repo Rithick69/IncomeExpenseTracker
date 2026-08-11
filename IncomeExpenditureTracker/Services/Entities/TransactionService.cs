@@ -79,13 +79,13 @@ public class TransactionService : ITransactionService
             const string sql = @"
                 INSERT INTO Transactions
                 (
-                    Date, AccountId, Description, Entity,
+                    Date, AccountId, Description, Source,
                     Credit, Debit, TransactionType, ImportBatchId,
                     TagId, TransactionHash, CreatedDate
                 )
                 VALUES
                 (
-                    @Date, @AccountId, @Description, @Entity,
+                    @Date, @AccountId, @Description, @Source,
                     @Credit, @Debit, @TransactionType, @ImportBatchId,
                     @TagId, @TransactionHash, @CreatedDate
                 );";
@@ -111,17 +111,13 @@ public class TransactionService : ITransactionService
         }
     }
 
-    // ------------------------------------------------------------
-    // GET TRANSACTIONS BY IMPORT BATCH
-    // ------------------------------------------------------------
-    // Returns all transactions belonging to a specific import.
-    //
-    // Useful for:
-    // • Viewing imported statement
-    // • Debugging import results
-    // ------------------------------------------------------------
-    public async Task<List<Transaction>> GetByBatchIdAsync(
-        int batchId,
+    /// <summary>
+    /// Retrieves a paginated list of transactions based on UI filters.
+    /// Utilizes dynamic SQL building to ensure SQLite leverages B-Tree indexes
+    /// (e.g., idx_transactions_accountid) instead of performing full table scans.
+    /// </summary>
+    public async Task<List<Transaction>> GetFilteredTransactionsAsync(
+        TransactionFilterArgs args,
         IDbConnection? conn = null,
         IDbTransaction? tx = null)
     {
@@ -129,14 +125,62 @@ public class TransactionService : ITransactionService
         {
             return await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                const string sql = @"
-                    SELECT * FROM Transactions
-                    WHERE ImportBatchId = @BatchId
-                    ORDER BY Date ASC;";
+                var conditions = new List<string>();
+                var parameters = new DynamicParameters();
 
+                // 1. Build Index-Seekable WHERE Clause
+                // We strictly append conditions only if they exist to prevent "catch-all" query slowdowns.
+                if (args.BatchId.HasValue)
+                {
+                    conditions.Add("ImportBatchId = @BatchId");
+                    parameters.Add("@BatchId", args.BatchId.Value);
+                }
+
+                if (args.AccountId.HasValue)
+                {
+                    conditions.Add("AccountId = @AccountId");
+                    parameters.Add("@AccountId", args.AccountId.Value);
+                }
+
+                if (!string.IsNullOrWhiteSpace(args.Source))
+                {
+                    // Exact match for the B-Tree index (idx_transactions_source)
+                    conditions.Add("Source = @Source");
+                    parameters.Add("@Source", args.Source);
+                }
+
+                if (!string.IsNullOrWhiteSpace(args.SearchText))
+                {
+                    conditions.Add("Description LIKE @SearchText");
+                    parameters.Add("@SearchText", $"%{args.SearchText}%");
+                }
+
+                // 2. Construct Base SQL
+                var sql = "SELECT * FROM Transactions";
+                if (conditions.Any())
+                {
+                    sql += " WHERE " + string.Join(" AND ", conditions);
+                }
+
+                sql += " ORDER BY Date DESC";
+
+                // 3. Append UI Pagination
+                if (args.Limit.HasValue)
+                {
+                    sql += " LIMIT @Limit";
+                    parameters.Add("@Limit", args.Limit.Value);
+
+                    if (args.Offset.HasValue)
+                    {
+                        sql += " OFFSET @Offset";
+                        parameters.Add("@Offset", args.Offset.Value);
+                    }
+                }
+
+                // 4. Execute Query
                 var result = await connection.QueryAsync<Transaction>(
                     sql,
-                    new { BatchId = batchId },
+                    parameters,
                     transaction: transaction);
 
                 return result.ToList();
@@ -144,11 +188,70 @@ public class TransactionService : ITransactionService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to fetch transactions for Batch ID {BatchId}.", batchId);
-            throw;
+            _logger.LogError(ex, "Failed to fetch filtered transactions.");
+            throw; // Bubble-Up Principle: Let the ViewModel catch and display the error
         }
     }
 
+    /// <summary>
+    /// Retrieves the total count of transactions matching the UI filters for pagination logic.
+    /// Strips out ORDER BY and LIMIT/OFFSET for maximum execution speed.
+    /// </summary>
+    public async Task<int> GetFilteredTransactionCountAsync(
+        TransactionFilterArgs args,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null)
+    {
+        try
+        {
+            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            {
+                var conditions = new List<string>();
+                var parameters = new DynamicParameters();
+
+                if (args.BatchId.HasValue)
+                {
+                    conditions.Add("ImportBatchId = @BatchId");
+                    parameters.Add("@BatchId", args.BatchId.Value);
+                }
+
+                if (args.AccountId.HasValue)
+                {
+                    conditions.Add("AccountId = @AccountId");
+                    parameters.Add("@AccountId", args.AccountId.Value);
+                }
+
+                if (!string.IsNullOrWhiteSpace(args.Source))
+                {
+                    // Exact match for the B-Tree index (idx_transactions_source)
+                    conditions.Add("Source = @Source");
+                    parameters.Add("@Source", args.Source);
+                }
+
+                if (!string.IsNullOrWhiteSpace(args.SearchText))
+                {
+                    conditions.Add("Description LIKE @SearchText");
+                    parameters.Add("@SearchText", $"%{args.SearchText}%");
+                }
+
+                var sql = "SELECT COUNT(1) FROM Transactions";
+                if (conditions.Any())
+                {
+                    sql += " WHERE " + string.Join(" AND ", conditions);
+                }
+
+                return await connection.ExecuteScalarAsync<int>(
+                    sql,
+                    parameters,
+                    transaction: transaction);
+            }, conn, tx);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch filtered transaction count.");
+            throw;
+        }
+    }
     // ------------------------------------------------------------
     // DELETE TRANSACTIONS BY IMPORT BATCH
     // ------------------------------------------------------------
@@ -185,107 +288,65 @@ public class TransactionService : ITransactionService
     // DASHBOARD RETRIEVAL IMPLEMENTATIONS
     // -------------------------------------------------------------------------
 
-    public async Task<List<Transaction>> GetAllTransactionsAsync(
-        int? limit = null,
-        int? offset = null,
-        IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+    public async Task UpdateTransactionsBulkAsync(IEnumerable<TransactionCorrectionDTO> corrections, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         try
         {
-            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            // Dapper automatically iterates over the IEnumerable when passed to ExecuteAsync.
+            // We clear NeedsReview and ParseErrorMessage because the user manually intervened.
+            const string sql = @"
+                UPDATE Transactions
+                SET TagId = @TargetTagId,
+                    Date = @Date,
+                    Source = @Source,
+                    Debit = @Debit,
+                    Credit = @Credit,
+                    NeedsReview = 0,
+                    ParseErrorMessage = NULL
+                WHERE Id = @TransactionId;";
+
+            await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                var sql = "SELECT * FROM Transactions ORDER BY Date DESC";
-                if (limit.HasValue)
+                await connection.ExecuteAsync(sql, corrections, transaction: transaction);
+                return true;
+            }, conn, tx);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute bulk transaction update for {Count} records.", corrections.Count());
+            throw;
+        }
+    }
+
+    public async Task ReassignTransactionsToFallbackTagAsync(int oldTagId, int fallbackTagId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        try
+        {
+            const string sql = @"
+        UPDATE Transactions
+        SET TagId = @FallbackTagId
+        WHERE TagId = @OldTagId;";
+
+            if (conn != null)
+            {
+                await conn.ExecuteAsync(sql, new { OldTagId = oldTagId, FallbackTagId = fallbackTagId }, transaction: tx);
+            }
+            else
+            {
+                await _database.ExecuteWithRetryAsync(async (c) =>
                 {
-                    sql += " LIMIT @Limit";
-                    if (offset.HasValue)
-                    {
-                        sql += " OFFSET @Offset";
-                    }
-                }
-                sql += ";";
-
-                var result = await connection.QueryAsync<Transaction>(
-                    sql,
-                    new { Limit = limit, Offset = offset ?? 0 },
-                    transaction: transaction);
-
-                return result.ToList();
-            }, conn, tx);
+                    await c.ExecuteAsync(sql, new { OldTagId = oldTagId, FallbackTagId = fallbackTagId });
+                });
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to fetch paginated transaction history.");
+            _logger.LogError(ex, "Failed to reassign transactions from Tag ID {OldTagId} to fallback Tag ID {FallbackTagId}.", oldTagId, fallbackTagId);
             throw;
         }
     }
 
-    public async Task<List<Transaction>> GetByAccountIdAsync(
-        int accountId,
-        IDbConnection? conn = null,
-        IDbTransaction? tx = null)
-    {
-        try
-        {
-            return await ExecuteDbActionAsync(async (connection, transaction) =>
-            {
-                const string sql = @"
-                    SELECT * FROM Transactions
-                    WHERE AccountId = @AccountId
-                    ORDER BY Date DESC;";
-
-                var result = await connection.QueryAsync<Transaction>(
-                    sql,
-                    new { AccountId = accountId },
-                    transaction: transaction);
-
-                return result.ToList();
-            }, conn, tx);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to fetch transactions for Account ID {AccountId}.", accountId);
-            throw;
-        }
-    }
-
-    public async Task<List<Transaction>> GetByEntityNameAsync(
-        string entityName,
-        IDbConnection? conn = null,
-        IDbTransaction? tx = null)
-    {
-        if (string.IsNullOrWhiteSpace(entityName))
-            return new List<Transaction>();
-
-        try
-        {
-            return await ExecuteDbActionAsync(async (connection, transaction) =>
-            {
-                const string sql = @"
-                    SELECT * FROM Transactions
-                    WHERE Entity = @EntityName
-                    ORDER BY Date DESC;";
-
-                var result = await connection.QueryAsync<Transaction>(
-                    sql,
-                    new { EntityName = entityName.Trim() },
-                    transaction: transaction);
-
-                return result.ToList();
-            }, conn, tx);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to fetch transactions for Entity '{EntityName}'.", entityName);
-            throw;
-        }
-    }
-
-    private async Task<T> ExecuteDbActionAsync<T>(
-        Func<IDbConnection, IDbTransaction?, Task<T>> action,
-        IDbConnection? existingConn,
-        IDbTransaction? existingTx)
+    private async Task<T> ExecuteDbActionAsync<T>(Func<IDbConnection, IDbTransaction?, Task<T>> action, IDbConnection? existingConn, IDbTransaction? existingTx)
     {
         if (existingConn != null)
         {

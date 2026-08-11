@@ -1,3 +1,4 @@
+using System;
 namespace IncomeExpenditureTracker.Models;
 
 public class ImportBatch
@@ -8,7 +9,7 @@ public class ImportBatch
 
     public string Source { get; set; } = "";
 
-    public string ImportDate { get; set; } = "";
+    public DateTime ImportDate { get; set; } = DateTime.UtcNow;
 
     public int AccountId { get; set; }
 }

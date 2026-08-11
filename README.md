@@ -24,7 +24,7 @@ Unlike bloated financial advisory apps that rely on subjective heuristics, this 
 
 - **🔒 Master Transaction Atomicity & Zero-Lock Math:** High-volume ClosedXML extraction, string tokenization, and parallel tagging execute entirely in RAM prior to opening SQLite write locks. Batch persistence then executes under a single master transaction (`conn, tx`), holding all entity creation, account linking, and Dapper bulk inserts in the WAL buffer for a single filesystem disk synchronization and 100% all-or-nothing rollback protection.
 
-- **⚡ Race-Condition Free Upserts & Stateless WAL Queries:** Entity, account, and tagging services execute atomic SQLite upsert SQL (`INSERT OR IGNORE`) to prevent concurrent collision exceptions, while dashboard queries hit native C-compiled B-tree indexes (`idx_transactions_accountid`, `idx_transactions_entity`) for sub-2-millisecond retrievals without RAM heap bloat.
+- **⚡ Race-Condition Free Upserts & Stateless WAL Queries:** Source, account, and tagging services execute atomic SQLite upsert SQL (`INSERT OR IGNORE`) to prevent concurrent collision exceptions, while dashboard queries hit native C-compiled B-tree indexes (`idx_transactions_accountid`, `idx_transactions_source`) for sub-2-millisecond retrievals without RAM heap bloat.
 
 - **🎯 Deterministic Tagging & Ambiguity Guardrails:** Evaluates multi-keyword merchant descriptions using a 3-tier matrix (Database Priority $\rightarrow$ Match Count $\rightarrow$ Ambiguity Fallback). If multiple tags tie on both priority and keyword hits, the engine refuses to guess and explicitly assigns a fallback `Misc` tag to prevent silent misclassification.
 

@@ -1,3 +1,4 @@
+using System;
 namespace IncomeExpenditureTracker.Models;
 
 // ------------------------------------------------------------
@@ -21,4 +22,7 @@ public class Category
     // Name of the category
     // Example: Income, Expense, Investment
     public string Name { get; set; } = "";
+
+    // created_date
+    public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 }

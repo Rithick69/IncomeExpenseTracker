@@ -1,3 +1,4 @@
+using System;
 namespace IncomeExpenditureTracker.Models;
 
 public class Synonyms
@@ -11,5 +12,7 @@ public class Synonyms
     public int Priority { get; set; } = 0;
 
     public string Category { get; set; } = "";
+
+    public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 
 }

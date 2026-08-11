@@ -38,7 +38,7 @@ public class Transaction
     // "GROWW INVEST TECH PVT"
     // "INFOSYS LIMITED"
     // "SWIGGY"
-    public string Entity { get; set; } = "";
+    public string Source { get; set; } = "";
 
     // Amount credited to the account (money received).
     // Example: Salary, refunds, transfers received.
@@ -70,7 +70,7 @@ public class Transaction
 
     public string TransactionHash { get; set; } = "";
 
-    public DateTime CreatedDate { get; set; }
+    public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 
     // =========================================================================
     // UI REVIEW & AUDIT TRAIL PROPERTIES

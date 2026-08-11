@@ -41,19 +41,6 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         _strictAccountParser = strictAccountParser;
     }
 
-    private static readonly string[] SummaryKeywords =
-    {
-        "OPENING BALANCE",
-        "CLOSING BALANCE",
-        "BALANCE B/F",
-        "BALANCE C/F",
-        "BALANCE BROUGHT FORWARD",
-        "BALANCE CARRIED FORWARD",
-        "TOTAL",
-        "SUBTOTAL",
-        "GRAND TOTAL"
-    };
-
     // ------------------------------------------------------------
     // INTERNAL COORDINATE RESOLVER
     // ------------------------------------------------------------

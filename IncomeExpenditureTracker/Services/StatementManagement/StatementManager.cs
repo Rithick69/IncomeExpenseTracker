@@ -23,9 +23,10 @@ public class StatementManager : IDisposable
 {
     private readonly IStatementLoader _statementLoader;
 
-    private readonly IStatementExtractor<IXLWorksheet> _statementExtractor;
-    private readonly IStatementEditSession _statementEditSession;
-    private readonly IStatementImport<IXLWorksheet> _statementImport;
+    private readonly Func<IStatementExtractor<IXLWorksheet>> _statementExtractorFactory;
+    // Inject a factory that knows how to create fresh edit sessions
+    private readonly Func<IStatementEditSession> _editSessionFactory;
+    private readonly Func<IStatementImport<IXLWorksheet>> _statementImportFactory;
 
     private readonly ILogger<StatementManager> _logger;
     private readonly ISynonymService _synonymService;
@@ -38,17 +39,17 @@ public class StatementManager : IDisposable
 
     public StatementManager(
         IStatementLoader statementLoader,
-        IStatementExtractor<IXLWorksheet> statementExtractor,
-        IStatementEditSession statementEditSession,
-        IStatementImport<IXLWorksheet> statementImport,
+        Func<IStatementExtractor<IXLWorksheet>> statementExtractorFactory,
+        Func<IStatementEditSession> editSessionFactory,
+        Func<IStatementImport<IXLWorksheet>> statementImportFactory,
         ISynonymService synonymService,
         ILogger<StatementManager> logger
         )
     {
         _statementLoader = statementLoader;
-        _statementExtractor = statementExtractor;
-        _statementEditSession = statementEditSession;
-        _statementImport = statementImport;
+        _statementExtractorFactory = statementExtractorFactory;
+        _editSessionFactory = editSessionFactory;
+        _statementImportFactory = statementImportFactory;
         _synonymService = synonymService;
         _logger = logger;
     }
@@ -174,6 +175,10 @@ public class StatementManager : IDisposable
         ThrowIfDisposed();
         _logger.LogInformation("Generating preview for Staging ID: {FileId}. Target Sheet: '{SheetName}'", fileId, targetSheetName ?? "Default Primary");
 
+        // Ask the factory for a brand new, isolated session for this specific file
+        IStatementExtractor<IXLWorksheet> _statementExtractor = _statementExtractorFactory();
+        IStatementEditSession _statementEditSession = _editSessionFactory();
+
         // STEP 1: RETRIEVE STAGED FILE
         // We retrieve the staged file from the in-memory dictionary using the provided fileId.
         var stagedFile = GetStagedFileOrThrow(fileId);
@@ -240,6 +245,10 @@ public class StatementManager : IDisposable
     {
         ThrowIfDisposed();
         _logger.LogInformation("Committing import for Staging ID: {FileId}. Corrections to learn: {CorrectionCount}", fileId, confirmedTracker.ColumnCorrections.Count());
+
+        // Ask the factory for a brand new, isolated session for this specific file
+        IStatementEditSession _statementEditSession = _editSessionFactory();
+        IStatementImport<IXLWorksheet> _statementImport = _statementImportFactory();
 
         // 1. Thread-safe retrieval via helper (throws KeyNotFoundException automatically if missing)
         var stagedFile = GetStagedFileOrThrow(fileId);
@@ -373,6 +382,8 @@ public class StatementManager : IDisposable
     {
         if (_isDisposed) return;
         _isDisposed = true;
+
+        IStatementEditSession _statementEditSession = _editSessionFactory();
 
         _logger.LogInformation("Disposing StatementManager. Cleaning up active staging registry...");
 

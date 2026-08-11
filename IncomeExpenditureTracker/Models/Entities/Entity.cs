@@ -1,3 +1,5 @@
+using System;
+
 namespace IncomeExpenditureTracker.Models;
 
 public class Entity
@@ -8,5 +10,5 @@ public class Entity
 
     public string Country { get; set; } = "";
 
-    public string CreatedDate { get; set; } = "";
+    public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 }
