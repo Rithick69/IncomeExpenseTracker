@@ -4,7 +4,7 @@ using Xunit;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.StatementManagement;
 
-namespace IncomeExpenditureTracker.Tests.Unit
+namespace IncomeExpenditureTracker.Tests.Logic
 {
     public class StatementEditSessionTests
     {

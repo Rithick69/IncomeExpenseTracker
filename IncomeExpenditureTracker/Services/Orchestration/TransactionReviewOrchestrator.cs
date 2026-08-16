@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Entities;
-using IncomeExpenditureTracker.Services.Tagging;
 
 namespace IncomeExpenditureTracker.Services.Orchestration;
 

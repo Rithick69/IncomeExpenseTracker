@@ -183,6 +183,76 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
         }
 
         // =========================================================================
+        // SECTION 3: DATE PARSING FALLBACKS & EDGE CASES
+        // =========================================================================
+
+        /// <summary>
+        /// Objective: Validate that unparseable date strings (e.g., garbage text or invalid calendar days)
+        /// do not crash the extractor. They must default the date and explicitly flag the row for human review.
+        /// </summary>
+        [Fact]
+        public void ExtractTransactions_InvalidDateString_DefaultsDateAndFlagsForReview()
+        {
+            // ARRANGE: A row with unparseable date text but a perfectly valid amount
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Sheet1");
+            worksheet.Cell(2, 1).Value = "Feb 30th 2026"; // Invalid calendar date
+            worksheet.Cell(2, 2).Value = "CORRUPTED DATE ROW";
+            worksheet.Cell(2, 3).Value = "150.00";
+
+            var columns = CreateSingleColumnMappings();
+
+            // Mock the parser: The amount parses successfully, isolating the test to the Date logic
+            _parserMock.Setup(p => p.Parse(It.Is<string>(s => s != null && s.Contains("150.00"))))
+                       .Returns(AccountParseResult.Success(150.00m, "150.00"));
+
+            // ACT
+            List<Transaction> results = _extractor.ExtractTransactions(worksheet, 0, columns);
+
+            // ASSERT: The extractor must gracefully handle the failure
+            Assert.Single(results);
+            var transaction = results.First();
+
+            // The date must safely fall back to the default struct value
+            Assert.Equal(default(DateTime), transaction.Date);
+
+            // The row must be explicitly flagged for human review (Tier 1 Error strategy)
+            Assert.True(transaction.NeedsReview);
+
+            // Validate that the error message contains context about the date failure
+            Assert.NotNull(transaction.ParseErrorMessage);
+            Assert.Contains("date", transaction.ParseErrorMessage.ToLower());
+        }
+
+        /// <summary>
+        /// Objective: Validate that empty or missing date cells are handled gracefully,
+        /// defaulting the date and triggering the review flag without throwing a NullReferenceException.
+        /// </summary>
+        [Fact]
+        public void ExtractTransactions_EmptyDateCell_DefaultsDateAndFlagsForReview()
+        {
+            // ARRANGE: A row missing the date entirely
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Sheet1");
+            worksheet.Cell(2, 1).Value = string.Empty; // Blank date
+            worksheet.Cell(2, 2).Value = "MISSING DATE ROW";
+            worksheet.Cell(2, 3).Value = "75.00";
+
+            var columns = CreateSingleColumnMappings();
+
+            _parserMock.Setup(p => p.Parse(It.Is<string>(s => s != null && s.Contains("75.00"))))
+                       .Returns(AccountParseResult.Success(75.00m, "75.00"));
+
+            // ACT
+            List<Transaction> results = _extractor.ExtractTransactions(worksheet, 0, columns);
+
+            // ASSERT
+            var transaction = results.First();
+            Assert.Equal(default(DateTime), transaction.Date);
+            Assert.True(transaction.NeedsReview);
+        }
+
+        // =========================================================================
         // PRIVATE MAPPING HELPERS (Using 0-Based Indices)
         // =========================================================================
 

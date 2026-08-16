@@ -10,24 +10,28 @@ using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
 using IncomeExpenditureTracker.Models;
 
-namespace IncomeExpenditureTracker.Services.Tagging;
+namespace IncomeExpenditureTracker.Services.Entities;
 
 public class TagService : ITagService
 {
     private readonly IDatabaseService _databaseService;
-    private readonly DescriptionParser _descriptionParser;
+    private readonly IDescriptionParser _descriptionParser;
     private readonly ILogger<TagService> _logger;
 
     // Thread-safe cache registry for stampede defense during multi-file staging
-    private readonly ConcurrentDictionary<string, Lazy<Task<RuleBookSnapshot>>> _cache = new();
-    private const string CACHE_KEY = "MasterRuleBookSnapshot";
+    private readonly ConcurrentDictionary<string, Lazy<Task<RuleBookSnapshot>>> _cache = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<Tag>>>> _allTagscache = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, int> _tagIdByNameCache = new(StringComparer.OrdinalIgnoreCase);
+    private const string RULE_CACHE_KEY = "MasterRuleBookSnapshot";
 
     private const string RULES_SQL = "SELECT Keyword, TagId, Priority FROM TagRules ORDER BY Priority DESC, Id DESC;";
     private const string MISC_SQL = "SELECT Id FROM Tags WHERE Name = 'Misc' LIMIT 1;";
 
     public TagService(
         IDatabaseService databaseService,
-        DescriptionParser descriptionParser,
+        IDescriptionParser descriptionParser,
         ILogger<TagService> logger)
     {
         _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
@@ -39,7 +43,7 @@ public class TagService : ITagService
     {
         _logger.LogDebug("Requesting RuleBookSnapshot from cache or database.");
 
-        return _cache.GetOrAdd(CACHE_KEY, _ => new Lazy<Task<RuleBookSnapshot>>(async () =>
+        return _cache.GetOrAdd(RULE_CACHE_KEY, _ => new Lazy<Task<RuleBookSnapshot>>(async () =>
         {
             try
             {
@@ -69,16 +73,10 @@ public class TagService : ITagService
             {
                 // Fault Eviction: Never allow an exception to remain cached in server RAM
                 _logger.LogError(ex, "Critical failure while building RuleBookSnapshot from SQLite. Evicting cache.");
-                _cache.TryRemove(CACHE_KEY, out var _);
+                _cache.TryRemove(RULE_CACHE_KEY, out var _);
                 throw;
             }
         })).Value;
-    }
-
-    public void InvalidateCache()
-    {
-        _logger.LogInformation("Invalidating RuleBookSnapshot RAM cache.");
-        _cache.TryRemove(CACHE_KEY, out _);
     }
 
     public async Task<int> GetOrCreateTagAsync(string name, int? subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
@@ -86,22 +84,41 @@ public class TagService : ITagService
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Tag name cannot be empty.", nameof(name));
 
+        // 1. Check cache first (bypass if inside a transaction)
+        if (conn == null && _tagIdByNameCache.TryGetValue(name, out var cachedId))
+        {
+            return cachedId;
+        }
+
         const string sql = @"
             INSERT OR IGNORE INTO Tags (Name, SubCategoryId) VALUES (@Name, @SubCategoryId);
             SELECT Id FROM Tags WHERE Name = @Name LIMIT 1;";
 
         try
         {
+            int tagId;
+
             // If inside a master import transaction, execute directly on the transactional connection
             if (conn != null && tx != null)
             {
                 _logger.LogDebug("Executing transactional GetOrCreateTagAsync for tag: {TagName}", name);
-                return await conn.ExecuteScalarAsync<int>(sql, new { Name = name, SubCategoryId = subCategoryId }, tx);
+                tagId = await conn.ExecuteScalarAsync<int>(sql, new { Name = name, SubCategoryId = subCategoryId }, tx);
+                return tagId;
             }
 
             _logger.LogDebug("Executing standalone GetOrCreateTagAsync for tag: {TagName}", name);
-            return await _databaseService.ExecuteWithRetryAsync(c =>
+
+
+            tagId = await _databaseService.ExecuteWithRetryAsync(c =>
                 c.ExecuteScalarAsync<int>(sql, new { Name = name, SubCategoryId = subCategoryId }));
+
+            // 4. Update the name -> ID cache
+            _tagIdByNameCache.TryAdd(name, tagId);
+
+            _allTagscache.Clear();
+
+            return tagId;
+
         }
         catch (Exception ex)
         {
@@ -110,28 +127,72 @@ public class TagService : ITagService
         }
     }
 
-    public async Task<int> GetTagIdByName(string name, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<int> GetTagIdByName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Tag name cannot be empty.", nameof(name));
+
+        // 1. Check cache first (No more connection check needed)
+        if (_tagIdByNameCache.TryGetValue(name, out var cachedId))
+        {
+            return cachedId;
+        }
 
         const string sql = "SELECT Id FROM Tags WHERE Name = @Name LIMIT 1;";
 
         try
         {
-            if (conn != null && tx != null)
+            _logger.LogDebug("Executing standalone GetTagIdByName for tag: {TagName}", name);
+
+            // Execute cleanly using the retry policy
+            var tagId = await _databaseService.ExecuteWithRetryAsync(c =>
+                c.ExecuteScalarAsync<int>(sql, new { Name = name }));
+
+            // Update the cache if a valid ID was returned
+            if (tagId > 0)
             {
-                _logger.LogDebug("Executing transactional GetTagIdByName for tag: {TagName}", name);
-                return await conn.ExecuteScalarAsync<int>(sql, new { Name = name }, tx);
+                _tagIdByNameCache.TryAdd(name, tagId);
             }
 
-            _logger.LogDebug("Executing standalone GetTagIdByName for tag: {TagName}", name);
-            return await _databaseService.ExecuteWithRetryAsync(c =>
-                c.ExecuteScalarAsync<int>(sql, new { Name = name }));
+            return tagId;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to GetTagIdByName for tag '{TagName}'.", name);
+            throw;
+        }
+    }
+
+    public async Task<List<Tag>> GetAllTags()
+    {
+        const string ALL_TAGS_KEY = "ALL_TAGS";
+        const string sql = "SELECT * FROM Tags;";
+
+        try
+        {
+            // Cache Stampede Protection: GetOrAdd ensures only ONE thread executes the DB query
+            var cachedLazy = _allTagscache.GetOrAdd(ALL_TAGS_KEY, _ => new Lazy<Task<List<Tag>>>(async () =>
+            {
+                try
+                {
+                    _logger.LogInformation("Cache miss. Executing standalone GetAllTags from database.");
+                    var result = await _databaseService.ExecuteWithRetryAsync(c => c.QueryAsync<Tag>(sql));
+                    return result.ToList();
+                }
+                catch (Exception ex)
+                {
+                    // Fault Eviction: Remove the broken task from cache if the DB fails
+                    _logger.LogError(ex, "Critical failure while building GetAllTags cache. Evicting.");
+                    _allTagscache.TryRemove(ALL_TAGS_KEY, out var _);
+                    throw;
+                }
+            }));
+
+            return await cachedLazy.Value;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute GetAllTags");
             throw;
         }
     }
@@ -150,7 +211,7 @@ public class TagService : ITagService
             await _databaseService.ExecuteWithRetryAsync(conn =>
                 conn.ExecuteAsync(sql, new { Id = tagId, Name = name, SubCategoryId = subCategoryId }));
 
-            InvalidateCache();
+            InvalidateTagCache();
         }
         catch (Exception ex)
         {
@@ -181,6 +242,7 @@ public class TagService : ITagService
                 });
             }
 
+            InvalidateTagCache();
             InvalidateCache();
             _logger.LogInformation("Successfully deleted TagId {TagId} and its associated rules.", tagId);
         }
@@ -364,12 +426,12 @@ public class TagService : ITagService
         {
             const string sql = "UPDATE Tags SET SubCategoryId = NULL WHERE SubCategoryId = @SubCategoryId;";
 
-            if (conn != null)
+            if (conn != null && tx != null)
                 await conn.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }, tx);
             else
                 await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }));
 
-            InvalidateCache(); // Evict cache after mutation to ensure consistency
+            InvalidateTagCache(); // Evict cache after mutation to ensure consistency
         }
         catch (Exception ex)
         {
@@ -387,17 +449,30 @@ public class TagService : ITagService
                 SET SubCategoryId = NULL
                 WHERE SubCategoryId IN (SELECT Id FROM SubCategories WHERE CategoryId = @CategoryId);";
 
-            if (conn != null)
+            if (conn != null && tx != null)
                 await conn.ExecuteAsync(sql, new { CategoryId = categoryId }, tx);
             else
                 await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { CategoryId = categoryId }));
 
-            InvalidateCache(); // Evict cache after mutation to ensure consistency
+            InvalidateTagCache(); // Evict cache after mutation to ensure consistency
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to float tags for CategoryId {CategoryId}.", categoryId);
             throw;
         }
+    }
+
+    public void InvalidateTagCache()
+    {
+        _allTagscache.Clear();
+        _tagIdByNameCache.Clear();
+        _logger.LogInformation("Invalidating Tag Ram cache");
+    }
+
+    public void InvalidateCache()
+    {
+        _logger.LogInformation("Invalidating RuleBookSnapshot RAM cache.");
+        _cache.TryRemove(RULE_CACHE_KEY, out _);
     }
 }

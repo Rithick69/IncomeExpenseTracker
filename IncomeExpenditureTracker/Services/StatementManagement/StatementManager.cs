@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 
 using IncomeExpenditureTracker.Models;
-using IncomeExpenditureTracker.Services.Helpers;
+using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Importing;
 namespace IncomeExpenditureTracker.Services.StatementManagement;
 
@@ -33,6 +33,9 @@ public class StatementManager : IDisposable
 
     // Lock-free concurrent storage prevents thread contention between UI reads and parallel background loads
     private readonly ConcurrentDictionary<Guid, StatementLoadResult> _pendingStatements = new();
+
+    // Dictionary to keep track of the transient edit sessions per file
+    private readonly ConcurrentDictionary<Guid, IStatementEditSession> _activeSessions = new();
 
     private volatile bool _isDisposed;
 
@@ -67,6 +70,16 @@ public class StatementManager : IDisposable
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(filePaths);
 
+        // Guard against empty lists to prevent DivideByZeroException
+        if (filePaths.Count == 0)
+        {
+            return new StagingBatchResult
+            {
+                Successes = new List<PendingFilePreview>(),
+                Failures = new List<FileStagingError>()
+            };
+        }
+
         if (filePaths.Count > 5)
         {
             _logger.LogWarning("Staging rejected: User attempted to stage {Count} files (limit is 5).", filePaths.Count);
@@ -99,6 +112,9 @@ public class StatementManager : IDisposable
 
                 result.FileName = fileName; // Store the file name in the StatementLoadResult for reference
 
+                // Safely store the successful workbook in our lock-free RAM registry
+                _pendingStatements.TryAdd(fileId, result);
+
                 // Defensive Guard: If the user closed the window while this async load was in-flight,
                 // immediately dispose the newly loaded stream and abort silently.
                 if (_isDisposed)
@@ -107,9 +123,6 @@ public class StatementManager : IDisposable
                     result.Dispose();
                     return;
                 }
-
-                // Safely store the successful workbook in our lock-free RAM registry
-                _pendingStatements.TryAdd(fileId, result);
 
                 var sheetNames = result.Workbook.Worksheets.Select(w => w.Name).ToList();
                 _logger.LogDebug("Successfully staged '{FileName}' ({SheetCount} worksheets found).", fileName, sheetNames.Count);
@@ -179,6 +192,9 @@ public class StatementManager : IDisposable
         IStatementExtractor<IXLWorksheet> _statementExtractor = _statementExtractorFactory();
         IStatementEditSession _statementEditSession = _editSessionFactory();
 
+        // Store the newly created transient session in our dictionary
+        _activeSessions[fileId] = _statementEditSession;
+
         // STEP 1: RETRIEVE STAGED FILE
         // We retrieve the staged file from the in-memory dictionary using the provided fileId.
         var stagedFile = GetStagedFileOrThrow(fileId);
@@ -244,11 +260,19 @@ public class StatementManager : IDisposable
     public async Task CommitStagedFileAsync(Guid fileId, PreviewTracker confirmedTracker)
     {
         ThrowIfDisposed();
-        _logger.LogInformation("Committing import for Staging ID: {FileId}. Corrections to learn: {CorrectionCount}", fileId, confirmedTracker.ColumnCorrections.Count());
+
+        var correctionsList = confirmedTracker.ColumnCorrections.ToList();
+        _logger.LogInformation("Committing import for Staging ID: {FileId}. Corrections to learn: {CorrectionCount}", fileId, correctionsList.Count);
 
         // Ask the factory for a brand new, isolated session for this specific file
-        IStatementEditSession _statementEditSession = _editSessionFactory();
         IStatementImport<IXLWorksheet> _statementImport = _statementImportFactory();
+
+        // Retrieve the existing session that was initialized during Preview
+        if (!_activeSessions.TryGetValue(fileId, out IStatementEditSession? _statementEditSession))
+        {
+            _logger.LogWarning("No active edit session found for Staging ID: {FileId}.", fileId);
+            throw new InvalidOperationException("Cannot commit because the edit session was lost or never initialized.");
+        }
 
         // 1. Thread-safe retrieval via helper (throws KeyNotFoundException automatically if missing)
         var stagedFile = GetStagedFileOrThrow(fileId);
@@ -261,11 +285,8 @@ public class StatementManager : IDisposable
 
             // 2. EXECUTE DATABASE IMPORT
             // ExcelStatementImportService applies coordinates and writes to SQLite via ExecuteWithRetryAsync
-            _logger.LogInformation("Committing import for Staging ID: {FileId}. Corrections to learn: {CorrectionCount}", fileId, confirmedTracker.ColumnCorrections.Count());
+            _logger.LogInformation("Committing import for Staging ID: {FileId}. Corrections to learn: {CorrectionCount}", fileId, correctionsList.Count);
             await _statementImport.ImportConfirmedStatementAsync(stagedFile.Worksheet, confirmedTracker.FinalPreview);
-
-            // 3. CLEAN UP EDIT SESSION
-            _statementEditSession.Clear();
 
         }
         catch (Exception ex)
@@ -355,6 +376,12 @@ public class StatementManager : IDisposable
     /// </summary>
     public void DiscardFile(Guid fileId)
     {
+        // Clean up the tied edit session
+        if (_activeSessions.TryRemove(fileId, out var sessionToDispose))
+        {
+            sessionToDispose.Clear();
+        }
+
         if (_pendingStatements.TryRemove(fileId, out var statementToDispose))
         {
             _logger.LogInformation("Discarding Staging ID: {FileId} ('{FileName}'). Releasing OS file lock and RAM stream.", fileId, statementToDispose.FileName);
@@ -383,8 +410,6 @@ public class StatementManager : IDisposable
         if (_isDisposed) return;
         _isDisposed = true;
 
-        IStatementEditSession _statementEditSession = _editSessionFactory();
-
         _logger.LogInformation("Disposing StatementManager. Cleaning up active staging registry...");
 
         // Atomically pull all remaining staged items out of the dictionary
@@ -405,7 +430,11 @@ public class StatementManager : IDisposable
             _logger.LogInformation("Disposed {Count} orphaned workbook streams during manager shutdown.", disposedCount);
         }
 
-        _statementEditSession.Clear();
+        foreach (var session in _activeSessions.Values)
+        {
+            session.Clear();
+        }
+        _activeSessions.Clear();
         GC.SuppressFinalize(this);
     }
 }

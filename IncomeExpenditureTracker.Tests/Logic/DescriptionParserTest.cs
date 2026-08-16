@@ -11,7 +11,7 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
     /// </summary>
     public class DescriptionParserTests
     {
-        private readonly DescriptionParser _descriptionParser;
+        private readonly IDescriptionParser _descriptionParser;
 
         public DescriptionParserTests()
         {

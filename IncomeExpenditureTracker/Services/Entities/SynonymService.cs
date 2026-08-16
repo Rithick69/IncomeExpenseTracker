@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Data;
+using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using System.Collections.Concurrent;
@@ -8,7 +10,7 @@ using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Database;
 using Microsoft.Extensions.Logging;
 
-namespace IncomeExpenditureTracker.Services.Helpers;
+namespace IncomeExpenditureTracker.Services.Entities;
 
 // ------------------------------------------------------------
 // SYNONYM SERVICE
@@ -64,7 +66,8 @@ public class SynonymService : ISynonymService
     // Wrapping the Task in a Lazy ensures that if multiple extraction threads hit an empty cache
     // simultaneously during StageFilesAsync, only 1 thread executes the SQLite query .
     // -------------------------------------------------------------------------
-    private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyDictionary<string, Synonyms>>>> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyDictionary<string, Synonyms>>>> _categoryCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<IEnumerable<Synonyms>>>> _allSynonymsCache = new(StringComparer.OrdinalIgnoreCase);
 
     public SynonymService(IDatabaseService database, ILogger<SynonymService> logger)
     {
@@ -76,11 +79,11 @@ public class SynonymService : ISynonymService
     /// Seeds baseline domain enum field types for a specific category without overwriting existing data .
     /// Executes within an exponential backoff retry loop and invalidates the RAM cache upon completion .
     /// </summary>
-    public async Task SeedDefaultFieldTypesAsync(IEnumerable<string> standardFieldTypes, string category)
+    public async Task SeedDefaultFieldTypesAsync(IEnumerable<string> standardFieldTypes, string category, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         var normalizedCategory = category.ToUpperInvariant();
 
-        await _database.ExecuteWithRetryAsync(async connection =>
+        await ExecuteDbActionAsync(async (connection, transaction) =>
         {
             // 1. Get all distinct field types currently in the DB
             var existingTypesQuery = "SELECT DISTINCT FieldType FROM Synonyms WHERE Category = @Category;";
@@ -109,7 +112,8 @@ public class SynonymService : ISynonymService
 
             // Evict cached snapshot to ensure subsequent extraction tasks see the new baseline seeds
             InvalidateCache(normalizedCategory);
-        });
+            return true;
+        }, conn, tx);
     }
 
     // ------------------------------------------------------------
@@ -130,30 +134,33 @@ public class SynonymService : ISynonymService
     // ------------------------------------------------------------
     public async Task<IEnumerable<Synonyms>> GetAllSynonyms()
     {
+        const string cacheKey = "ALL_SYNONYMS";
+
         try
         {
-            return await _database.ExecuteWithRetryAsync(async connection =>
+            var cachedLazy = _allSynonymsCache.GetOrAdd(cacheKey, _ => new Lazy<Task<IEnumerable<Synonyms>>>(async () =>
             {
-                var synonyms = await connection.QueryAsync<Synonyms>(
-                    "SELECT * FROM Synonyms"
-                );
+                try
+                {
+                    return await _database.ExecuteWithRetryAsync(async connection =>
+                    {
+                        var synonyms = await connection.QueryAsync<Synonyms>("SELECT * FROM Synonyms");
+                        return synonyms.ToList();
+                    });
+                }
+                catch
+                {
+                    // Fault Eviction
+                    _allSynonymsCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
 
-                return synonyms.ToList();
-            });
+            return await cachedLazy.Value;
         }
         catch (Exception ex)
         {
-            // ------------------------------------------------------------
-            // ERROR HANDLING
-            // ------------------------------------------------------------
-            // If loading synonyms fails, the importer cannot detect
-            // Excel columns correctly.
-            //
-            // We log the error and rethrow so the calling service
-            // can stop the import process safely.
-            // ------------------------------------------------------------
             _logger.LogError(ex, "Failed to load all synonyms from database.");
-            Console.WriteLine($"[SynonymService] Failed to load synonyms: {ex.Message}");
             throw;
         }
     }
@@ -168,20 +175,25 @@ public class SynonymService : ISynonymService
 
         try
         {
-            return await _database.ExecuteWithRetryAsync(async connection =>
+            var lazySnapshot = _categoryCache.GetOrAdd(normalizedCategory, _ => new Lazy<Task<IReadOnlyDictionary<string, Synonyms>>>(async () =>
             {
-                // GetOrAdd guarantees exact-once execution of the async factory during cache misses
-                var lazySnapshot = _cache.GetOrAdd(normalizedCategory, key =>
-                    new Lazy<Task<IReadOnlyDictionary<string, Synonyms>>>(() => LoadSynonymsFromDbAsync(key)));
+                try
+                {
+                    return await LoadSynonymsFromDbAsync(normalizedCategory);
+                }
+                catch
+                {
+                    // Fault Eviction
+                    _categoryCache.TryRemove(normalizedCategory, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
 
-                return await lazySnapshot.Value;
-            });
+            return await lazySnapshot.Value;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SynonymService] Failed to load synonyms by category: {ex.Message}");
-            _logger.LogError(ex, "Failed to retrieve synonym snapshot for category '{Category}'. Evicting faulted cache key.", normalizedCategory);
-            _cache.TryRemove(normalizedCategory, out _);
+            _logger.LogError(ex, "Failed to retrieve synonym snapshot for category '{Category}'.", normalizedCategory);
             throw;
         }
     }
@@ -276,11 +288,10 @@ public class SynonymService : ISynonymService
         }
     }
 
-    /// <summary>
-    /// Inserts a new synonym record. Because we rely on Priority to resolve duplicates,
-    /// this is a standard INSERT, appending to the history.
-    /// </summary>
-    public async Task AddSynonymAsync(Synonyms synonym)
+    // ------------------------------------------------------------
+    // ADD SYNONYM
+    // ------------------------------------------------------------
+    public async Task AddSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         try
         {
@@ -288,25 +299,25 @@ public class SynonymService : ISynonymService
             INSERT INTO Synonyms (FieldType, Synonym, Priority, Category)
             VALUES (@FieldType, @Synonym, @Priority, @Category);";
 
-            await _database.ExecuteWithRetryAsync(async connection =>
+            await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                await connection.ExecuteAsync(sql, synonym);
-            });
+                await connection.ExecuteAsync(sql, synonym, transaction: transaction);
+                return true;
+            }, conn, tx);
+
             InvalidateCache(synonym.Category);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SynonymService] Failed to add synonym: {ex.Message}");
             _logger.LogError(ex, "Failed to add synonym '{Synonym}' for field '{FieldType}'.", synonym.Synonym, synonym.FieldType);
             throw;
         }
     }
 
-    /// <summary>
-    /// Updates an existing synonym record. Used by the manual management UI
-    /// to correct typos or change mappings for a specific entry.
-    /// </summary>
-    public async Task UpdateSynonymAsync(Synonyms synonym)
+    // ------------------------------------------------------------
+    // UPDATE SYNONYM
+    // ------------------------------------------------------------
+    public async Task UpdateSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         try
         {
@@ -318,41 +329,60 @@ public class SynonymService : ISynonymService
                 Category = @Category
             WHERE Id = @Id;";
 
-            await _database.ExecuteWithRetryAsync(async connection =>
+            await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                await connection.ExecuteAsync(sql, synonym);
-            });
+                await connection.ExecuteAsync(sql, synonym, transaction: transaction);
+                return true;
+            }, conn, tx);
+
             InvalidateCache(synonym.Category);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SynonymService] Failed to update synonym: {ex.Message}");
             _logger.LogError(ex, "Failed to update synonym '{Synonym}' for field '{FieldType}'.", synonym.Synonym, synonym.FieldType);
             throw;
         }
     }
 
-    /// <summary>
-    /// Removes a specific synonym record by its primary key, utilized by the manual management UI.
-    /// </summary>
-    public async Task DeleteSynonymAsync(int id)
+    // ------------------------------------------------------------
+    // DELETE SYNONYM
+    // ------------------------------------------------------------
+    public async Task DeleteSynonymAsync(int id, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
         try
         {
             const string sql = "DELETE FROM Synonyms WHERE Id = @Id;";
 
-            await _database.ExecuteWithRetryAsync(async connection =>
+            await ExecuteDbActionAsync(async (connection, transaction) =>
             {
-                await connection.ExecuteAsync(sql, new { Id = id });
-            });
-            InvalidateCache(null); // Evict all categories since we don't know which one was affected
+                await connection.ExecuteAsync(sql, new { Id = id }, transaction: transaction);
+                return true;
+            }, conn, tx);
+
+            InvalidateCache(null);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SynonymService] Failed to delete synonym: {ex.Message}");
             _logger.LogError(ex, "Failed to delete synonym with Id '{Id}'.", id);
             throw;
         }
+    }
+
+
+    // ------------------------------------------------------------
+    // HELPERS
+    // ------------------------------------------------------------
+    private async Task<T> ExecuteDbActionAsync<T>(
+        Func<IDbConnection, IDbTransaction?, Task<T>> action,
+        IDbConnection? existingConn,
+        IDbTransaction? existingTx)
+    {
+        if (existingConn != null)
+        {
+            return await action(existingConn, existingTx);
+        }
+
+        return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
     }
 
     /// <summary>
@@ -361,15 +391,17 @@ public class SynonymService : ISynonymService
     /// </summary>
     private void InvalidateCache(string? category)
     {
+        _allSynonymsCache.Clear();
+
         if (string.IsNullOrWhiteSpace(category))
         {
-            _cache.Clear();
+            _categoryCache.Clear();
             _logger.LogInformation("Evicted all category snapshots from SynonymService RAM cache.");
         }
         else
         {
             var normalized = category.ToUpperInvariant();
-            if (_cache.TryRemove(normalized, out _))
+            if (_categoryCache.TryRemove(normalized, out _))
             {
                 _logger.LogInformation("Evicted RAM cache snapshot for category '{Category}'.", normalized);
             }

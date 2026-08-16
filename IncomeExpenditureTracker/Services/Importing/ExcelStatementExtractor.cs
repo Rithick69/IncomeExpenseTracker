@@ -20,13 +20,13 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
     private readonly IHeaderDetector<IXLWorksheet> _headerDetector;
     private readonly IFieldMapper<IXLWorksheet> _fieldMapper;
     private readonly ITransactionExtractor<IXLWorksheet> _transactionExtractor;
-    private readonly ConfidenceService _confidenceService;
+    private readonly IConfidenceService _confidenceService;
 
     public ExcelStatementExtractor(
         IHeaderDetector<IXLWorksheet> headerDetector,
         IFieldMapper<IXLWorksheet> fieldMapper,
         ITransactionExtractor<IXLWorksheet> transactionExtractor,
-        ConfidenceService confidenceService)
+        IConfidenceService confidenceService)
     {
         _headerDetector = headerDetector;
         _fieldMapper = fieldMapper;

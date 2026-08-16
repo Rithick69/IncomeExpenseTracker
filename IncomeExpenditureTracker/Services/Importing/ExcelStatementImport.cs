@@ -24,8 +24,8 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
     private readonly IEntityService _entityService;
     private readonly IAccountService _accountService;
     private readonly ITransactionExtractor<IXLWorksheet> _transactionExtractor;
-    private readonly DescriptionParser _descriptionParser;
-    private readonly TagEngine _tagEngine;
+    private readonly IDescriptionParser _descriptionParser;
+    private readonly ITagEngine _tagEngine;
     private readonly IImportBatchService _batchService;
     private readonly ITransactionService _transactionService;
     private readonly ILogger<ExcelStatementImport> _logger;
@@ -37,8 +37,8 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
         IEntityService entityService,
         IAccountService accountService,
         ITransactionExtractor<IXLWorksheet> transactionExtractor,
-        DescriptionParser descriptionParser,
-        TagEngine tagEngine,
+        IDescriptionParser descriptionParser,
+        ITagEngine tagEngine,
         IImportBatchService batchService,
         ITransactionService transactionService,
         ILogger<ExcelStatementImport> logger)

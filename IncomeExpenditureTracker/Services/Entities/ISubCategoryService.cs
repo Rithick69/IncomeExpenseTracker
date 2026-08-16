@@ -11,8 +11,8 @@ namespace IncomeExpenditureTracker.Services.Entities;
 public interface ISubCategoryService
 {
     Task<int> GetOrCreateSubCategory(string name, int? categoryId, IDbConnection? conn = null, IDbTransaction? tx = null);
-    Task<List<SubCategory>> GetAllSubCategories(IDbConnection? conn = null, IDbTransaction? tx = null);
-    Task<List<SubCategory>> GetSubCategoriesByCategoryId(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task<List<SubCategory>> GetAllSubCategories();
+    Task<List<SubCategory>> GetSubCategoriesByCategoryId(int categoryId);
     Task UpdateSubCategory(SubCategory subCategory, IDbConnection? conn = null, IDbTransaction? tx = null);
     Task DeleteSubCategory(int subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null);
     Task DeleteByCategoryId(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null);

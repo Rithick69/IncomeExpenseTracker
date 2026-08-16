@@ -12,7 +12,7 @@ namespace IncomeExpenditureTracker.Services.PreviewInsights;
 // This score can be used to provide feedback to users about the quality of the detected information before they proceed with importing their statement.
 // ------------------------------------------------------------
 
-public sealed class ConfidenceService
+public sealed class ConfidenceService : IConfidenceService
 {
 
     // 1. Define your scoring rules cleanly in one place (can easily be moved to a JSON config or database later!)

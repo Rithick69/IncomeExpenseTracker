@@ -29,6 +29,8 @@ public class EntityService : IEntityService
 
     private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _entityIdCache = new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<Entity>>>> _entityListCache = new();
+
     public EntityService(IDatabaseService database, ILogger<EntityService> logger)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
@@ -47,43 +49,58 @@ public class EntityService : IEntityService
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Entity name cannot be empty.", nameof(name));
 
-        var normalizedName = name.Trim().ToUpperInvariant();
+        var cacheKey = name.Trim().ToUpperInvariant();
 
         try
         {
-            return await _database.ExecuteWithRetryAsync(async (connection) =>
+            // -------------------------------------------------------------------------
+            // TRANSACTION ROLLBACK PROTECTION GUARDRAIL
+            // -------------------------------------------------------------------------
+            if (conn != null && tx != null)
             {
-                // -------------------------------------------------------------------------
-                // TRANSACTION ROLLBACK PROTECTION GUARDRAIL
-                // -------------------------------------------------------------------------
-                // If an explicit transaction (tx) is passed, we are inside a batch import boundary.
-                // We read from the RAM cache if available, but if it is a cache MISS, we MUST execute
-                // directly against the DB without saving the new ID back to our global RAM cache.
-                // Why? If the batch import later throws an exception and rolls back, any newly inserted
-                // Entity ID vanishes from SQLite. If we cached it in RAM, subsequent tasks would crash with FK violations!
-                // -------------------------------------------------------------------------
-                if (tx != null)
+                // Read from cache if it exists (safe reference data reuse)
+                if (_entityIdCache.TryGetValue(cacheKey, out var existingLazy) && !existingLazy.Value.IsFaulted)
                 {
-                    if (_entityIdCache.TryGetValue(normalizedName, out var existingLazy) && !existingLazy.Value.IsFaulted)
-                    {
-                        return await existingLazy.Value;
-                    }
-
-                    return await ExecuteUpsertInternalAsync(name, conn, tx);
+                    return await existingLazy.Value;
                 }
 
-                // Standard autocommit execution: safe to use GetOrAdd stampede protection
-                var lazyId = _entityIdCache.GetOrAdd(normalizedName, key =>
-                    new Lazy<Task<int>>(() => ExecuteUpsertInternalAsync(name, conn, tx), LazyThreadSafetyMode.ExecutionAndPublication));
+                // Cache MISS inside a transaction: Execute directly, DO NOT cache the result.
+                // Bypass the retry wrapper entirely, as transactions cannot be retried mid-flight.
+                return await ExecuteUpsertInternalAsync(name, conn, tx);
+            }
 
-                return await lazyId.Value;
-            });
+            // -------------------------------------------------------------------------
+            // STANDALONE EXECUTION (Safe for caching and retries)
+            // -------------------------------------------------------------------------
+            var lazyId = _entityIdCache.GetOrAdd(cacheKey, _ => new Lazy<Task<int>>(async () =>
+            {
+                try
+                {
+                    // Execute using the retry policy wrapper
+                    var id = await _database.ExecuteWithRetryAsync(retryConn =>
+                        ExecuteUpsertInternalAsync(name, retryConn, null));
+
+                    // ONLY clear the list caches on a cache miss when we actually hit the database
+                    _entityListCache.Clear();
+
+                    return id;
+                }
+                catch
+                {
+                    // Fault Eviction: Remove from cache inside the factory if DB fails
+                    _entityIdCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            // Await the task (concurrent requests will await this same task)
+            return await lazyId.Value;
+
         }
         catch (Exception ex)
         {
-            // Fault Eviction: Remove poisoned keys so subsequent requests can retry cleanly
-            _logger.LogError(ex, "Failed to resolve or create entity '{EntityName}'. Evicting cache key.", normalizedName);
-            _entityIdCache.TryRemove(normalizedName, out _);
+            // Fallback catch just in case something throws outside the Lazy block
+            _logger.LogError(ex, "Failed to resolve or create entity '{EntityName}'. Evicting cache key.", cacheKey);
             throw;
         }
     }
@@ -91,18 +108,35 @@ public class EntityService : IEntityService
     // ------------------------------------------------------------
     // GET ALL ENTITIES
     // ------------------------------------------------------------
-    public async Task<List<Entity>> GetAllEntities(IDbConnection? conn = null, IDbTransaction? tx = null)
+
+    public async Task<List<Entity>> GetAllEntities()
     {
+        const string cacheKey = "ALL_ENTITIES";
         try
         {
-            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            // Cache Stampede Protection: GetOrAdd ensures only ONE thread executes the DB query
+            var cachedLazy = _entityListCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<Entity>>>(async () =>
             {
-                var entities = await connection.QueryAsync<Entity>(
-                    "SELECT Id, Name, Country, CreatedDate FROM Entities ORDER BY Name ASC",
-                    transaction: transaction);
+                try
+                {
+                    // Execute using the standard retry wrapper (no external conn/tx needed)
+                    return await _database.ExecuteWithRetryAsync(async c =>
+                    {
+                        const string sql = "SELECT Id, Name, Country, CreatedDate FROM Entities ORDER BY Name ASC";
+                        var entities = await c.QueryAsync<Entity>(sql);
+                        return entities.ToList();
+                    });
+                }
+                catch
+                {
+                    // Fault Eviction: Remove the broken task from cache if the DB fails
+                    _entityListCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
 
-                return entities.ToList();
-            }, conn, tx);
+            // Await the Lazy task. All concurrent threads will await this same exact task instance.
+            return await cachedLazy.Value;
         }
         catch (Exception ex)
         {
@@ -255,6 +289,7 @@ public class EntityService : IEntityService
     private void InvalidateCache()
     {
         _entityIdCache.Clear();
+        _entityListCache.Clear();
         _logger.LogInformation("Evicted EntityService RAM cache due to data mutation.");
     }
 }

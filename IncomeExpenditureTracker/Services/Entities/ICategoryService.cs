@@ -11,7 +11,7 @@ namespace IncomeExpenditureTracker.Services.Entities;
 public interface ICategoryService
 {
     Task<int> GetOrCreateCategory(string name, IDbConnection? conn = null, IDbTransaction? tx = null);
-    Task<List<Category>> GetAllCategories(IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task<List<Category>> GetAllCategories();
     Task UpdateCategory(Category category, IDbConnection? conn = null, IDbTransaction? tx = null);
     Task DeleteCategory(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null);
 }

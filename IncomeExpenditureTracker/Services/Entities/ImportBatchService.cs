@@ -1,7 +1,12 @@
 using System;
 using Dapper;
 using System.Data;
+using System.Collections.Generic;
+using System.Linq;
+using System.Collections.Concurrent;
+using System.Threading;
 using System.Threading.Tasks;
+using IncomeExpenditureTracker.Models;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Services.Database;
 
@@ -42,6 +47,8 @@ public class ImportBatchService : IImportBatchService
 {
     private readonly IDatabaseService _database;
     private readonly ILogger<ImportBatchService> _logger;
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<ImportBatch>>>> _importBatchCache = new(StringComparer.OrdinalIgnoreCase);
 
     public ImportBatchService(IDatabaseService database, ILogger<ImportBatchService> logger)
     {
@@ -94,6 +101,7 @@ public class ImportBatchService : IImportBatchService
 
                 _logger.LogInformation("Created new ImportBatch ID {BatchId} for file '{FileName}' (Source: '{Source}').", batchId, fileName, source);
 
+                InvalidateCache();
                 return (int)batchId;
             }, conn, tx);
         }
@@ -134,12 +142,55 @@ public class ImportBatchService : IImportBatchService
                     _logger.LogInformation("Deleted ImportBatch with ID {BatchId}.", batchId);
                 }
             }, conn, tx);
+
+            InvalidateCache();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to delete import batch record with ID {BatchId}.", batchId);
             throw;
         }
+    }
+
+    public async Task<List<ImportBatch>> GetAllImportBatches()
+    {
+        var cacheKey = "GET_ALL_IMPORT_BATCHES";
+        try
+        {
+            var cachedLazy = _importBatchCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<ImportBatch>>>(async () =>
+            {
+                try
+                {
+                    // Execute using the standard retry wrapper (no external conn/tx needed)
+                    return await _database.ExecuteWithRetryAsync(async c =>
+                    {
+                        const string sql = "SELECT * FROM ImportBatches";
+                        var entities = await c.QueryAsync<ImportBatch>(sql);
+                        return entities.ToList();
+                    });
+                }
+                catch
+                {
+                    // Fault Eviction: Remove the broken task from cache if the DB fails
+                    _importBatchCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            return await cachedLazy.Value;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve import batch records.");
+
+            throw;
+        }
+    }
+
+    private void InvalidateCache()
+    {
+        _importBatchCache.Clear();
+        _logger.LogInformation("Evicted ImportBatchService RAM cache due to data mutation.");
     }
 
     // =========================================================================

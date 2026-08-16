@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using IncomeExpenditureTracker.Models;
 using Microsoft.Extensions.Configuration;
 using IncomeExpenditureTracker.Tests.Helpers;
+using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using IncomeExpenditureTracker.Services.Database;

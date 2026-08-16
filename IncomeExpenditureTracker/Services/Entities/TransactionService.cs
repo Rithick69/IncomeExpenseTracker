@@ -2,11 +2,14 @@ using System;
 using Dapper;
 using System.Linq;
 using System.Data;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Database;
+using DocumentFormat.OpenXml.Presentation;
 
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -31,6 +34,10 @@ public class TransactionService : ITransactionService
     private readonly IDatabaseService _database;
 
     private readonly ILogger<TransactionService> _logger;
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<Transaction>>>> _transactionsCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _transactionCountCache = new(StringComparer.OrdinalIgnoreCase);
 
     public TransactionService(IDatabaseService database, ILogger<TransactionService> logger)
     {
@@ -103,6 +110,7 @@ public class TransactionService : ITransactionService
                 });
                 _logger.LogInformation("Successfully completed standalone bulk insert of {Count} transactions.", transactions.Count);
             }
+            InvalidateCache();
         }
         catch (Exception ex)
         {
@@ -121,70 +129,36 @@ public class TransactionService : ITransactionService
         IDbConnection? conn = null,
         IDbTransaction? tx = null)
     {
+        ArgumentNullException.ThrowIfNull(args);
+        var cacheKey = GetCacheKey(args);
+
         try
         {
-            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            // 1. Transaction Safety: Bypass cache completely
+            if (conn != null && tx != null)
             {
-                var conditions = new List<string>();
-                var parameters = new DynamicParameters();
+                return await ExecuteDbActionAsync(async (connection, transaction) =>
+                    await BuildAndExecuteFilterQueryAsync(connection, transaction, args), conn, tx);
+            }
 
-                // 1. Build Index-Seekable WHERE Clause
-                // We strictly append conditions only if they exist to prevent "catch-all" query slowdowns.
-                if (args.BatchId.HasValue)
+            // 2. Cache Stampede Protection
+            var cachedLazy = _transactionsCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<Transaction>>>(async () =>
+            {
+                try
                 {
-                    conditions.Add("ImportBatchId = @BatchId");
-                    parameters.Add("@BatchId", args.BatchId.Value);
+                    return await ExecuteDbActionAsync(async (connection, transaction) =>
+                        await BuildAndExecuteFilterQueryAsync(connection, transaction, args), null, null);
                 }
-
-                if (args.AccountId.HasValue)
+                catch
                 {
-                    conditions.Add("AccountId = @AccountId");
-                    parameters.Add("@AccountId", args.AccountId.Value);
+                    // 3. Fault Eviction
+                    _transactionsCache.TryRemove(cacheKey, out var _);
+                    throw;
                 }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
 
-                if (!string.IsNullOrWhiteSpace(args.Source))
-                {
-                    // Exact match for the B-Tree index (idx_transactions_source)
-                    conditions.Add("Source = @Source");
-                    parameters.Add("@Source", args.Source);
-                }
+            return await cachedLazy.Value;
 
-                if (!string.IsNullOrWhiteSpace(args.SearchText))
-                {
-                    conditions.Add("Description LIKE @SearchText");
-                    parameters.Add("@SearchText", $"%{args.SearchText}%");
-                }
-
-                // 2. Construct Base SQL
-                var sql = "SELECT * FROM Transactions";
-                if (conditions.Any())
-                {
-                    sql += " WHERE " + string.Join(" AND ", conditions);
-                }
-
-                sql += " ORDER BY Date DESC";
-
-                // 3. Append UI Pagination
-                if (args.Limit.HasValue)
-                {
-                    sql += " LIMIT @Limit";
-                    parameters.Add("@Limit", args.Limit.Value);
-
-                    if (args.Offset.HasValue)
-                    {
-                        sql += " OFFSET @Offset";
-                        parameters.Add("@Offset", args.Offset.Value);
-                    }
-                }
-
-                // 4. Execute Query
-                var result = await connection.QueryAsync<Transaction>(
-                    sql,
-                    parameters,
-                    transaction: transaction);
-
-                return result.ToList();
-            }, conn, tx);
         }
         catch (Exception ex)
         {
@@ -202,49 +176,37 @@ public class TransactionService : ITransactionService
         IDbConnection? conn = null,
         IDbTransaction? tx = null)
     {
+        ArgumentNullException.ThrowIfNull(args);
+
+        var cacheKey = GetCacheKey(args) + "_COUNT";
+
         try
         {
-            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            // 1. Transaction Safety: Bypass cache completely
+            if (conn != null && tx != null)
             {
-                var conditions = new List<string>();
-                var parameters = new DynamicParameters();
+                return await ExecuteDbActionAsync(async (connection, transaction) =>
+                    await BuildAndExecuteFilterCountQueryAsync(connection, transaction, args), conn, tx);
+            }
 
-                if (args.BatchId.HasValue)
+            // 2. Cache Stampede Protection
+            var cachedLazy = _transactionCountCache.GetOrAdd(cacheKey, _ => new Lazy<Task<int>>(async () =>
+            {
+                try
                 {
-                    conditions.Add("ImportBatchId = @BatchId");
-                    parameters.Add("@BatchId", args.BatchId.Value);
+                    return await ExecuteDbActionAsync(async (connection, transaction) =>
+                        await BuildAndExecuteFilterCountQueryAsync(connection, transaction, args), null, null);
                 }
-
-                if (args.AccountId.HasValue)
+                catch
                 {
-                    conditions.Add("AccountId = @AccountId");
-                    parameters.Add("@AccountId", args.AccountId.Value);
+                    // 3. Fault Eviction
+                    _transactionCountCache.TryRemove(cacheKey, out var _);
+                    throw;
                 }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
 
-                if (!string.IsNullOrWhiteSpace(args.Source))
-                {
-                    // Exact match for the B-Tree index (idx_transactions_source)
-                    conditions.Add("Source = @Source");
-                    parameters.Add("@Source", args.Source);
-                }
+            return await cachedLazy.Value;
 
-                if (!string.IsNullOrWhiteSpace(args.SearchText))
-                {
-                    conditions.Add("Description LIKE @SearchText");
-                    parameters.Add("@SearchText", $"%{args.SearchText}%");
-                }
-
-                var sql = "SELECT COUNT(1) FROM Transactions";
-                if (conditions.Any())
-                {
-                    sql += " WHERE " + string.Join(" AND ", conditions);
-                }
-
-                return await connection.ExecuteScalarAsync<int>(
-                    sql,
-                    parameters,
-                    transaction: transaction);
-            }, conn, tx);
         }
         catch (Exception ex)
         {
@@ -252,6 +214,7 @@ public class TransactionService : ITransactionService
             throw;
         }
     }
+
     // ------------------------------------------------------------
     // DELETE TRANSACTIONS BY IMPORT BATCH
     // ------------------------------------------------------------
@@ -275,6 +238,7 @@ public class TransactionService : ITransactionService
                 return true;
             }, conn, tx);
 
+            InvalidateCache();
             _logger.LogInformation("Deleted all transaction records for Batch ID {BatchId}.", batchId);
         }
         catch (Exception ex)
@@ -310,6 +274,8 @@ public class TransactionService : ITransactionService
                 await connection.ExecuteAsync(sql, corrections, transaction: transaction);
                 return true;
             }, conn, tx);
+
+            InvalidateCache();
         }
         catch (Exception ex)
         {
@@ -323,9 +289,9 @@ public class TransactionService : ITransactionService
         try
         {
             const string sql = @"
-        UPDATE Transactions
-        SET TagId = @FallbackTagId
-        WHERE TagId = @OldTagId;";
+                UPDATE Transactions
+                SET TagId = @FallbackTagId
+                WHERE TagId = @OldTagId;";
 
             if (conn != null)
             {
@@ -338,6 +304,8 @@ public class TransactionService : ITransactionService
                     await c.ExecuteAsync(sql, new { OldTagId = oldTagId, FallbackTagId = fallbackTagId });
                 });
             }
+
+            InvalidateCache();
         }
         catch (Exception ex)
         {
@@ -354,5 +322,96 @@ public class TransactionService : ITransactionService
         }
 
         return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+    }
+
+    private static string GetCacheKey(TransactionFilterArgs args)
+    {
+        return $"FILTER:{args.BatchId}_{args.AccountId}_{args.Source}_{args.SearchText}_{args.Limit}_{args.Offset}";
+    }
+
+    private void InvalidateCache()
+    {
+        _transactionsCache.Clear();
+        _transactionCountCache.Clear();
+        _logger.LogInformation("Evicted TransactionService RAM cache due to data mutation.");
+    }
+
+    private (List<string>, DynamicParameters) generateFilterParameters(TransactionFilterArgs args)
+    {
+        var conditions = new List<string>();
+        var parameters = new DynamicParameters();
+
+        if (args.BatchId.HasValue)
+        {
+            conditions.Add("ImportBatchId = @BatchId");
+            parameters.Add("@BatchId", args.BatchId.Value);
+        }
+
+        if (args.AccountId.HasValue)
+        {
+            conditions.Add("AccountId = @AccountId");
+            parameters.Add("@AccountId", args.AccountId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(args.Source))
+        {
+            // Exact match for the B-Tree index (idx_transactions_source)
+            conditions.Add("Source = @Source");
+            parameters.Add("@Source", args.Source);
+        }
+
+        if (!string.IsNullOrWhiteSpace(args.SearchText))
+        {
+            conditions.Add("Description LIKE @SearchText");
+            parameters.Add("@SearchText", $"%{args.SearchText}%");
+        }
+
+        return (conditions, parameters);
+    }
+
+    // Helper method to keep the DB logic clean and reusable
+    private async Task<int> BuildAndExecuteFilterCountQueryAsync(IDbConnection connection, IDbTransaction? transaction, TransactionFilterArgs args)
+    {
+        var (conditions, parameters) = generateFilterParameters(args);
+
+        var sql = "SELECT COUNT(1) FROM Transactions";
+        if (conditions.Any())
+        {
+            sql += " WHERE " + string.Join(" AND ", conditions);
+        }
+
+        return await connection.ExecuteScalarAsync<int>(
+            sql,
+            parameters,
+            transaction: transaction);
+    }
+
+    // Helper method to keep the DB logic clean and reusable
+    private async Task<List<Transaction>> BuildAndExecuteFilterQueryAsync(IDbConnection connection, IDbTransaction? transaction, TransactionFilterArgs args)
+    {
+        var (conditions, parameters) = generateFilterParameters(args);
+
+        var sql = "SELECT * FROM Transactions";
+        if (conditions.Any())
+        {
+            sql += " WHERE " + string.Join(" AND ", conditions);
+        }
+
+        sql += " ORDER BY Date DESC";
+
+        if (args.Limit.HasValue)
+        {
+            sql += " LIMIT @Limit";
+            parameters.Add("@Limit", args.Limit.Value);
+
+            if (args.Offset.HasValue)
+            {
+                sql += " OFFSET @Offset";
+                parameters.Add("@Offset", args.Offset.Value);
+            }
+        }
+
+        var transactions = await connection.QueryAsync<Transaction>(sql, parameters, transaction: transaction);
+        return transactions.ToList();
     }
 }

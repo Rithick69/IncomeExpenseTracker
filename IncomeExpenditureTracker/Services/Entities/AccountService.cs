@@ -33,6 +33,10 @@ public class AccountService : IAccountService
 
     private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _accountIdCache = new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<Account>>>> _entityAccountsCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<Account>>>> _accountListCache = new(StringComparer.OrdinalIgnoreCase);
+
     public AccountService(IDatabaseService database, ILogger<AccountService> logger)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
@@ -59,26 +63,47 @@ public class AccountService : IAccountService
         try
         {
             // -------------------------------------------------------------------------
-            // TRANSACTION ROLLBACK PROTECTION
+            // TRANSACTION ROLLBACK PROTECTION GUARDRAIL
             // -------------------------------------------------------------------------
-            // If an explicit transaction (tx) is passed, we bypass saving newly generated IDs
-            // back to the global RAM cache. This prevents orphaned IDs from polluting memory
-            // if the parent batch import fails and rolls back.
-            // -------------------------------------------------------------------------
-            if (tx != null)
+            if (conn != null && tx != null)
             {
+                // Read from cache if it exists (safe reference data reuse)
                 if (_accountIdCache.TryGetValue(cacheKey, out var existingLazy) && !existingLazy.Value.IsFaulted)
                 {
                     return await existingLazy.Value;
                 }
 
+                // Cache MISS inside a transaction: Execute directly, DO NOT cache the result.
+                // Bypass the retry wrapper entirely, as transactions cannot be retried mid-flight.
                 return await ExecuteUpsertInternalAsync(account, conn, tx);
             }
 
-            // Standard lock-free stampede protection for autocommit execution
-            var lazyId = _accountIdCache.GetOrAdd(cacheKey, key =>
-                new Lazy<Task<int>>(() => ExecuteUpsertInternalAsync(account, conn, tx), LazyThreadSafetyMode.ExecutionAndPublication));
+            // -------------------------------------------------------------------------
+            // STANDALONE EXECUTION (Safe for caching and retries)
+            // -------------------------------------------------------------------------
+            var lazyId = _accountIdCache.GetOrAdd(cacheKey, _ => new Lazy<Task<int>>(async () =>
+            {
+                try
+                {
+                    // Execute using the retry policy wrapper
+                    var id = await _database.ExecuteWithRetryAsync(retryConn =>
+                        ExecuteUpsertInternalAsync(account, retryConn, null));
 
+                    // ONLY clear the list caches on a cache miss when we actually hit the database
+                    _accountListCache.Clear();
+                    _entityAccountsCache.Clear();
+
+                    return id;
+                }
+                catch
+                {
+                    // Fault Eviction: Remove from cache inside the factory if DB fails
+                    _accountIdCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            // Await the task (concurrent requests will await this same task)
             return await lazyId.Value;
         }
         catch (Exception ex)
@@ -95,17 +120,35 @@ public class AccountService : IAccountService
     // ------------------------------------------------------------
     // Used by dashboard and account selection UI.
     // ------------------------------------------------------------
-    public async Task<List<Account>> GetAllAccounts(IDbConnection? conn = null, IDbTransaction? tx = null)
+
+    public async Task<List<Account>> GetAllAccounts()
     {
+        const string cacheKey = "ALL_ACCOUNTS";
         try
         {
-            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            // Cache Stampede Protection: GetOrAdd ensures only ONE thread executes the DB query
+            var cachedLazy = _accountListCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<Account>>>(async () =>
             {
-                // Corrected Bug: Changed 'ORDER BY AccountName' (non-existent column) to valid schema fields
-                const string sql = "SELECT * FROM Accounts ORDER BY EntityName ASC, AccountNumber ASC;";
-                var accounts = await connection.QueryAsync<Account>(sql, transaction: transaction);
-                return accounts.ToList();
-            }, conn, tx);
+                try
+                {
+                    // Execute using the standard retry wrapper (no external conn/tx needed)
+                    return await _database.ExecuteWithRetryAsync(async c =>
+                    {
+                        const string sql = "SELECT * FROM Accounts ORDER BY EntityName ASC, AccountNumber ASC";
+                        var entities = await c.QueryAsync<Account>(sql);
+                        return entities.ToList();
+                    });
+                }
+                catch
+                {
+                    // Fault Eviction: Remove the broken task from cache if the DB fails
+                    _accountListCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            // Await the Lazy task. All concurrent threads will await this same exact task instance.
+            return await cachedLazy.Value;
         }
         catch (Exception ex)
         {
@@ -116,14 +159,45 @@ public class AccountService : IAccountService
 
     public async Task<List<Account>> GetAccountsByEntityId(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
+        var cacheKey = $"ENTITY_ACCOUNTS_{entityId}";
+
         try
         {
-            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            // 1. Transaction Safety: Bypass cache completely if part of an active transaction
+            // We do not want to read stale cached data, nor do we want to cache uncommitted data.
+            if (conn != null && tx != null)
             {
-                const string sql = "SELECT * FROM Accounts WHERE EntityId = @EntityId ORDER BY AccountNumber ASC;";
-                var accounts = await connection.QueryAsync<Account>(sql, new { EntityId = entityId }, transaction: transaction);
-                return accounts.ToList();
-            }, conn, tx);
+                return await ExecuteDbActionAsync(async (connection, transaction) =>
+                {
+                    const string sql = "SELECT * FROM Accounts WHERE EntityId = @EntityId ORDER BY AccountNumber ASC;";
+                    var accounts = await connection.QueryAsync<Account>(sql, new { EntityId = entityId }, transaction: transaction);
+                    return accounts.ToList();
+                }, conn, tx);
+            }
+
+            // 2. Cache Stampede Protection: GetOrAdd ensures only ONE thread executes the factory method
+            var cachedLazy = _entityAccountsCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<Account>>>(async () =>
+            {
+                try
+                {
+                    // Only one thread will ever run this block per cache miss for this specific EntityId
+                    return await ExecuteDbActionAsync(async (connection, transaction) =>
+                    {
+                        const string sql = "SELECT * FROM Accounts WHERE EntityId = @EntityId ORDER BY AccountNumber ASC;";
+                        var accounts = await connection.QueryAsync<Account>(sql, new { EntityId = entityId }, transaction: transaction);
+                        return accounts.ToList();
+                    }, null, null);
+                }
+                catch
+                {
+                    // 3. Fault Eviction: Remove the broken task from cache if the DB fails
+                    _entityAccountsCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            // Await the Lazy task. All concurrent threads asking for this EntityId will await this same task.
+            return await cachedLazy.Value;
         }
         catch (Exception ex)
         {
@@ -277,6 +351,7 @@ public class AccountService : IAccountService
                     await c.ExecuteAsync(sql, new { OldEntityId = oldEntityId, targetEntityId });
                 });
             }
+            InvalidateCache();
         }
         catch (Exception ex)
         {
@@ -349,6 +424,8 @@ public class AccountService : IAccountService
     private void InvalidateCache()
     {
         _accountIdCache.Clear();
+        _entityAccountsCache.Clear();
+        _accountListCache.Clear();
         _logger.LogInformation("Evicted AccountService RAM cache due to data mutation.");
     }
 

@@ -11,7 +11,7 @@ using Xunit.Abstractions;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Importing;
 using IncomeExpenditureTracker.Services.StatementManagement;
-using IncomeExpenditureTracker.Services.Helpers;
+using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Tests.Fixtures;
 using IncomeExpenditureTracker.Tests.Observability;
 using ClosedXML.Excel;
@@ -28,7 +28,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
         {
             _output = output;
 
-            // Bridge the StatementManager's internal logging directly to xUnit's console[cite: 5]
+            // Bridge the StatementManager's internal logging directly to xUnit's console
             var loggerProvider = new TestOutputLoggerProvider(_output);
             _logger = loggerProvider.CreateLogger(nameof(StatementManagerTests)) as ILogger<StatementManager>
                       ?? new LoggerFactory().CreateLogger<StatementManager>();
@@ -91,7 +91,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 () => mockEditSession.Object,  // Func<IStatementEditSession>
                 () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger // Injecting the xUnit bridged logger[cite: 5]
+                _logger // Injecting the xUnit bridged logger
             );
 
             var filePaths = new List<string> { file1, file2, file3 };
@@ -133,6 +133,11 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockImportService = new Mock<IStatementImport<IXLWorksheet>>();
             var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
 
+            // Setup the extractor mock so the Preview method succeeds
+            mockExtractor
+                .Setup(e => e.Analyze(It.IsAny<IXLWorksheet>(), It.IsAny<string>(), It.IsAny<bool>()))
+                .ReturnsAsync(new StatementPreview());
+
             var mockSynonymService = new Mock<ISynonymService>();
             mockSynonymService
                 .Setup(s => s.LearnFromCorrectionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
@@ -157,10 +162,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
             {
                 FinalPreview = new StatementPreview(),
                 ColumnCorrections = new List<ColumnMappingCorrection>
-        {
-            new ColumnMappingCorrection { RawHeaderName = "TXN_DATE", TargetField = "Date", Category = "TRANSACTION" }
-        }
+                {
+                    new ColumnMappingCorrection { RawHeaderName = "TXN_DATE", TargetField = "Date", Category = "TRANSACTION" }
+                }
             };
+
+            // Simulate the UI requesting a preview, which initializes our edit session in the dictionary
+            await manager.PreviewStagedFileAsync(stagedFileId);
 
             // Act
             await manager.CommitStagedFileAsync(stagedFileId, confirmedTracker);
@@ -234,7 +242,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 () => mockEditSession.Object,  // Func<IStatementEditSession>
                 () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger // Injecting the xUnit bridged logger[cite: 5]
+                _logger // Injecting the xUnit bridged logger
             ); ;
 
             var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!);
