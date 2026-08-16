@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Entities;
-using IncomeExpenditureTracker.Services.Tagging;
 
 namespace IncomeExpenditureTracker.Services.Orchestration;
 
@@ -24,6 +23,34 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     private readonly IAccountService _accountService;
     private readonly ITransactionService _transactionService;
 
+    private readonly IImportBatchService _importBatchService;
+
+    private readonly ISynonymService _synonymService;
+
+    /*
+    * =========================================================================
+    * ARCHITECTURAL NOTE: UI FACADE & TRANSACTION BOUNDARIES
+    * =========================================================================
+    * Why IDbConnection and IDbTransaction are omitted from Orchestrator methods:
+    *
+    * 1. Separation of Concerns (No Leaky Abstractions):
+    *    The UI layer (Controllers, Blazor, etc.) should only express business intent
+    *    (e.g., "AddSynonym" or "DeleteCategory"). It should not be responsible for
+    *    managing database primitives or knowing about the underlying data store.
+    *
+    * 2. Single-Step Operations (Simple CRUD):
+    *    For simple operations, the Orchestrator delegates directly to the underlying
+    *    services. Those services handle creating and closing their own safe,
+    *    temporary connections.
+    *
+    * 3. Multi-Step Operations (Complex Logic):
+    *    When an operation spans multiple services (e.g., DeleteCategorySafeAsync),
+    *    the Orchestrator acts as the transaction manager. It creates the transaction
+    *    internally and passes the connection/transaction DOWN to the underlying services,
+    *    but never exposes them UP to the UI.
+    * =========================================================================
+    */
+
     public MasterDataOrchestrator(
         IDatabaseService database,
         ICategoryService categoryService,
@@ -31,7 +58,9 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         ITagService tagService,
         IEntityService entityService,
         IAccountService accountService,
-        ITransactionService transactionService)
+        ITransactionService transactionService,
+        IImportBatchService importBatchService,
+        ISynonymService synonymService)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _categoryService = categoryService ?? throw new ArgumentNullException(nameof(categoryService));
@@ -40,7 +69,16 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         _entityService = entityService ?? throw new ArgumentNullException(nameof(entityService));
         _accountService = accountService ?? throw new ArgumentNullException(nameof(accountService));
         _transactionService = transactionService ?? throw new ArgumentNullException(nameof(transactionService));
+        _importBatchService = importBatchService ?? throw new ArgumentNullException(nameof(importBatchService));
+        _synonymService = synonymService ?? throw new ArgumentNullException(nameof(synonymService));
     }
+
+    // =========================================================================
+    // IMPORTBATCH SERVICES
+    // =========================================================================
+
+    public Task<List<ImportBatch>> GetAllImportBatchesAsync(CancellationToken ct = default)
+        => _importBatchService.GetAllImportBatches();
 
     // =========================================================================
     // CATEGORY MANAGEMENT
@@ -96,8 +134,6 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
             // 2. Delete the SubCategory
             await _subCategoryService.DeleteSubCategory(subCategoryId, conn, tx);
         });
-
-        _tagService.InvalidateCache();
     }
 
     // =========================================================================
@@ -106,6 +142,9 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
 
     public Task<RuleBookSnapshot> GetRuleBookSnapshotAsync(CancellationToken ct = default)
         => _tagService.GetRuleBookSnapshotAsync();
+
+    public Task<List<Tag>> GetAllTagsAsync(CancellationToken ct = default)
+        => _tagService.GetAllTags();
 
     public Task<int> GetOrCreateTagAsync(string name, int? subCategoryId = null, CancellationToken ct = default)
         => _tagService.GetOrCreateTagAsync(name, subCategoryId);
@@ -221,4 +260,29 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
 
         await _accountService.DeleteAccount(accountId);
     }
+
+    // =========================================================================
+    // SYNONYM MANAGEMENT (Added Section)
+    // =========================================================================
+
+    public Task<IEnumerable<Synonyms>> GetAllSynonymsAsync(CancellationToken ct = default)
+        => _synonymService.GetAllSynonyms();
+
+    public Task<IReadOnlyDictionary<string, Synonyms>> GetSynonymsByCategoryAsync(string category, CancellationToken ct = default)
+        => _synonymService.GetSynonymsByCategory(category);
+
+    public Task LearnFromCorrectionAsync(string rawSynonym, string fieldType, string category, CancellationToken ct = default)
+        => _synonymService.LearnFromCorrectionAsync(rawSynonym, fieldType, category);
+
+    public Task AddSynonymAsync(Synonyms synonym, CancellationToken ct = default)
+        => _synonymService.AddSynonymAsync(synonym);
+
+    public Task UpdateSynonymAsync(Synonyms synonym, CancellationToken ct = default)
+        => _synonymService.UpdateSynonymAsync(synonym);
+
+    public Task DeleteSynonymAsync(int id, CancellationToken ct = default)
+        => _synonymService.DeleteSynonymAsync(id);
+
+    public Task SeedDefaultFieldTypesAsync(IEnumerable<string> standardFieldTypes, string category, CancellationToken ct = default)
+        => _synonymService.SeedDefaultFieldTypesAsync(standardFieldTypes, category);
 }

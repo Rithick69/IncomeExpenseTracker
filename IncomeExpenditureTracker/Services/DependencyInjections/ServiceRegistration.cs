@@ -48,7 +48,7 @@ public static class ServiceRegistration
         services.AddTransient<IFieldMapper<IXLWorksheet>, FieldMapper>();
         services.AddTransient<IHeaderDetector<IXLWorksheet>, HeaderDetector>();
         services.AddTransient<ITransactionExtractor<IXLWorksheet>, ExcelTransactionExtractor>();
-        services.AddTransient<ConfidenceService>();
+        services.AddTransient<IConfidenceService, ConfidenceService>();
         services.AddTransient<IStrictAccountParser, StrictAccountParser>();
 
         // ---------------------------------------------------------
@@ -98,7 +98,7 @@ public static class ServiceRegistration
         // Tagging
         // ---------------------------------------------------------
         services.AddSingleton<ITagService, TagService>();
-        services.AddTransient<TagEngine>();
-        services.AddTransient<DescriptionParser>();
+        services.AddTransient<ITagEngine, TagEngine>();
+        services.AddTransient<IDescriptionParser, DescriptionParser>();
     }
 }

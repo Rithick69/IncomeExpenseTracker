@@ -67,20 +67,6 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             };
         }
 
-        // private static int GetCol(Dictionary<string, DetectedField> fields, string key)
-        // {
-        //     // Try exact match first (e.g., "Col:Date")
-        //     if (fields.TryGetValue(key, out var field))
-        //         return field.ColumnIndex;
-
-        //     // Fallback safety: try matching without the prefix just in case legacy keys slipped in
-        //     var unprefixedKey = key.Replace("Col:", "", StringComparison.OrdinalIgnoreCase);
-        //     if (fields.TryGetValue(unprefixedKey, out var fallbackField))
-        //         return fallbackField.ColumnIndex;
-
-        //     return -1;
-        // }
-
         private static int GetCol(Dictionary<string, DetectedField> fields, string key)
         {
             // 1. Fast Path: Try direct hash lookup (O(1))
@@ -346,34 +332,33 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 return result; // IsValid defaults to false
             }
 
+            var dateCell = sheetrow.Cell(coords.DateCol + 1);
+            var descCell = sheetrow.Cell(coords.DescCol + 1);
+
+            // FAST-FAIL: If both primary columns are completely empty, safely skip (it's a blank row or footer)
+            if (dateCell.IsEmpty() && string.IsNullOrWhiteSpace(descCell.GetString()))
+            {
+                return result;
+            }
+
             // -----------------------------
             //  STEP 2: DATE
             // -----------------------------
-            // Safely extract Date
-            var dateCell = sheetrow.Cell(coords.DateCol + 1);
-            if (!TryGetDate(dateCell, out var parsedDate))
-            {
-                return result; // Not a valid transaction row (e.g., subheader or footer)
-            }
-            result.Date = parsedDate;
+            bool hasValidDate = TryGetDate(dateCell, out var parsedDate);
+            result.Date = parsedDate; // Assigns default(DateTime) if false
 
             // -----------------------------
             //  STEP 3: DESCRIPTION
             // -----------------------------
-
-            var description = sheetrow.Cell(coords.DescCol + 1).GetString().Trim();
-
-            if (string.IsNullOrWhiteSpace(description))
-                return result;
-
-            if (description.Length < 3)
-                return result;
+            var rawDescription = descCell.GetString().Trim();
 
             // Skip balance rows
-            if (IsBalanceRow(description))
+            if (IsBalanceRow(rawDescription))
                 return result;
 
-            result.Description = description;
+            // Route through the new sanitization helper
+            var descCheck = SanitizeDescription(rawDescription);
+            result.Description = descCheck.CleanedDescription;
 
             // -----------------------------
             // STEP 4: PARSE AMOUNTS (Single vs. Dual Column Logic)
@@ -476,6 +461,30 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             }
 
             // -----------------------------
+            // STEP 5: UNIFIED GUARDRAILS (Tier 1 Error strategy)
+            // -----------------------------
+            // If the Date or Description failed validation, we explicitly flag the row regardless of amount success.
+            if (!hasValidDate || !descCheck.IsValid)
+            {
+                result.NeedsReview = true;
+
+                var errorList = new List<string>();
+
+                // Keep any existing amount parsing errors
+                if (!string.IsNullOrWhiteSpace(result.ParseErrorMessage))
+                    errorList.Add(result.ParseErrorMessage);
+
+                // Append structural errors
+                if (!hasValidDate)
+                    errorList.Add("Invalid or missing Date.");
+
+                if (!descCheck.IsValid)
+                    errorList.Add(descCheck.ErrorMessage);
+
+                result.ParseErrorMessage = string.Join(" | ", errorList);
+            }
+
+            // -----------------------------
             // VALIDATION
             // -----------------------------
             result.IsValid = IsValidRow(result);
@@ -487,6 +496,36 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             Console.WriteLine($"Error parsing transaction row: {ex.Message}");
             return new ParsedTransactionRow();
         }
+    }
+
+    /// <summary>
+    /// Sanitizes the raw description to prevent database overflow and basic UI injection,
+    /// while determining if the row requires human review.
+    /// </summary>
+    private (string CleanedDescription, bool IsValid, string ErrorMessage) SanitizeDescription(string rawDescription)
+    {
+        if (string.IsNullOrWhiteSpace(rawDescription) || rawDescription.Length < 3)
+        {
+            string fallback = string.IsNullOrWhiteSpace(rawDescription) ? "[UNNAMED TRANSACTION]" : rawDescription;
+            return (fallback, false, "Missing or excessively short description.");
+        }
+
+        bool isValid = true;
+        string errorMessage = string.Empty;
+        string cleaned = rawDescription;
+
+        // Strip suspicious characters (Basic UI XSS Protection)
+        if (cleaned.Contains('<') || cleaned.Contains('>'))
+        {
+            isValid = false;
+            errorMessage = "Description contains suspicious characters (HTML/Scripts stripped).";
+            cleaned = cleaned.Replace("<", "").Replace(">", "");
+        }
+
+        // Enforce Database Column Length to prevent SQL truncation exceptions
+        cleaned = TruncateForDb(cleaned, 255) ?? "[UNNAMED TRANSACTION]";
+
+        return (cleaned, isValid, errorMessage);
     }
 
     private bool TryGetDate(IXLCell cell, out DateTime date)
@@ -536,6 +575,18 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         if (t == null)
             return false;
 
+        // =========================================================================
+        // TIER 1 ERROR BYPASS
+        // If we deliberately flagged it for review (due to bad date, bad description,
+        // or ambiguous amounts), it IS a valid extraction target.
+        // We MUST keep it so the user can see the error flags!
+        // =========================================================================
+        if (t.NeedsReview)
+            return true;
+
+        // =========================================================================
+        // STANDARD VALIDATION (For rows claiming to be clean)
+        // =========================================================================
         if (t.Date == default)
             return false;
 

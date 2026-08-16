@@ -18,7 +18,7 @@ namespace IncomeExpenditureTracker.Services.Helpers;
 // 2. Remove numbers and stop words
 // 3. Generate sliding window tokens
 // ------------------------------------------------------------
-public class DescriptionParser
+public class DescriptionParser : IDescriptionParser
 {
     private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
     {

@@ -10,7 +10,7 @@ using Xunit.Abstractions;
 using Moq;
 using Xunit;
 using IncomeExpenditureTracker.Models;
-using IncomeExpenditureTracker.Services.Tagging;
+using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
 
@@ -75,7 +75,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // Initialize REAL services for the workflow
             var descriptionLogger = new Mock<ILogger<DescriptionParser>>();
-            var descriptionParser = new DescriptionParser(descriptionLogger.Object);
+            IDescriptionParser descriptionParser = new DescriptionParser(descriptionLogger.Object);
             var loggerMock = new Mock<ILogger<TagService>>();
 
             _tagService = new TagService(_dbServiceWrapper.Object, descriptionParser, loggerMock.Object);

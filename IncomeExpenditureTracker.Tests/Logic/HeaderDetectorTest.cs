@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using IncomeExpenditureTracker.Tests.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using IncomeExpenditureTracker.Services.Helpers;
+using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Database;
 
 namespace IncomeExpenditureTracker.Tests.Tests.Logic

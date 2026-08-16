@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Entities;
 
 namespace IncomeExpenditureTracker.Services.Tagging;
 
@@ -17,7 +18,7 @@ namespace IncomeExpenditureTracker.Services.Tagging;
 // 3. Ambiguity Guardrail: Ties on Priority AND Match Count fall back to Misc to prevent silent misclassification.
 // 4. Row-Level Fault Isolation: A single malformed row never aborts the batch.
 // -------------------------------------------------------------------------------------------------
-public class TagEngine
+public class TagEngine : ITagEngine
 {
     private readonly ITagService _tagService;
     private readonly ILogger<TagEngine> _logger;

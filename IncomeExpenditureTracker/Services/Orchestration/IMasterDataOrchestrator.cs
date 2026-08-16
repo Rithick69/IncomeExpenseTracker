@@ -9,6 +9,13 @@ namespace IncomeExpenditureTracker.Services.Orchestration;
 /// The central UI facade for Master Data Management.
 /// Abstracts all CRUD operations and coordinates cross-service referential integrity.
 /// Hides underlying SQLite transactions (conn, tx) from the Avalonia ViewModels.
+///
+/// Future-Proofing the UI Layer
+/// Orchestrators act as the strict UI facades for Avalonia ViewModels.
+/// In UI development, if a user clicks "Update" but then immediately navigates away to a different screen or hits "Cancel,"
+/// the ViewModel can fire a cancellation token.By having ct = default in orchestrator now,
+/// UI layer can safely pass that token in.
+/// Later, when you decide to pass that token all the way down to Dapper / SQLite, you won't have to break your UI code or interface contracts to do it.
 /// </summary>
 public interface IMasterDataOrchestrator
 {

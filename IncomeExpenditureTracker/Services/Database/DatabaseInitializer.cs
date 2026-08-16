@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
-using IncomeExpenditureTracker.Services.Helpers;
+using IncomeExpenditureTracker.Services.Entities;
 
 namespace IncomeExpenditureTracker.Services.Database;
 

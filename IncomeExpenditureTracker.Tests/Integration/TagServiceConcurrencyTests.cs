@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using IncomeExpenditureTracker.Models;
-using IncomeExpenditureTracker.Services.Tagging;
+using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
 
@@ -76,9 +76,9 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 });
 
             // Initialize the required DescriptionParser dependency.
-            // DescriptionParser expects an ILogger<DescriptionParser>, not ILogger<TagService>.
+            // DescriptionParser expects an ILogger<DescriptionParser>.
             var descriptionLogger = new Mock<ILogger<DescriptionParser>>();
-            var descriptionParser = new DescriptionParser(descriptionLogger.Object);
+            IDescriptionParser descriptionParser = new DescriptionParser(descriptionLogger.Object);
 
             // Initialize the TagService (System Under Test)
             var sut = new TagService(
@@ -147,7 +147,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 });
 
             var descriptionLogger = new Mock<ILogger<DescriptionParser>>();
-            var descriptionParser = new DescriptionParser(descriptionLogger.Object);
+            IDescriptionParser descriptionParser = new DescriptionParser(descriptionLogger.Object);
             var sut = new TagService(_mockDatabaseService.Object, descriptionParser, _mockLogger.Object);
 
             // Act & Assert

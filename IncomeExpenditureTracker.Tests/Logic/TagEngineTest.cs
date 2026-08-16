@@ -6,6 +6,7 @@ using Moq;
 using Xunit;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Tagging;
+using IncomeExpenditureTracker.Services.Entities;
 
 namespace IncomeExpenditureTracker.Tests.Logic
 {

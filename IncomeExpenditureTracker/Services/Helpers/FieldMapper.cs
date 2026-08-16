@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Entities;
 
 namespace IncomeExpenditureTracker.Services.Helpers;
 

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using IncomeExpenditureTracker.Models;
 
 namespace IncomeExpenditureTracker.Models;
 

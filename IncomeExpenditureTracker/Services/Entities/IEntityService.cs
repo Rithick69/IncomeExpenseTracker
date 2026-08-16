@@ -11,7 +11,7 @@ namespace IncomeExpenditureTracker.Services.Entities;
 public interface IEntityService
 {
     Task<int> GetOrCreateEntity(string name, IDbConnection? conn = null, IDbTransaction? tx = null);
-    Task<List<Entity>> GetAllEntities(IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task<List<Entity>> GetAllEntities();
     Task UpdateEntity(Entity entity, IDbConnection? conn = null, IDbTransaction? tx = null);
     Task DeleteEntity(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null);
 

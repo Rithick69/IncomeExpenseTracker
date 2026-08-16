@@ -4,6 +4,8 @@
 // This allows grouping transactions by import file, filtering transactions in the UI, deleting a full import if needed, and preventing duplicate imports later.
 using System.Data;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using IncomeExpenditureTracker.Models;
 
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -17,4 +19,6 @@ public interface IImportBatchService
         IDbTransaction? tx = null);
 
     Task DeleteBatchAsync(int batchId, IDbConnection? conn = null, IDbTransaction? tx = null);
+
+    Task<List<ImportBatch>> GetAllImportBatches();
 }
