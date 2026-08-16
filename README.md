@@ -100,13 +100,13 @@ IncomeExpenseTracker/
      ├── Services/
      │    ├── Database/ (DatabaseInitializer & DatabaseService)
      │    ├── DependencyInjections/
-     │    ├── Entities/ (AccountService, EntityService, TransactionService, ImportBatchService)
-     │    ├── Helpers/ (HeaderDetector, FieldMapper, StrictAccountParser, DescriptionParser, SynonymService)
+     │    ├── Entities/ (AccountService, EntityService, TransactionService, ImportBatchService, TagService, SynonymService)
+     │    ├── Helpers/ (HeaderDetector, FieldMapper, StrictAccountParser, DescriptionParser)
      │    ├── Importing/ (ExcelStatementExtractor, ExcelStatementImport)
      │    ├── Orchestration/ (MasterDataOrchestrator, TransactionReviewOrchestrator)
      │    ├── PreviewInsights/ (ConfidenceService)
      │    ├── StatementManagement/ (StatementManager, StatementLoader, StatementEditService)
-     │    ├── Tagging/ (TagService, TagEngine)
+     │    ├── Tagging/ (TagEngine)
      │    └── TransactionExtractor/ (ExcelTransactionExtractor)
      ├── ViewModels/
      └── Views/
