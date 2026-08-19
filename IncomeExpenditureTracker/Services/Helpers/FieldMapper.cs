@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace IncomeExpenditureTracker.Services.Helpers;
 
@@ -41,6 +42,7 @@ namespace IncomeExpenditureTracker.Services.Helpers;
 
 public class FieldMapper : IFieldMapper<IXLWorksheet>
 {
+    private readonly ILogger<FieldMapper> _logger;
     private IEnumerable<Synonyms> _synonyms = null!;
 
     // Exact synonym lookup
@@ -56,10 +58,10 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     private bool _isInitialized = false;
 
     // 1. The constructor is strictly for injecting dependencies
-    public FieldMapper(ISynonymService synonymService)
+    public FieldMapper(ISynonymService synonymService, ILogger<FieldMapper> logger)
     {
-        ArgumentNullException.ThrowIfNull(synonymService);
-        _synonymService = synonymService;
+        _synonymService = synonymService ?? throw new ArgumentNullException(nameof(synonymService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
 
@@ -213,7 +215,7 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FieldMapper] Column detection failed: {ex.Message}");
+            _logger.LogError(ex, "[FieldMapper] Column detection failed");
             throw;
         }
     }
@@ -287,7 +289,7 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FieldMapper] Account detail detection failed: {ex.Message}");
+            _logger.LogError(ex, "[FieldMapper] Account detail detection failed");
             throw;
         }
     }

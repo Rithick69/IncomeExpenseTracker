@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Importing;
+using IncomeExpenditureTracker.Services.Messaging;
 namespace IncomeExpenditureTracker.Services.StatementManagement;
 
 // This service manages the lifecycle of uploaded statement files, including staging them for preview and allowing users to discard them if they choose not to proceed with the import.
@@ -29,6 +30,8 @@ public class StatementManager : IDisposable
     private readonly Func<IStatementImport<IXLWorksheet>> _statementImportFactory;
 
     private readonly ILogger<StatementManager> _logger;
+
+    private readonly IApplicationBroker _broker;
     private readonly ISynonymService _synonymService;
 
     // Lock-free concurrent storage prevents thread contention between UI reads and parallel background loads
@@ -46,7 +49,8 @@ public class StatementManager : IDisposable
         Func<IStatementEditSession> editSessionFactory,
         Func<IStatementImport<IXLWorksheet>> statementImportFactory,
         ISynonymService synonymService,
-        ILogger<StatementManager> logger
+        ILogger<StatementManager> logger,
+        IApplicationBroker broker
         )
     {
         _statementLoader = statementLoader;
@@ -55,6 +59,7 @@ public class StatementManager : IDisposable
         _statementImportFactory = statementImportFactory;
         _synonymService = synonymService;
         _logger = logger;
+        _broker = broker;
     }
 
     // This method stages multiple files for preview by loading them asynchronously and providing progress updates.
@@ -93,7 +98,11 @@ public class StatementManager : IDisposable
         var successes = new ConcurrentBag<PendingFilePreview>();
         var failures = new ConcurrentBag<FileStagingError>();
 
-        progress?.Report(new LoadingProgress { Percentage = 0, Message = $"Staging {totalFiles} files..." });
+        string startMessage = $"Staging {totalFiles} files...";
+        progress?.Report(new LoadingProgress { Percentage = 0, Message = startMessage });
+
+        // Broadcast the start of the process to the UI
+        _broker.Send(new StagingProgressMessage(0, startMessage));
 
         // Load all files concurrently and track progress
         // We use Task.WhenAll to load all files in parallel, which can significantly reduce the time taken to stage multiple files, especially if they are large.
@@ -135,31 +144,50 @@ public class StatementManager : IDisposable
                 // TIER 2 SINK: Specifically trap OS-level file locks
                 _logger.LogWarning(ex, "OS file lock encountered on '{FileName}'.", fileName);
 
-                // Note: Ensure FileStagingError model matches these parameters
-                failures.Add(new FileStagingError(fileId, fileName, ErrorSeverity.Warning,
-                    "This file is currently locked by another program (e.g., Excel). Please close it and try again.", ex));
+                // 1. Create the error payload
+                var error = new FileStagingError(fileId, fileName, ErrorSeverity.Warning,
+                    "This file is currently locked by another program (e.g., Excel). Please close it and try again.", ex);
 
-                DiscardFile(fileId); // Centralized OS lock release
+                // 2. Add to your existing batch failures list
+                failures.Add(error);
+
+                // 3. Centralized OS lock release
+                DiscardFile(fileId);
+
+                // 4. NEW: Broadcast the error to the UI instantly via the postman!
+                _broker.Send(new FileStagingErrorMessage(error));
             }
             catch (Exception ex)
             {
                 // TIER 2 SINK: Trap catastrophic/unknown ClosedXML faults
                 _logger.LogError(ex, "Catastrophic failure staging '{FileName}'.", fileName);
 
-                failures.Add(new FileStagingError(fileId, fileName, ErrorSeverity.Fatal,
-                    "An unexpected error occurred while reading the file. It may be corrupted or unsupported.", ex));
+                var error = new FileStagingError(fileId, fileName, ErrorSeverity.Fatal,
+                    "An unexpected error occurred while reading the file. It may be corrupted or unsupported.", ex);
+
+                failures.Add(error);
                 DiscardFile(fileId); // Ensure any partially loaded file is cleaned up
+
+                // NEW: Broadcast the error to the UI
+                _broker.Send(new FileStagingErrorMessage(error));
             }
             finally
             {
                 // By putting progress in a 'finally' block, the UI loading bar reliably increments
                 // whether the individual file succeeded OR failed!
                 int currentCompleted = Interlocked.Increment(ref completedFiles);
+                int currentPercentage = currentCompleted * 100 / totalFiles;
+                string progressMsg = $"Processed {currentCompleted} of {totalFiles} files...";
+
+                // 1. Legacy Progress Support (Optional, can be phased out later)
                 progress?.Report(new LoadingProgress
                 {
-                    Percentage = currentCompleted * 100 / totalFiles,
-                    Message = $"Processed {currentCompleted} of {totalFiles} files..."
+                    Percentage = currentPercentage,
+                    Message = progressMsg
                 });
+
+                // 2. Broadcast live progress updates instantly to the UI!
+                _broker.Send(new StagingProgressMessage(currentPercentage, progressMsg));
             }
         });
 
@@ -167,6 +195,8 @@ public class StatementManager : IDisposable
         await Task.WhenAll(loadTasks);
 
         _logger.LogInformation("Staging batch completed. Successes: {SuccessCount}, Failures: {FailureCount}.", successes.Count, failures.Count);
+
+        _broker.Send(new StagingBatchCompletedMessage(successes.Count, failures.Count));
 
         // Return the combined hand-off bundle to the UI ViewModel
         return new StagingBatchResult
@@ -249,6 +279,12 @@ public class StatementManager : IDisposable
 
             // Immediately release OS lock since this file is now in an unrecoverable state
             DiscardFile(fileId);
+
+            // NEW: Package and broadcast the error before throwing
+            var error = new FileStagingError(fileId, stagedFile.FileName, ErrorSeverity.Fatal,
+                $"Failed to analyze the document '{stagedFile.FileName}'. The file structure may be severely corrupted.", ex);
+
+            _broker.Send(new FileStagingErrorMessage(error));
 
             throw new InvalidOperationException($"Failed to analyze the document '{stagedFile.FileName}'. The file structure may be severely corrupted.", ex);
         }

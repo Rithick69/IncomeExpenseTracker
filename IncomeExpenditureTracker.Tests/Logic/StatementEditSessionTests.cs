@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Xunit;
 using IncomeExpenditureTracker.Models;
+using Microsoft.Extensions.Logging.Abstractions;
 using IncomeExpenditureTracker.Services.StatementManagement;
 
 namespace IncomeExpenditureTracker.Tests.Logic
@@ -23,7 +24,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
             // ---------------------------------------------------------------------------------
 
             // Arrange
-            var session = new StatementEditSession();
+            var session = new StatementEditSession(NullLogger<StatementEditSession>.Instance);
             var initialPreview = new StatementPreview();
             session.Initialize(initialPreview); // Step 1: Initialize the workbench
 
@@ -69,7 +70,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
             // or modify the preview before the StatementManager has provided one.
             // ---------------------------------------------------------------------------------
 
-            var session = new StatementEditSession();
+            var session = new StatementEditSession(NullLogger<StatementEditSession>.Instance);
 
             // Act & Assert
             var ex1 = Assert.Throws<InvalidOperationException>(() => session.GetCurrentPreview());
@@ -86,7 +87,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
             // DECISION: Column 0 is valid (Column A). Anything less than 0 is structurally invalid.
             // ---------------------------------------------------------------------------------
 
-            var session = new StatementEditSession();
+            var session = new StatementEditSession(NullLogger<StatementEditSession>.Instance);
             session.Initialize(new StatementPreview());
 
             // Act & Assert
@@ -103,7 +104,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
             // OBJECTIVE: Guard against null propagation from failed extractions.
             // ---------------------------------------------------------------------------------
 
-            var session = new StatementEditSession();
+            var session = new StatementEditSession(NullLogger<StatementEditSession>.Instance);
 
             // Act & Assert
 #pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
@@ -121,7 +122,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
             // ---------------------------------------------------------------------------------
 
             // Arrange
-            var session = new StatementEditSession();
+            var session = new StatementEditSession(NullLogger<StatementEditSession>.Instance);
             session.Initialize(new StatementPreview());
             session.UpdateColumnMapping("Date", "DATE", 0, "TRANSACTION");
 

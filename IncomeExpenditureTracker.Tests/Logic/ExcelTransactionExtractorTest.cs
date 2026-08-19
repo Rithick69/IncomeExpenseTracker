@@ -5,6 +5,7 @@ using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Helpers;
 using IncomeExpenditureTracker.Services.TransactionExtractor;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -26,8 +27,17 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
             _parserMock = new Mock<IStrictAccountParser>();
 
             // 2. Inject the mock into the service.
-            // (Add any other mocked dependencies like ILogger here if needed).
-            _extractor = new ExcelTransactionExtractor(_parserMock.Object);
+            var logger = new Mock<ILogger<ExcelTransactionExtractor>>();
+            _extractor = new ExcelTransactionExtractor(_parserMock.Object, logger.Object);
+        }
+
+        [Fact]
+        public void Constructor_WithLogger_InitializesSuccessfully()
+        {
+            var logger = new Mock<ILogger<ExcelTransactionExtractor>>();
+            var extractor = new ExcelTransactionExtractor(_parserMock.Object, logger.Object);
+
+            Assert.NotNull(extractor);
         }
 
         // =========================================================================

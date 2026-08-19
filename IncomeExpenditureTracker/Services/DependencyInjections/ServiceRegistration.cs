@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using ClosedXML.Excel;
 using System;
+using System.IO;
+using Serilog;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
@@ -11,26 +13,73 @@ using IncomeExpenditureTracker.Services.StatementManagement;
 using IncomeExpenditureTracker.Services.Orchestration;
 using IncomeExpenditureTracker.Services.Tagging;
 using IncomeExpenditureTracker.Services.Entities;
+using IncomeExpenditureTracker.Services.Messaging;
+using IncomeExpenditureTracker.ViewModels;
 namespace IncomeExpenditureTracker.DependencyInjection;
+
+/// <summary>
+/// Serilog is a structured logging library.
+/// Traditional loggers just write plain text strings to a file (e.g., "Error processing file at 8:00 PM").
+/// Serilog writes data as key-value pairs (like JSON).
+/// This means if you ever use a log viewer, you can filter logs exactly by BatchId or Severity rather than just reading endless text walls.
+/// It is fast, memory-safe, and the absolute standard in modern .NET development.
+/// </summary>
 
 public static class ServiceRegistration
 {
     public static void Register(IServiceCollection services)
     {
-        // 1. REGISTER LOGGING
-        services.AddLogging(builder =>
+        // =========================================================
+        // 1. LOGGING CONFIGURATION (The Record Keeper)
+        // =========================================================
+
+        // 1. Get the cross-platform application data folder
+        string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string appDirectory = Path.Combine(appDataPath, "IncomeExpenditureTracker");
+        string logDirectory = Path.Combine(appDirectory, "Logs");
+
+        // 2. Ensure the directory exists (Directory.CreateDirectory does nothing if it already exists)
+        Directory.CreateDirectory(logDirectory);
+
+        string logFilePath = Path.Combine(logDirectory, "tracker-.txt");
+
+        // Build the Serilog configuration
+        var serilogLogger = new LoggerConfiguration()
+            .MinimumLevel.Debug() // As per architecture: sets minimum severity to Debug
+            .WriteTo.Console()    // As per architecture: routes to Console
+            .WriteTo.Debug()      // As per architecture: routes to VS Debug
+                                  // The new Rolling File Sink for production tracking:
+            .WriteTo.File(
+                path: logFilePath, // Serilog will auto-append the date (e.g., tracker-20260816.txt)
+                rollingInterval: RollingInterval.Day, // Creates a new file every night at midnight
+                fileSizeLimitBytes: 10 * 1024 * 1024, // 10 MB strict limit per file to prevent disk bloat
+                rollOnFileSizeLimit: true, // If it hits 10MB in one day, it creates a new file (e.g., tracker-20260816_001.txt)
+                retainedFileCountLimit: 7) // Auto-deletes files older than 7 days (Zero manual cleanup required)
+            .CreateLogger();
+
+        services.AddLogging(loggingBuilder =>
         {
-            builder.ClearProviders(); // Clears default noisy providers
+            // As per architecture: Clears default noisy Microsoft providers
+            loggingBuilder.ClearProviders();
 
-            // Outputs logs to the Visual Studio / Rider "Debug Output" window
-            builder.AddDebug();
-
-            // Outputs logs to the terminal / console window
-            builder.AddConsole();
-
-            // Set the minimum log level (Information is great for general dev, Debug for deep troubleshooting)
-            builder.SetMinimumLevel(LogLevel.Debug);
+            // Plugs our Serilog configuration into the Microsoft.Extensions.Logging pipeline.
+            // 'dispose: true' ensures the file handles are gracefully released when the app shuts down.
+            loggingBuilder.AddSerilog(serilogLogger, dispose: true);
         });
+
+        // =========================================================
+        // UI MESSAGING & MVVM (Phase 5)
+        // =========================================================
+
+        // The Broker is a Singleton: We only ever want ONE postman delivering mail for the entire app.
+        services.AddSingleton<IApplicationBroker, ToolkitMessengerAdapter>();
+
+        // ViewModels are usually Transient: If the user opens a window, we get a fresh Waiter.
+        // If they close it, it gets destroyed cleanly without holding onto old data.
+        services.AddTransient<MainWindowViewModel>();
+        services.AddTransient<StatementEditViewModel>();
+        services.AddTransient<MasterDataViewModel>();
+        services.AddTransient<TransactionReviewViewModel>();
 
         // ---------------------------------------------------------
         // Database

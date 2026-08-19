@@ -243,7 +243,7 @@ public class TransactionService : ITransactionService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[TransactionService] Failed to delete batch transactions: {ex.Message}");
+            _logger.LogError(ex, "[TransactionService] Failed to delete batch transactions");
             throw;
         }
     }

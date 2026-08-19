@@ -4,11 +4,14 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using IncomeExpenditureTracker.Models;
+using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Orchestration;
 using Moq;
 using Xunit;
+using Castle.Core.Logging;
+using IncomeExpenditureTracker.Services.Messaging;
 
 namespace IncomeExpenditureTracker.Tests.Integration
 {
@@ -24,13 +27,16 @@ namespace IncomeExpenditureTracker.Tests.Integration
         private readonly Mock<IImportBatchService> _importBatchMock = new();
         private readonly Mock<ISynonymService> _synonymMock = new();
 
+        private readonly Mock<ILogger<MasterDataOrchestrator>> _loggerMock = new();
+        private readonly Mock<IApplicationBroker> _brokerMock = new();
+
         private MasterDataOrchestrator CreateOrchestrator()
         {
             return new MasterDataOrchestrator(
                 _dbMock.Object, _categoryMock.Object, _subCategoryMock.Object,
                 _tagMock.Object, _entityMock.Object, _accountMock.Object,
                 _transactionMock.Object, _importBatchMock.Object,
-                _synonymMock.Object);
+                _synonymMock.Object, _brokerMock.Object, _loggerMock.Object);
         }
 
         private void SetupDatabaseTransactionMock()

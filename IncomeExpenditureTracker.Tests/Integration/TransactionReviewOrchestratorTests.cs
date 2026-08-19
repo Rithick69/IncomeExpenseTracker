@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Orchestration;
@@ -19,13 +21,18 @@ namespace IncomeExpenditureTracker.Tests.Integration
         private readonly Mock<IImportBatchService> _batchMock = new();
         private readonly Mock<ITagService> _tagMock = new();
 
+        private readonly Mock<ILogger<TransactionReviewOrchestrator>> _loggerMock = new();
+        private readonly Mock<IApplicationBroker> _brokerMock = new();
+
         private TransactionReviewOrchestrator CreateOrchestrator()
         {
             return new TransactionReviewOrchestrator(
                 _dbMock.Object,
                 _transactionMock.Object,
                 _batchMock.Object,
-                _tagMock.Object);
+                _tagMock.Object,
+                _loggerMock.Object,
+                _brokerMock.Object);
         }
 
         private void SetupDatabaseTransactionMock()

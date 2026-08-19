@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace IncomeExpenditureTracker.Services.Helpers;
 
@@ -19,16 +20,17 @@ namespace IncomeExpenditureTracker.Services.Helpers;
 // ------------------------------------------------------------
 public class HeaderDetector : IHeaderDetector<IXLWorksheet>
 {
+    private readonly ILogger<HeaderDetector> _logger;
     private Dictionary<string, string> _synonymFieldMap = null!;
     private readonly ISynonymService _synonymService = null!;
     private IReadOnlyDictionary<string, Synonyms> _synonyms = null!;
     private bool _isInitialized = false;
 
 
-    public HeaderDetector(ISynonymService synonymService)
+    public HeaderDetector(ISynonymService synonymService, ILogger<HeaderDetector> logger)
     {
-        ArgumentNullException.ThrowIfNull(synonymService);
-        _synonymService = synonymService;
+        _synonymService = synonymService ?? throw new ArgumentNullException(nameof(synonymService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
 
@@ -102,7 +104,7 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
                         if (string.IsNullOrWhiteSpace(text))
                             continue;
 
-                        // FIX #2: Check the FULL cell text first to support multi-word synonyms like "TXN DATE"
+                        // Check the FULL cell text first to support multi-word synonyms like "TXN DATE"
                         if (_synonymFieldMap.TryGetValue(text, out var fieldType))
                         {
                             score += _weights.TryGetValue(fieldType, out var weight) ? weight : 1;
@@ -152,7 +154,7 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[HeaderDetector] Failed to detect header row: {ex.Message}");
+            _logger.LogError(ex, "[HeaderDetector] Failed to detect header row");
             throw;
         }
     }
