@@ -168,6 +168,7 @@ public class SynonymService : ISynonymService
     /// <summary>
     /// Serves category-scoped synonyms from an immutable in-memory RAM snapshot in O(1) time .
     /// Eliminates SQLite disk I/O during high-volume parsing and concurrent workbook staging .
+    /// Here Category stands for TRANSACTION/META categorisation of header fields.
     /// </summary>
     public async Task<IReadOnlyDictionary<string, Synonyms>> GetSynonymsByCategory(string category)
     {
@@ -252,6 +253,14 @@ public class SynonymService : ISynonymService
             await _database.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
             {
                 const string maxPrioritySql = "SELECT MAX(Priority) FROM Synonyms WHERE Synonym = @Synonym AND Category = @Category;";
+
+                /*
+                 * WHY MAX(Priority) + 1 INSTEAD OF 0?
+                 * 1. Overrides: This is a user correction, so the synonym might already exist
+                 *    with a wrong FieldType. A higher priority ensures this new entry wins.
+                 * 2. Audit Trail: By doing an INSERT instead of an UPDATE, we preserve the
+                 *    historical record of previous mistakes and corrections.
+                 */
 
                 var currentMaxPriority = await connection.QuerySingleOrDefaultAsync<int?>(
                     maxPrioritySql,

@@ -4,6 +4,8 @@ using System.Globalization;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Helpers;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IncomeExpenditureTracker.Services.TransactionExtractor;
 
@@ -35,10 +37,12 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
     // ------------------------------------------------------------
 
     public readonly IStrictAccountParser _strictAccountParser;
+    private readonly ILogger<ExcelTransactionExtractor> _logger;
 
-    public ExcelTransactionExtractor(IStrictAccountParser strictAccountParser)
+    public ExcelTransactionExtractor(IStrictAccountParser strictAccountParser, ILogger<ExcelTransactionExtractor>? logger = null)
     {
-        _strictAccountParser = strictAccountParser;
+        _strictAccountParser = strictAccountParser ?? throw new ArgumentNullException(nameof(strictAccountParser));
+        _logger = logger ?? NullLogger<ExcelTransactionExtractor>.Instance;
     }
 
     // ------------------------------------------------------------
@@ -140,6 +144,18 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
     {
         try
         {
+            if (worksheet == null)
+            {
+                _logger.LogError("[ExtractPreview] Preview extraction rejected: worksheet was null.");
+                throw new ArgumentNullException(nameof(worksheet));
+            }
+
+            if (columnFields == null)
+            {
+                _logger.LogError("[ExtractPreview] Preview extraction rejected: column field map was null for worksheet '{WorksheetName}'.", worksheet.Name);
+                throw new ArgumentNullException(nameof(columnFields));
+            }
+
             // Resolve O(1) integers once before the loop
             var coords = TransactionColumnCoordinates.FromDictionary(columnFields);
 
@@ -196,11 +212,18 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 });
             }
 
+            _logger.LogInformation(
+                "[ExtractPreview] Preview extraction completed for worksheet '{WorksheetName}' with {TransactionCount} valid preview rows.",
+                worksheet?.Name ?? "Unknown",
+                results.Count);
+
             return results;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error extracting preview transactions: {ex.Message}");
+            _logger.LogError(ex, "[ExtractPreview] Error extracting preview transactions for worksheet '{WorksheetName}' at header row {HeaderRow}.",
+                worksheet?.Name ?? "Unknown",
+                headerRow);
             return new List<TransactionPreview>();
         }
     }
@@ -214,6 +237,18 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
     {
         try
         {
+            if (worksheet == null)
+            {
+                _logger.LogError("[ExtractTransactions] Full extraction rejected: worksheet was null.");
+                throw new ArgumentNullException(nameof(worksheet));
+            }
+
+            if (previewFields == null)
+            {
+                _logger.LogError("[ExtractTransactions] Full extraction rejected: preview field map was null for worksheet '{WorksheetName}'.", worksheet.Name);
+                throw new ArgumentNullException(nameof(previewFields));
+            }
+
             // Resolve O(1) integers once before the loop
             var coords = TransactionColumnCoordinates.FromDictionary(previewFields);
 
@@ -271,10 +306,18 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 results.Add(transaction);
             }
 
+            _logger.LogInformation(
+                "[ExtractTransactions] Full extraction completed for worksheet '{WorksheetName}' with {TransactionCount} rows extracted.",
+                worksheet?.Name ?? "Unknown",
+                results.Count);
+
             return results;
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "[ExtractTransactions] Error extracting transactions for worksheet '{WorksheetName}' at header row {HeaderRow}.",
+                worksheet?.Name ?? "Unknown",
+                headerRow);
             Console.WriteLine($"Error extracting transactions: {ex.Message}");
             return new List<Transaction>();
         }
@@ -493,7 +536,7 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error parsing transaction row: {ex.Message}");
+            _logger.LogError(ex, "[ParseRow] Error parsing transaction row {RowNumber} during extraction.", sheetrow.RowNumber());
             return new ParsedTransactionRow();
         }
     }

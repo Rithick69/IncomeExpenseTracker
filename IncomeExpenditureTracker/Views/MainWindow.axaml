@@ -7,14 +7,51 @@
         x:Class="IncomeExpenditureTracker.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="IncomeExpenditureTracker">
+        Title="Income &amp; Expenditure Tracker"
+        Width="1024" Height="768"
+        Background="#F4F6F8">
 
     <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    <!-- A Grid allows us to layer elements on top of each other -->
+    <Grid>
 
+        <!-- LAYER 1: Main Content Area Placeholder -->
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+            <TextBlock Text="Phase 5: Reactive UI Messenger is Active."
+                       FontSize="24" FontWeight="Bold" Foreground="#2C3E50"
+                       HorizontalAlignment="Center" Margin="0,0,0,10"/>
+            <TextBlock Text="The frontend is now safely listening to backend background threads."
+                       FontSize="16" Foreground="#7F8C8D"
+                       HorizontalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- LAYER 2: The Toast Notification Overlay -->
+        <!-- We align this to the Top Right corner, floating above Layer 1 -->
+        <ItemsControl ItemsSource="{Binding ToastNotifications}"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Top"
+                      Margin="20">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+
+                    <!-- The visual design of a single Toast Notification -->
+                    <Border Background="#E74C3C"
+                            CornerRadius="8"
+                            Padding="15"
+                            Margin="0,0,0,10"
+                            BoxShadow="0 4 8 0 #40000000">
+                        <TextBlock Text="{Binding}"
+                                   Foreground="White"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="300"/>
+                    </Border>
+
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+    </Grid>
 </Window>

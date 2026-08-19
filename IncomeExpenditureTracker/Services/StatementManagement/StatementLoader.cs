@@ -55,14 +55,14 @@ public class StatementLoader : IStatementLoader
 
         // Step 1: Validate the file path and extension
         if (string.IsNullOrWhiteSpace(filePath))
-            throw new ArgumentException("File path cannot be empty.", nameof(filePath));
+            throw new ArgumentException("[StatementLoader] File path cannot be empty.", nameof(filePath));
 
         if (!File.Exists(filePath))
-            throw new FileNotFoundException($"The file at {filePath} was not found.");
+            throw new FileNotFoundException($"[StatementLoader] The file at {filePath} was not found.");
 
         var extension = Path.GetExtension(filePath).ToLower();
         if (extension != ".xlsx")
-            throw new NotSupportedException($"Currently, only .xlsx files are supported. Provided: {extension}");
+            throw new NotSupportedException($"[StatementLoader] Currently, only .xlsx files are supported. Provided: {extension}");
 
         ValidateFilePath(filePath);
         ValidateExtension(filePath);
@@ -98,7 +98,7 @@ public class StatementLoader : IStatementLoader
         {
             // Catching IOException specifically helps identify if the file is locked
             // by a strict external process that prevents even shared reading.
-            throw new InvalidOperationException($"Could not open the statement file. Details: {ex.Message}", ex);
+            throw new InvalidOperationException($"[StatementLoader] Could not open the statement file. Details: {ex.Message}", ex);
         }
 
     }
@@ -133,7 +133,7 @@ public class StatementLoader : IStatementLoader
         }
         catch (IOException ex)
         {
-            throw new InvalidOperationException($"Could not read sheets from file. Details: {ex.Message}", ex);
+            throw new InvalidOperationException($"[StatementLoader] Could not read sheets from file. Details: {ex.Message}", ex);
         }
     }
 
@@ -143,7 +143,7 @@ public class StatementLoader : IStatementLoader
         ValidateExtension(filePath);
 
         if (string.IsNullOrWhiteSpace(sheetName))
-            throw new ArgumentException("Sheet name must be provided.", nameof(sheetName));
+            throw new ArgumentException("[StatementLoader] Sheet name must be provided.", nameof(sheetName));
 
         try
         {
@@ -157,7 +157,7 @@ public class StatementLoader : IStatementLoader
             {
                 workbook.Dispose();
                 stream.Dispose();
-                throw new ArgumentException($"Worksheet '{sheetName}' was not found in the workbook.");
+                throw new ArgumentException($"[StatementLoader] Worksheet '{sheetName}' was not found in the workbook.");
             }
 
             progress?.Report(new LoadingProgress { Percentage = 100, Message = $"Sheet {sheetName} loaded." });
@@ -165,7 +165,7 @@ public class StatementLoader : IStatementLoader
         }
         catch (IOException ex)
         {
-            throw new InvalidOperationException($"Could not open the statement file. Details: {ex.Message}", ex);
+            throw new InvalidOperationException($"[StatementLoader] Could not open the statement file. Details: {ex.Message}", ex);
         }
     }
 
@@ -173,16 +173,16 @@ public class StatementLoader : IStatementLoader
     private void ValidateFilePath(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
-            throw new ArgumentException("File path cannot be empty.", nameof(filePath));
+            throw new ArgumentException("[StatementLoader] File path cannot be empty.", nameof(filePath));
 
         if (!File.Exists(filePath))
-            throw new FileNotFoundException($"The file at {filePath} was not found.");
+            throw new FileNotFoundException($"[StatementLoader] The file at {filePath} was not found.");
     }
 
     private void ValidateExtension(string filePath)
     {
         var extension = Path.GetExtension(filePath).ToLower();
         if (extension != ".xlsx")
-            throw new NotSupportedException($"Currently, only .xlsx files are supported. Provided: {extension}");
+            throw new NotSupportedException($"[StatementLoader] Currently, only .xlsx files are supported. Provided: {extension}");
     }
 }

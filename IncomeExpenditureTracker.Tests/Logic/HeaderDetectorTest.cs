@@ -45,7 +45,7 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
             databaseService.SetupInMemorySynonymsTable().GetAwaiter().GetResult();
 
             var synonymService = new SynonymService(databaseService, NullLogger<SynonymService>.Instance);
-            _headerDetector = new HeaderDetector(synonymService);
+            _headerDetector = new HeaderDetector(synonymService, NullLogger<HeaderDetector>.Instance);
         }
 
         [Fact]

@@ -49,7 +49,7 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
             var synonymService = new SynonymService(databaseService, NullLogger<SynonymService>.Instance);
 
             // 4. Finally, inject SynonymService and NullLogger into your FieldMapper
-            _fieldMapper = new FieldMapper(synonymService);
+            _fieldMapper = new FieldMapper(synonymService, NullLogger<FieldMapper>.Instance);
         }
 
         [Fact]

@@ -20,8 +20,20 @@ namespace IncomeExpenditureTracker.Services.Orchestration;
 public interface IMasterDataOrchestrator
 {
     // =========================================================================
+    // IMPORTBATCH SERVICES
+    // =========================================================================
+
+    #region ImportBatch Services
+
+    Task<List<ImportBatch>> GetAllImportBatchesAsync(CancellationToken ct = default);
+
+    #endregion
+
+    // =========================================================================
     // CATEGORY MANAGEMENT
     // =========================================================================
+
+    #region Category Management
 
     Task<List<Category>> GetAllCategoriesAsync(CancellationToken ct = default);
     Task<int> GetOrCreateCategoryAsync(string name, CancellationToken ct = default);
@@ -33,9 +45,13 @@ public interface IMasterDataOrchestrator
     /// </summary>
     Task DeleteCategorySafeAsync(int categoryId, CancellationToken ct = default);
 
+    #endregion
+
     // =========================================================================
     // SUBCATEGORY MANAGEMENT
     // =========================================================================
+
+    #region SubCategory Management
 
     Task<List<SubCategory>> GetAllSubCategoriesAsync(CancellationToken ct = default);
     Task<List<SubCategory>> GetSubCategoriesByCategoryIdAsync(int categoryId, CancellationToken ct = default);
@@ -48,11 +64,15 @@ public interface IMasterDataOrchestrator
     /// </summary>
     Task DeleteSubCategorySafeAsync(int subCategoryId, CancellationToken ct = default);
 
+    #endregion
+
     // =========================================================================
     // TAG MANAGEMENT
     // =========================================================================
 
-    Task<RuleBookSnapshot> GetRuleBookSnapshotAsync(CancellationToken ct = default);
+    #region Tag Management
+
+    Task<List<Tag>> GetAllTagsAsync(CancellationToken ct = default);
     Task<int> GetOrCreateTagAsync(string name, int? subCategoryId = null, CancellationToken ct = default);
     Task UpdateTagAsync(int tagId, string name, int? subCategoryId = null, CancellationToken ct = default);
 
@@ -62,18 +82,27 @@ public interface IMasterDataOrchestrator
     /// </summary>
     Task DeleteTagSafeAsync(int tagId, CancellationToken ct = default);
 
+    #endregion
+
     // =========================================================================
     // TAG RULE MANAGEMENT
     // =========================================================================
 
+    #region Tag Rule Management
+
+    Task<RuleBookSnapshot> GetRuleBookSnapshotAsync(CancellationToken ct = default);
     Task<int> AddTagRuleAsync(string keyword, int tagId, int priority = 10, CancellationToken ct = default);
     Task UpdateTagRuleAsync(int ruleId, string keyword, int tagId, int priority, CancellationToken ct = default);
     Task DeleteTagRuleAsync(int ruleId, CancellationToken ct = default);
     Task DeleteTagRulesByKeywordsAsync(IEnumerable<string> keywords, int tagId, CancellationToken ct = default);
 
+    #endregion
+
     // =========================================================================
     // ENTITY MANAGEMENT (Institutions / Merchants)
     // =========================================================================
+
+    #region Entity Management
 
     Task<List<Entity>> GetAllEntitiesAsync(CancellationToken ct = default);
     Task<int> GetOrCreateEntityAsync(string name, CancellationToken ct = default);
@@ -90,9 +119,13 @@ public interface IMasterDataOrchestrator
     /// </summary>
     Task MergeEntitiesAsync(int sourceEntityId, int targetEntityId, CancellationToken ct = default);
 
+    #endregion
+
     // =========================================================================
     // ACCOUNT MANAGEMENT
     // =========================================================================
+
+    #region Account Management
 
     Task<List<Account>> GetAllAccountsAsync(CancellationToken ct = default);
     Task<List<Account>> GetAccountsByEntityIdAsync(int entityId, CancellationToken ct = default);
@@ -104,4 +137,21 @@ public interface IMasterDataOrchestrator
     /// Throws InvalidOperationException (Hard Block) if historical transactions exist.
     /// </summary>
     Task DeleteAccountAsync(int accountId, CancellationToken ct = default);
+
+    #endregion
+
+    // =========================================================================
+    // SYNONYM MANAGEMENT
+    // =========================================================================
+
+    #region Synonym Management
+
+    Task<IEnumerable<Synonyms>> GetAllSynonymsAsync(CancellationToken ct = default);
+    Task<IReadOnlyDictionary<string, Synonyms>> GetSynonymsByCategoryAsync(string category, CancellationToken ct = default);
+    Task LearnFromCorrectionAsync(string rawSynonym, string fieldType, string category, CancellationToken ct = default);
+    Task AddSynonymAsync(Synonyms synonym, CancellationToken ct = default);
+    Task UpdateSynonymAsync(Synonyms synonym, CancellationToken ct = default);
+    Task DeleteSynonymAsync(int id, CancellationToken ct = default);
+
+    #endregion
 }

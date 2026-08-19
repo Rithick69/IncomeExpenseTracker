@@ -14,6 +14,7 @@ using IncomeExpenditureTracker.Services.StatementManagement;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Tests.Fixtures;
 using IncomeExpenditureTracker.Tests.Observability;
+using IncomeExpenditureTracker.Services.Messaging;
 using ClosedXML.Excel;
 
 namespace IncomeExpenditureTracker.Tests.Integration
@@ -22,6 +23,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
     {
         private readonly ITestOutputHelper _output;
         private readonly ILogger<StatementManager> _logger;
+
         private readonly List<string> _tempFilesToCleanup = new();
 
         public StatementManagerTests(ITestOutputHelper output)
@@ -84,6 +86,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+            var mockBroker = new Mock<IApplicationBroker>();
 
             var manager = new StatementManager(
                 mockLoader.Object,
@@ -91,7 +94,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 () => mockEditSession.Object,  // Func<IStatementEditSession>
                 () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger // Injecting the xUnit bridged logger
+                _logger, // Injecting the xUnit bridged logger
+                mockBroker.Object
             );
 
             var filePaths = new List<string> { file1, file2, file3 };
@@ -110,6 +114,41 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var failure = result.Failures.First();
             Assert.Equal(ErrorSeverity.Warning, failure.Severity); // OS Locks are warnings, not fatal
             Assert.Contains("locked by another program", failure.Message);
+        }
+
+        // =================================================================================
+        // NEW PHASE 5 TEST: Proves the Broker actively delivers error messages to the UI!
+        // =================================================================================
+        [Fact]
+        public async Task StageFilesAsync_WhenFileIsLocked_ShouldPublishErrorMessage()
+        {
+            // Arrange
+            string file1 = ExcelStatementGenerator.GenerateValidStatement(2);
+            _tempFilesToCleanup.Add(file1);
+
+            var mockLoader = new Mock<IStatementLoader>();
+            mockLoader.Setup(l => l.LoadStatementAsync(file1, null!)).ThrowsAsync(new IOException("Locked by Excel"));
+
+            var mockBroker = new Mock<IApplicationBroker>(); // Our fake postman
+
+            var manager = new StatementManager(
+                mockLoader.Object,
+                () => new Mock<IStatementExtractor<IXLWorksheet>>().Object,
+                () => new Mock<IStatementEditSession>().Object,
+                () => new Mock<IStatementImport<IXLWorksheet>>().Object,
+                new Mock<ISynonymService>().Object,
+                _logger,
+                mockBroker.Object // Inject it
+            );
+
+            // Act
+            await manager.StageFilesAsync(new List<string> { file1 }, null!);
+
+            // Assert: We mathematically prove that _broker.Send(...) was called exactly ONE time
+            // and that the envelope it delivered contained the correct file name!
+            mockBroker.Verify(b => b.Send(It.Is<FileStagingErrorMessage>(m =>
+                m.Error.FileName == Path.GetFileName(file1) &&
+                m.Error.Severity == ErrorSeverity.Warning)), Times.Once);
         }
 
         [Fact]
@@ -132,6 +171,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockImportService = new Mock<IStatementImport<IXLWorksheet>>();
             var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
+            var mockBroker = new Mock<IApplicationBroker>();
 
             // Setup the extractor mock so the Preview method succeeds
             mockExtractor
@@ -149,7 +189,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 () => mockEditSession.Object,
                 () => mockImportService.Object,
                 mockSynonymService.Object,
-                _logger
+                _logger,
+                mockBroker.Object
             );
 
             // Stage the file first so it exists in the internal ConcurrentDictionary
@@ -235,6 +276,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+            var mockBroker = new Mock<IApplicationBroker>();
 
             var manager = new StatementManager(
                 mockLoader.Object,
@@ -242,7 +284,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 () => mockEditSession.Object,  // Func<IStatementEditSession>
                 () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger // Injecting the xUnit bridged logger
+                _logger, // Injecting the xUnit bridged logger
+                mockBroker.Object
             ); ;
 
             var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!);
@@ -279,6 +322,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+            var mockBroker = new Mock<IApplicationBroker>();
 
             mockExtractor.Setup(e => e.Analyze(It.IsAny<IXLWorksheet>(), It.IsAny<string>(), It.IsAny<bool>()))
                          .ThrowsAsync(new Exception("Simulated catastrophic closedXML failure."));
@@ -289,7 +333,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 () => mockEditSession.Object,  // Func<IStatementEditSession>
                 () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger // Injecting the xUnit bridged logger
+                _logger, // Injecting the xUnit bridged logger
+                mockBroker.Object
             );
 
 
@@ -318,6 +363,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+            var mockBroker = new Mock<IApplicationBroker>();
 
             var manager = new StatementManager(
                 new Mock<IStatementLoader>().Object,
@@ -325,7 +371,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 () => mockEditSession.Object,  // Func<IStatementEditSession>
                 () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger // Injecting the xUnit bridged logger
+                _logger, // Injecting the xUnit bridged logger
+                mockBroker.Object
             );
 
             Guid ghostFileId = Guid.NewGuid();
@@ -348,6 +395,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
+            var mockBroker = new Mock<IApplicationBroker>();
 
             var manager = new StatementManager(
                 new Mock<IStatementLoader>().Object,
@@ -355,7 +403,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 () => mockEditSession.Object,  // Func<IStatementEditSession>
                 () => mockImport.Object,       // Func<IStatementImport>
                 new Mock<ISynonymService>().Object,
-                _logger // Injecting the xUnit bridged logger
+                _logger, // Injecting the xUnit bridged logger
+                mockBroker.Object
             );
 
             // Create a dummy list of 6 strings

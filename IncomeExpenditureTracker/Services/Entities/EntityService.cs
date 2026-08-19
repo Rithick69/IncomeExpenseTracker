@@ -194,14 +194,13 @@ public class EntityService : IEntityService
             await ExecuteDbActionAsync(async (connection, transaction) =>
             {
                 // Check if entity is used by accounts
-                var usageCount = await connection.ExecuteScalarAsync<int>(
-                    @"SELECT COUNT(*)
-                      FROM Accounts
-                      WHERE EntityId = @EntityId",
-                    new { EntityId = entityId }, transaction: transaction);
+                var usageCount = await HasChildAccountsAsync(entityId, connection, transaction);
 
-                if (usageCount > 0)
-                    throw new InvalidOperationException("Cannot delete entity because accounts reference it.");
+                if (usageCount)
+                {
+                    const string sql = "UPDATE Accounts SET EntityId = NULL WHERE EntityId = @EntityId;";
+                    await connection.ExecuteScalarAsync(sql, new { EntityId = entityId }, transaction: transaction);
+                }
 
                 await connection.ExecuteAsync(
                     @"DELETE FROM Entities WHERE Id = @EntityId",

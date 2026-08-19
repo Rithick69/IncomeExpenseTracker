@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Text;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
+using Microsoft.Extensions.Logging;
 
 using IncomeExpenditureTracker.Services.TransactionExtractor;
 using IncomeExpenditureTracker.Services.Helpers;
@@ -21,17 +22,20 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
     private readonly IFieldMapper<IXLWorksheet> _fieldMapper;
     private readonly ITransactionExtractor<IXLWorksheet> _transactionExtractor;
     private readonly IConfidenceService _confidenceService;
+    private readonly ILogger<ExcelStatementExtractor> _logger;
 
     public ExcelStatementExtractor(
         IHeaderDetector<IXLWorksheet> headerDetector,
         IFieldMapper<IXLWorksheet> fieldMapper,
         ITransactionExtractor<IXLWorksheet> transactionExtractor,
-        IConfidenceService confidenceService)
+        IConfidenceService confidenceService,
+        ILogger<ExcelStatementExtractor> logger)
     {
-        _headerDetector = headerDetector;
-        _fieldMapper = fieldMapper;
-        _transactionExtractor = transactionExtractor;
-        _confidenceService = confidenceService;
+        _headerDetector = headerDetector ?? throw new ArgumentNullException(nameof(headerDetector));
+        _fieldMapper = fieldMapper ?? throw new ArgumentNullException(nameof(fieldMapper));
+        _transactionExtractor = transactionExtractor ?? throw new ArgumentNullException(nameof(transactionExtractor));
+        _confidenceService = confidenceService ?? throw new ArgumentNullException(nameof(confidenceService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     // Analyzes the given Excel file and returns a preview of the detected account information, column mappings, and a sample of transactions.
@@ -39,20 +43,46 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
     {
         try
         {
+            if (worksheet == null)
+            {
+                _logger.LogError("Statement analysis rejected: worksheet was null for file '{FileName}'.", fileName);
+                throw new ArgumentNullException(nameof(worksheet));
+            }
+
+            _logger.LogInformation(
+                "Starting statement analysis for file '{FileName}' (force reload: {ForceReload}).",
+                fileName,
+                forceReload);
+
             // 1. Detect account & entity metadata (Returns Dictionary<string, DetectedField>)
             var metadataFields = await _fieldMapper.DetectAccountDetails(worksheet, forceReload);
 
             // 2. Detect the header row coordinate
             var headerRow = await _headerDetector.DetectHeaderRow(worksheet, forceReload);
+            _logger.LogInformation("Detected header row {HeaderRow} for file '{FileName}'.", headerRow, fileName);
 
             // 3. Detect column coordinates (Returns Dictionary<string, DetectedField>)
             var columnFields = await _fieldMapper.DetectColumns(worksheet, headerRow, forceReload);
+            _logger.LogInformation(
+                "Detected {ColumnCount} mapped columns for file '{FileName}'.",
+                columnFields?.Count ?? 0,
+                fileName);
+
+            if (columnFields == null)
+            {
+                _logger.LogError("Statement analysis rejected: column mapping dictionary was null for file '{FileName}'.", fileName);
+                throw new InvalidOperationException($"Column mapping dictionary was null for file '{fileName}'.");
+            }
 
             // 4. Extract a sample of transactions for UI verification (first 20 rows)
             var previewTransactions = _transactionExtractor
                 .ExtractPreview(worksheet, headerRow, columnFields)
                 .Take(20)
                 .ToList();
+            _logger.LogInformation(
+                "Preview extraction yielded {PreviewCount} sample transactions for file '{FileName}'.",
+                previewTransactions.Count,
+                fileName);
 
             // 5. MERGE both dictionaries into one unified map for our StatementPreview
             var unifiedFields = new Dictionary<string, DetectedField>(StringComparer.OrdinalIgnoreCase);
@@ -88,8 +118,7 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
         }
         catch (Exception ex)
         {
-            // Log the error and return a result indicating failure
-            Console.WriteLine($"Error analyzing statement: {ex.Message}");
+            _logger.LogError(ex, "Fatal error while analyzing statement file '{FileName}'.", fileName);
             return new StatementPreview
             {
                 FileName = fileName,

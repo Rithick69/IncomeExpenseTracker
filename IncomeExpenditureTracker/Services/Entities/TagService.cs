@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
 using IncomeExpenditureTracker.Models;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -39,45 +40,11 @@ public class TagService : ITagService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public Task<RuleBookSnapshot> GetRuleBookSnapshotAsync()
-    {
-        _logger.LogDebug("Requesting RuleBookSnapshot from cache or database.");
+    // =========================================================================
+    // TAG MANAGEMENT
+    // =========================================================================
 
-        return _cache.GetOrAdd(RULE_CACHE_KEY, _ => new Lazy<Task<RuleBookSnapshot>>(async () =>
-        {
-            try
-            {
-                return await _databaseService.ExecuteWithRetryAsync(async conn =>
-                {
-                    _logger.LogInformation("Cache miss. Executing SQLite read to build RuleBookSnapshot.");
-
-                    var miscId = await conn.ExecuteScalarAsync<int?>(MISC_SQL) ?? 0;
-                    var rawRules = await conn.QueryAsync<TagRuleDTO>(RULES_SQL);
-
-                    // Group rules by uppercase keyword into memory-efficient arrays
-                    var ruleIndex = rawRules
-                        .GroupBy(r => r.Keyword.ToUpperInvariant())
-                        .ToDictionary(
-                            g => g.Key,
-                            g => g.ToArray(),
-                            StringComparer.OrdinalIgnoreCase
-                        );
-
-                    _logger.LogInformation("Successfully built snapshot with {RuleCount} unique keywords. MiscTagId: {MiscId}",
-                        ruleIndex.Count, miscId);
-
-                    return new RuleBookSnapshot(ruleIndex, miscId);
-                });
-            }
-            catch (Exception ex)
-            {
-                // Fault Eviction: Never allow an exception to remain cached in server RAM
-                _logger.LogError(ex, "Critical failure while building RuleBookSnapshot from SQLite. Evicting cache.");
-                _cache.TryRemove(RULE_CACHE_KEY, out var _);
-                throw;
-            }
-        })).Value;
-    }
+    #region Tag Management
 
     public async Task<int> GetOrCreateTagAsync(string name, int? subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
     {
@@ -186,7 +153,7 @@ public class TagService : ITagService
                     _allTagscache.TryRemove(ALL_TAGS_KEY, out var _);
                     throw;
                 }
-            }));
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
 
             return await cachedLazy.Value;
         }
@@ -251,6 +218,97 @@ public class TagService : ITagService
             _logger.LogError(ex, "Failed to DeleteTagAsync for TagId {TagId}. Ensure no historical transactions reference this tag.", tagId);
             throw;
         }
+    }
+
+    public async Task FloatTagsBySubCategoryAsync(int subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        try
+        {
+            const string sql = "UPDATE Tags SET SubCategoryId = NULL WHERE SubCategoryId = @SubCategoryId;";
+
+            if (conn != null && tx != null)
+                await conn.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }, tx);
+            else
+                await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }));
+
+            InvalidateTagCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to float tags for SubCategoryId {SubCategoryId}.", subCategoryId);
+            throw;
+        }
+    }
+
+    public async Task FloatTagsByCategoryAsync(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        try
+        {
+            const string sql = @"
+                UPDATE Tags
+                SET SubCategoryId = NULL
+                WHERE SubCategoryId IN (SELECT Id FROM SubCategories WHERE CategoryId = @CategoryId);";
+
+            if (conn != null && tx != null)
+                await conn.ExecuteAsync(sql, new { CategoryId = categoryId }, tx);
+            else
+                await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { CategoryId = categoryId }));
+
+            InvalidateTagCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to float tags for CategoryId {CategoryId}.", categoryId);
+            throw;
+        }
+    }
+
+    #endregion
+
+    // =========================================================================
+    // TAG RULE MANAGEMENT
+    // =========================================================================
+
+    #region Tag Rule Management
+
+    public Task<RuleBookSnapshot> GetRuleBookSnapshotAsync()
+    {
+        _logger.LogDebug("Requesting RuleBookSnapshot from cache or database.");
+
+        return _cache.GetOrAdd(RULE_CACHE_KEY, _ => new Lazy<Task<RuleBookSnapshot>>(async () =>
+        {
+            try
+            {
+                return await _databaseService.ExecuteWithRetryAsync(async conn =>
+                {
+                    _logger.LogInformation("Cache miss. Executing SQLite read to build RuleBookSnapshot.");
+
+                    var miscId = await conn.ExecuteScalarAsync<int?>(MISC_SQL) ?? 0;
+                    var rawRules = await conn.QueryAsync<TagRuleDTO>(RULES_SQL);
+
+                    // Group rules by uppercase keyword into memory-efficient arrays
+                    var ruleIndex = rawRules
+                        .GroupBy(r => r.Keyword.ToUpperInvariant())
+                        .ToDictionary(
+                            g => g.Key,
+                            g => g.ToArray(),
+                            StringComparer.OrdinalIgnoreCase
+                        );
+
+                    _logger.LogInformation("Successfully built snapshot with {RuleCount} unique keywords. MiscTagId: {MiscId}",
+                        ruleIndex.Count, miscId);
+
+                    return new RuleBookSnapshot(ruleIndex, miscId);
+                });
+            }
+            catch (Exception ex)
+            {
+                // Fault Eviction: Never allow an exception to remain cached in server RAM
+                _logger.LogError(ex, "Critical failure while building RuleBookSnapshot from SQLite. Evicting cache.");
+                _cache.TryRemove(RULE_CACHE_KEY, out var _);
+                throw;
+            }
+        })).Value;
     }
 
     public async Task<int> AddRuleAsync(string keyword, int tagId, int priority = 10)
@@ -420,48 +478,7 @@ public class TagService : ITagService
         }
     }
 
-    public async Task FloatTagsBySubCategoryAsync(int subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
-    {
-        try
-        {
-            const string sql = "UPDATE Tags SET SubCategoryId = NULL WHERE SubCategoryId = @SubCategoryId;";
-
-            if (conn != null && tx != null)
-                await conn.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }, tx);
-            else
-                await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }));
-
-            InvalidateTagCache(); // Evict cache after mutation to ensure consistency
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to float tags for SubCategoryId {SubCategoryId}.", subCategoryId);
-            throw;
-        }
-    }
-
-    public async Task FloatTagsByCategoryAsync(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
-    {
-        try
-        {
-            const string sql = @"
-                UPDATE Tags
-                SET SubCategoryId = NULL
-                WHERE SubCategoryId IN (SELECT Id FROM SubCategories WHERE CategoryId = @CategoryId);";
-
-            if (conn != null && tx != null)
-                await conn.ExecuteAsync(sql, new { CategoryId = categoryId }, tx);
-            else
-                await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { CategoryId = categoryId }));
-
-            InvalidateTagCache(); // Evict cache after mutation to ensure consistency
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to float tags for CategoryId {CategoryId}.", categoryId);
-            throw;
-        }
-    }
+    #endregion
 
     public void InvalidateTagCache()
     {

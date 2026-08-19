@@ -69,7 +69,7 @@ public partial class App : Application
             // Create the main window and assign its ViewModel
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel(),
+                DataContext = Services.GetRequiredService<MainWindowViewModel>(),
             };
         }
 
