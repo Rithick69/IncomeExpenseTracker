@@ -56,10 +56,26 @@ namespace IncomeExpenditureTracker.ViewModels
         // =========================================================================
 
         [RelayCommand]
-        public async Task LoadDataAsync()
+
+        public Task LoadDataAsync() => PerformDataLoadAsync(isSilent: false);
+
+        /// <summary>
+        /// Fetches all master data collections from the database and updates the Avalonia DataGrids.
+        /// </summary>
+        /// <param name="isSilent">
+        /// The Silent Refresh Pattern: Decouples fetching data from updating the UI text.
+        ///
+        /// FALSE (Manual Actions): Updates the StatusText to "Loading..." and "Success."
+        /// Used by LoadDataAsync() when a user clicks a physical "Refresh" button and expects visual feedback.
+        ///
+        /// TRUE (Background Events): Updates the data grids invisibly without changing the StatusText.
+        /// Used by Broker event handlers (like OnEntitySaved) so their highly specific success
+        /// messages (e.g., "✅ Tag 'Groceries' created!") are not instantly overwritten and erased from the screen.
+        /// </param>
+        public async Task PerformDataLoadAsync(bool isSilent)
         {
             IsLoading = true;
-            StatusText = "Loading Master Data...";
+            if (!isSilent) StatusText = "Loading Master Data...";
 
             try
             {
@@ -97,12 +113,13 @@ namespace IncomeExpenditureTracker.ViewModels
 
                 TagRules.Add(tagRules);
 
-                StatusText = "Data loaded successfully.";
+                // Only set the success text if this was a manual user refresh
+                if (!isSilent) StatusText = "Data loaded successfully.";
             }
             catch (Exception)
             {
                 // We don't need to log here; the backend services are already logging errors!
-                StatusText = "Failed to load data. Check system logs.";
+                if (!isSilent) StatusText = "Failed to load data. Check system logs.";
             }
             finally
             {
@@ -116,39 +133,35 @@ namespace IncomeExpenditureTracker.ViewModels
 
         private void OnEntitySaved(EntitySavedMessage message)
         {
-            Dispatcher.UIThread.Post(() =>
+            RunOnUIThread(() =>
             {
                 StatusText = $"✅ {message.EntityType} '{message.Name}' was created!";
-
-                // If a Category or Tag was saved, auto-refresh the grids so the new data appears instantly!
-                if (message.EntityType == "Category" || message.EntityType == "Tag")
-                {
-                    _ = LoadDataAsync();
-                }
+                // Refresh grid to show the new item
+                _ = PerformDataLoadAsync(isSilent: true);
             });
         }
 
         private void OnEntityUpdated(EntityUpdatedMessage message)
         {
-            Dispatcher.UIThread.Post(() =>
+            RunOnUIThread(() =>
             {
                 StatusText = $"✅ {message.EntityType} '{message.Name}' was updated!";
-                if (message.EntityType == "Category" || message.EntityType == "Tag") _ = LoadDataAsync();
+                _ = PerformDataLoadAsync(isSilent: true);
             });
         }
 
         private void OnEntityDeleted(EntityDeletedMessage message)
         {
-            Dispatcher.UIThread.Post(() =>
+            RunOnUIThread(() =>
             {
                 StatusText = $"🗑️ {message.EntityType} '{message.Name}' was deleted.";
-                if (message.EntityType == "Category" || message.EntityType == "Tag") _ = LoadDataAsync();
+                _ = PerformDataLoadAsync(isSilent: true);
             });
         }
 
         private void OnCrudError(CrudErrorMessage message)
         {
-            Dispatcher.UIThread.Post(() =>
+            RunOnUIThread(() =>
             {
                 StatusText = $"❌ Failed to {message.Operation} {message.EntityType}: {message.UserFriendlyMessage}";
             });

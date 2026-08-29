@@ -125,7 +125,7 @@ namespace IncomeExpenditureTracker.ViewModels
 
         private void OnBatchUpdateCompleted(BatchUpdateCompletedMessage message)
         {
-            Dispatcher.UIThread.Post(() =>
+            RunOnUIThread(() =>
             {
                 StatusText = $"✅ Successfully applied {message.UpdatedRowCount} corrections.";
                 // Auto-refresh the grid to drop any "Needs Review" flags that were just fixed!
@@ -135,7 +135,7 @@ namespace IncomeExpenditureTracker.ViewModels
 
         private void OnNewImportCompleted(ImportBatchCompletedMessage message)
         {
-            Dispatcher.UIThread.Post(() =>
+            RunOnUIThread(() =>
             {
                 StatusText = $"✅ New batch imported with {message.TotalTransactions} records.";
                 CurrentPage = 1; // Reset to page 1 to see the newest data
@@ -145,7 +145,7 @@ namespace IncomeExpenditureTracker.ViewModels
 
         private void OnEntityDeleted(EntityDeletedMessage message)
         {
-            Dispatcher.UIThread.Post(() =>
+            RunOnUIThread(() =>
             {
                 // If a user completely reverts a batch, we MUST refresh the grid
                 // so we don't display orphaned transactions.

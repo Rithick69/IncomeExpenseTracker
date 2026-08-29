@@ -72,4 +72,22 @@ namespace IncomeExpenditureTracker.Models
     /// Broadcast when a bulk mapping update (e.g., applying a category to 50 items) succeeds
     /// </summary>
     public record BatchUpdateCompletedMessage(int UpdatedRowCount);
+
+    // =========================================================================
+    // ENUM: Notification Severity
+    // Defines the visual styling the Avalonia UI will apply to the toast.
+    // =========================================================================
+    public enum NotificationType
+    {
+        Success,
+        Error,
+        Info,
+        Warning
+    }
+
+    // =========================================================================
+    // BROKER MESSAGE: The global envelope for triggering a notification
+    // Any Orchestrator or ViewModel can broadcast this message.
+    // =========================================================================
+    public record ToastNotificationMessage(string Message, NotificationType Type);
 }

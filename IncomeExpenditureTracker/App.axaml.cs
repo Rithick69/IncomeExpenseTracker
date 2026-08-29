@@ -22,10 +22,6 @@ namespace IncomeExpenditureTracker;
 
 public partial class App : Application
 {
-    /// <summary>
-    /// Global service provider accessible throughout the application.
-    /// </summary>
-    public static IServiceProvider Services { get; private set; } = null!;
 
     // This method loads Avalonia XAML resources when the application starts
     public override void Initialize()
@@ -37,44 +33,54 @@ public partial class App : Application
     // This method runs when the Avalonia framework has finished initializing
     public override async void OnFrameworkInitializationCompleted()
     {
-        // ---------------------------------------------------------
-        // STEP 1: Configure Dependency Injection
-        // ---------------------------------------------------------
-
-        var services = new ServiceCollection();
-
-        ServiceRegistration.Register(services);
-
-        Services = services.BuildServiceProvider();
-
-        // ---------------------------------------------------------
-        // STEP 2: Initialize Database
-        // ---------------------------------------------------------
-
-        var databaseInitializer =
-            Services.GetRequiredService<DatabaseInitializer>();
-
-        await databaseInitializer.InitializeAsync();
-
-        // ---------------------------------------------------------
-        // STEP 3: Setup the main application window
-        // ---------------------------------------------------------
-
-        // Check if we are running as a desktop application
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        try
         {
-            // Disable duplicate validation behavior from Avalonia
-            DisableAvaloniaDataAnnotationValidation();
+            // ---------------------------------------------------------
+            // STEP 1: Configure Dependency Injection
+            // ---------------------------------------------------------
 
-            // Create the main window and assign its ViewModel
-            desktop.MainWindow = new MainWindow
+            var services = new ServiceCollection();
+
+            ServiceRegistration.Register(services);
+
+            var localServiceProvider = services.BuildServiceProvider();
+
+            // ---------------------------------------------------------
+            // STEP 2: Initialize Database
+            // ---------------------------------------------------------
+
+            var databaseInitializer =
+                localServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+            await databaseInitializer.InitializeAsync();
+
+            // ---------------------------------------------------------
+            // STEP 3: Setup the main application window
+            // ---------------------------------------------------------
+
+            // Check if we are running as a desktop application
+            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                DataContext = Services.GetRequiredService<MainWindowViewModel>(),
-            };
-        }
+                // Disable duplicate validation behavior from Avalonia
+                DisableAvaloniaDataAnnotationValidation();
 
-        // Call the base method to complete framework startup
-        base.OnFrameworkInitializationCompleted();
+                // Create the main window and assign its ViewModel
+                desktop.MainWindow = new MainWindow
+                {
+                    DataContext = localServiceProvider.GetRequiredService<MainWindowViewModel>(),
+                };
+            }
+
+            // Call the base method to complete framework startup
+            base.OnFrameworkInitializationCompleted();
+        }
+        catch (Exception ex)
+        {
+            // CRITICAL: If the DB fails to start, the app cannot function.
+            // You must log this to Serilog (your prong 1 telemetry)
+            // and ideally display a "Fatal Startup Error" window.
+            Console.WriteLine($"FATAL STARTUP ERROR: {ex.Message}");
+        }
     }
 
     // This helper method removes duplicate validation plugins
