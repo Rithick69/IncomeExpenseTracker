@@ -1,4 +1,5 @@
 ﻿using System;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using IncomeExpenditureTracker.Services.Messaging;
 
@@ -36,10 +37,26 @@ namespace IncomeExpenditureTracker.ViewModels
         protected readonly IApplicationBroker Broker;
         private bool _isDisposed;
 
+        // A global flag we can set in our xUnit setup
+        public static bool IsTestEnvironment { get; set; } = false;
+
         // Force all ViewModels to ask for the broker via Dependency Injection
         protected ViewModelBase(IApplicationBroker broker)
         {
             Broker = broker ?? throw new ArgumentNullException(nameof(broker));
+        }
+
+        // The Airlock. Production uses Avalonia, Tests run synchronously.
+        protected void RunOnUIThread(Action action)
+        {
+            if (IsTestEnvironment)
+            {
+                action(); // Execute immediately for xUnit tests
+            }
+            else
+            {
+                Dispatcher.UIThread.Post(action); // Queue for Avalonia UI
+            }
         }
 
         /// <summary>

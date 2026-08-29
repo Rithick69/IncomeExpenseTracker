@@ -1,79 +1,146 @@
-﻿using Avalonia.Threading;
+﻿using System;
 using System.Collections.ObjectModel;
-using IncomeExpenditureTracker.Models;
-using CommunityToolkit.Mvvm.ComponentModel; // Needed for [ObservableProperty]
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input; // Needed for [RelayCommand]
 using IncomeExpenditureTracker.Services.Messaging;
+using IncomeExpenditureTracker.Models;
 
-// Reason for using partial
-
-// When you use the [ObservableProperty] attribute above your private fields (like _loadingPercentage), you are using C# Source Generators.
-// The toolkit automatically writes a bunch of hidden boilerplate code in the background to create the public LoadingPercentage property and wire up the UI notifications.
-// Because the compiler is writing code for this class in a hidden file,
-// your side of the class must be declared as partial so C# knows to stitch them both together when it builds the app.
+// =========================================================================
+// ARCHITECTURAL NOTE: Why 'partial'?
+// =========================================================================
+// When you use [ObservableProperty], the MVVM Toolkit Source Generators
+// write boilerplate code in a hidden background file to wire up the UI bindings.
+// Your class must be 'partial' so C# can stitch this file and the hidden
+// generated file together during compilation.
+// =========================================================================
 
 namespace IncomeExpenditureTracker.ViewModels
 {
+    /// <summary>
+    /// The root context of the application.
+    /// Acts as the Global Notification Hub, listening to the Broker for any
+    /// ToastNotificationMessage sent by any service or ViewModel.
+    /// </summary>
     public partial class MainWindowViewModel : ViewModelBase
     {
-        // 1. Reactive UI Collection: Avalonia automatically binds to this.
-        // When we add an item, a UI toast/notification will instantly appear on screen.
-        public ObservableCollection<string> ToastNotifications { get; } = new();
+        // =========================================================================
+        // OBSERVABLE PROPERTIES (The Waiter's Tray)
+        // =========================================================================
 
-        // Observable properties for the live UI Progress Bar
+        // 1. The Visual Toast Stack
+        // The Avalonia ItemsControl binds directly to this.
+        // When items are added/removed here, they slide in and out of the screen.
+        public ObservableCollection<ToastAlert> Toasts { get; } = new();
+
+        // 2. Global Progress Bar State
+        // Bound to a progress bar at the bottom of the main window for background tasks
         [ObservableProperty]
         private int _loadingPercentage;
 
         [ObservableProperty]
         private string _loadingStatus = "Ready";
 
-        // 2. Constructor Injection: We ask for the broker and pass it to our safe ViewModelBase
+        // =========================================================================
+        // CONSTRUCTOR
+        // =========================================================================
         public MainWindowViewModel(IApplicationBroker broker)
             : base(broker)
         {
-            // 3. Subscribe! We tell the postman: "If you ever see a FileStagingErrorMessage, hand it to me."
+            // Subscribe to Legacy File Staging events
             Broker.Register<FileStagingErrorMessage>(this, OnFileStagingErrorReceived);
-
             Broker.Register<StagingBatchCompletedMessage>(this, OnStagingCompleted);
-
-            // Subscribe to the Live Progress updates!
             Broker.Register<StagingProgressMessage>(this, OnProgressReceived);
+
+            // Subscribe to the new Global Notification Stream
+            Broker.Register<ToastNotificationMessage>(this, OnToastReceived);
         }
 
-        // Event Handler for Live Progress
+        // =========================================================================
+        // EVENT HANDLERS (The Reactive Magic)
+        // =========================================================================
+
         private void OnProgressReceived(StagingProgressMessage message)
         {
-            Dispatcher.UIThread.Post(() =>
+            // Using our test-safe Airlock from ViewModelBase!
+            RunOnUIThread(() =>
             {
-                // This will instantly animate the Avalonia Progress Bar
+                // Instantly animates the Avalonia Progress Bar
                 LoadingPercentage = message.Percentage;
                 LoadingStatus = message.StatusMessage;
             });
         }
 
-        // 4. The Event Handler
         private void OnFileStagingErrorReceived(FileStagingErrorMessage message)
         {
-            // CRITICAL: StatementManager stages files on parallel background threads.
-            // You are strictly forbidden from updating UI components from a background thread.
-            // Dispatcher.UIThread.Post safely "teleports" this operation back to the main UI thread.
-            Dispatcher.UIThread.Post(() =>
+            // Translating the specific staging error into our global Toast system
+            RunOnUIThread(() =>
             {
-                ToastNotifications.Add($"❌ Staging Failed: {message.Error.FileName}\n{message.Error.Message}");
+                var alert = new ToastAlert(
+                    $"❌ Staging Failed: {message.Error.FileName}\n{message.Error.Message}",
+                    NotificationType.Error);
+
+                Toasts.Add(alert);
+                _ = RemoveToastAfterDelayAsync(alert.Id, TimeSpan.FromSeconds(8)); // Show errors slightly longer
             });
         }
 
         private void OnStagingCompleted(StagingBatchCompletedMessage message)
         {
-            Dispatcher.UIThread.Post(() =>
+            RunOnUIThread(() =>
             {
                 if (message.TotalSuccess > 0)
                 {
-                    ToastNotifications.Add($"✅ Successfully staged {message.TotalSuccess} file(s) for preview.");
+                    var alert = new ToastAlert(
+                        $"✅ Successfully staged {message.TotalSuccess} file(s).",
+                        NotificationType.Success);
+
+                    Toasts.Add(alert);
+                    _ = RemoveToastAfterDelayAsync(alert.Id, TimeSpan.FromSeconds(5));
                 }
 
-                // Reset the loading text when finished
                 LoadingStatus = "Staging Complete!";
             });
+        }
+
+        private void OnToastReceived(ToastNotificationMessage message)
+        {
+            RunOnUIThread(() =>
+            {
+                var alert = new ToastAlert(message.Message, message.Type);
+                Toasts.Add(alert);
+
+                // Fire and forget the auto-cleanup timer
+                _ = RemoveToastAfterDelayAsync(alert.Id, TimeSpan.FromSeconds(5));
+            });
+        }
+
+        // =========================================================================
+        // COMMANDS & BACKGROUND TASKS
+        // =========================================================================
+
+        /// <summary>
+        /// Bound to the "X" button on each individual Toast in the UI.
+        /// </summary>
+        [RelayCommand]
+        public void DismissToast(Guid toastId)
+        {
+            var toast = Toasts.FirstOrDefault(t => t.Id == toastId);
+            if (toast != null)
+            {
+                Toasts.Remove(toast);
+            }
+        }
+
+        private async Task RemoveToastAfterDelayAsync(Guid toastId, TimeSpan delay)
+        {
+            // Wait silently in the background without freezing the UI
+            await Task.Delay(delay);
+
+            // Marshal back to the UI thread to safely modify the ObservableCollection
+            RunOnUIThread(() => DismissToast(toastId));
         }
     }
 }

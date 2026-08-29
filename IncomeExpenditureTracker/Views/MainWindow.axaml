@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:IncomeExpenditureTracker.ViewModels"
+        xmlns:u="using:IncomeExpenditureTracker.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
@@ -20,33 +21,69 @@
 
         <!-- LAYER 1: Main Content Area Placeholder -->
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-            <TextBlock Text="Phase 5: Reactive UI Messenger is Active."
+            <TextBlock Text="Phase 6: Reactive UI Construction"
                        FontSize="24" FontWeight="Bold" Foreground="#2C3E50"
                        HorizontalAlignment="Center" Margin="0,0,0,10"/>
-            <TextBlock Text="The frontend is now safely listening to backend background threads."
+            <TextBlock Text="The Global Notification Hub is now actively rendering Toasts."
                        FontSize="16" Foreground="#7F8C8D"
                        HorizontalAlignment="Center"/>
         </StackPanel>
 
-        <!-- LAYER 2: The Toast Notification Overlay -->
+        <!-- LAYER 2: Global Progress Bar Overlay (Bottom) -->
+        <!-- Binds directly to the background file parsing states -->
+        <Border VerticalAlignment="Bottom"
+                Background="White"
+                Padding="15"
+                BoxShadow="0 -2 10 0 #10000000">
+            <StackPanel>
+                <TextBlock Text="{Binding LoadingStatus}"
+                           Foreground="#7F8C8D" FontSize="12" Margin="0,0,0,5"/>
+                <ProgressBar Value="{Binding LoadingPercentage}"
+                             Maximum="100" Height="4" Foreground="#3498DB"/>
+            </StackPanel>
+        </Border>
+
+        <!-- LAYER 3: The Toast Notification Stack Overlay -->
         <!-- We align this to the Top Right corner, floating above Layer 1 -->
-        <ItemsControl ItemsSource="{Binding ToastNotifications}"
+        <ItemsControl ItemsSource="{Binding Toasts}"
                       HorizontalAlignment="Right"
                       VerticalAlignment="Top"
                       Margin="20">
             <ItemsControl.ItemTemplate>
-                <DataTemplate>
+
+                <!-- Notice the x:DataType tells Avalonia this template expects a ToastAlert -->
+                <DataTemplate x:DataType="u:ToastAlert">
 
                     <!-- The visual design of a single Toast Notification -->
-                    <Border Background="#E74C3C"
+                    <Border Background="#2C3E50"
                             CornerRadius="8"
-                            Padding="15"
+                            Padding="12,12,8,12"
                             Margin="0,0,0,10"
-                            BoxShadow="0 4 8 0 #40000000">
-                        <TextBlock Text="{Binding}"
-                                   Foreground="White"
-                                   TextWrapping="Wrap"
-                                   MaxWidth="300"/>
+                            BoxShadow="0 4 12 0 #30000000">
+
+                        <!-- Grid divides the toast into Message (Left) and Close Button (Right) -->
+                        <Grid ColumnDefinitions="*, Auto">
+
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Message}"
+                                       Foreground="White"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"
+                                       MaxWidth="300"
+                                       Margin="0,0,15,0"/>
+
+                            <!-- Dismiss Button binds back up the visual tree to the MainWindowViewModel -->
+                            <Button Grid.Column="1"
+                                    Content="✕"
+                                    Background="Transparent"
+                                    Foreground="#95A5A6"
+                                    BorderThickness="0"
+                                    Padding="8,4"
+                                    Cursor="Hand"
+                                    VerticalAlignment="Top"
+                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissToastCommand}"
+                                    CommandParameter="{Binding Id}"/>
+                        </Grid>
                     </Border>
 
                 </DataTemplate>
