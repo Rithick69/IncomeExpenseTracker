@@ -1,5 +1,6 @@
 using System;
 using System.Data;
+using System.Security;
 using System.Threading.Tasks;
 
 namespace IncomeExpenditureTracker.Services.Database;
@@ -48,5 +49,5 @@ public interface IDatabaseService
     /// and annihilates the SQLite connection pool to release OS file locks.
     /// </summary>
     /// <param name="newConnectionString">The encrypted or profile-specific connection string.</param>
-    Task SetConnectionStringAsync(string newConnectionString);
+    Task SetConnectionStringAsync(string newConnectionString, SecureString? profilePassword);
 }

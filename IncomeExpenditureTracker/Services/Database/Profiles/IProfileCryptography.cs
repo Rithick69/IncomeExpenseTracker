@@ -12,6 +12,6 @@ namespace IncomeExpenditureTracker.Services.Database
         /// Safely unwraps a SecureString in unmanaged memory to build the connection string,
         /// ensuring the raw password does not linger in the managed Garbage Collector heap.
         /// </summary>
-        string BuildEncryptedConnectionString(string databasePath, SecureString securePassword);
+        string BuildEncryptedConnectionString(string databasePath);
     }
 }

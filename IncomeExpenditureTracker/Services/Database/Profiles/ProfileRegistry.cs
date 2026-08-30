@@ -49,7 +49,9 @@ namespace IncomeExpenditureTracker.Services.Database
                     DatabaseFilePath TEXT NOT NULL,
                     PasswordHash TEXT NOT NULL,
                     PasswordSalt TEXT NOT NULL,
-                    CreatedDate  DATETIME DEFAULT (datetime('now'))
+                    CreatedDate  DATETIME DEFAULT (datetime('now')),
+                    FailedAttemptCount INTEGER NOT NULL DEFAULT 0,
+                    LockoutEndUtc TEXT NULL
                 );";
             await connection.ExecuteAsync(sql);
         }
@@ -81,6 +83,22 @@ namespace IncomeExpenditureTracker.Services.Database
             return await connection.QuerySingleOrDefaultAsync<ProfileDto>(
                 "SELECT * FROM Profiles WHERE ProfileId = @ProfileId",
                 new { ProfileId = profileId });
+        }
+
+        public async Task UpdateLockoutStateAsync(string profileId, int failedAttemptCount, DateTime? lockoutEndUtc)
+        {
+            using var connection = new SqliteConnection(_systemDbConnectionString);
+            var sql = @"UPDATE Profiles
+                SET FailedAttemptCount = @FailedAttemptCount,
+                    LockoutEndUtc = @LockoutEndUtc
+                WHERE ProfileId = @ProfileId";
+
+            await connection.ExecuteAsync(sql, new
+            {
+                ProfileId = profileId,
+                FailedAttemptCount = failedAttemptCount,
+                LockoutEndUtc = lockoutEndUtc
+            });
         }
     }
 }

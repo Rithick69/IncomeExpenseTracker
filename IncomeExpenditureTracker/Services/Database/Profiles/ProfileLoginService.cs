@@ -50,29 +50,48 @@ namespace IncomeExpenditureTracker.Services.Database
                 return false;
             }
 
-            // 2. Cryptographic Verification: Hash the provided SecureString and compare it to the stored Hash/Salt
+            // 2. Check if currently locked out
+            if (profile.LockoutEndUtc.HasValue && profile.LockoutEndUtc.Value > DateTime.UtcNow)
+            {
+                var remaining = profile.LockoutEndUtc.Value - DateTime.UtcNow;
+                throw new UnauthorizedAccessException($"Profile locked. Try again in {Math.Ceiling(remaining.TotalMinutes)} minutes.");
+            }
+
+            // 3. Cryptographic Verification: Hash the provided SecureString and compare it to the stored Hash/Salt
             bool isAuthorized = _hasher.VerifyPassword(password, profile.PasswordHash, profile.PasswordSalt);
 
             if (!isAuthorized)
             {
                 _logger.LogWarning("Login failed: Invalid password for profile {ProfileName}.", profile.ProfileName);
+
+                // 4a. Increment failures and apply a 5-minute lockout if the 5-attempt threshold is reached
+                int newFailCount = profile.FailedAttemptCount + 1;
+                DateTime? newLockout = newFailCount >= 5 ? DateTime.UtcNow.AddMinutes(5) : null;
+
+                await _registry.UpdateLockoutStateAsync(profile.ProfileId, newFailCount, newLockout);
                 return false;
+            }
+
+            // 4b. Handle Success: Reset lockout counters back to zero
+            if (profile.FailedAttemptCount > 0)
+            {
+                await _registry.UpdateLockoutStateAsync(profile.ProfileId, 0, null);
             }
 
             try
             {
-                // 3. Build the SQLCipher connection string. The cryptography service handles
+                // 5. Build the SQLCipher connection string. The cryptography service handles
                 // unwrapping the SecureString in unmanaged memory and zeroing it out immediately.
-                var connectionString = _cryptography.BuildEncryptedConnectionString(profile.DatabaseFilePath, password);
+                var connectionString = _cryptography.BuildEncryptedConnectionString(profile.DatabaseFilePath);
 
-                // 4. Trigger the Airlock: Swap the connection string and annihilate old file locks.
-                await _databaseService.SetConnectionStringAsync(connectionString);
+                // 6. Trigger the Airlock: Swap the connection string and annihilate old file locks.
+                await _databaseService.SetConnectionStringAsync(connectionString, password);
 
-                // 5. Broadcast Cache Annihilation: If Profile A was logged in, this forces
+                // 7. Broadcast Cache Annihilation: If Profile A was logged in, this forces
                 // TagService and CategoryService to wipe Profile A's data from RAM immediately.
                 _broker.Send(new ProfileSwappedMessage());
 
-                // 6. Delayed Initialization: Now that the encrypted file is unlocked,
+                // 8. Delayed Initialization: Now that the encrypted file is unlocked,
                 // execute the PRAGMAs and schema creations.
                 await _dbInitializer.InitializeAsync();
 
@@ -96,7 +115,7 @@ namespace IncomeExpenditureTracker.Services.Database
 
             // 1. Trigger the Airlock: Point the database string to empty and clear SQLite pools
             // This guarantees the OS releases the physical .db file lock.
-            await _databaseService.SetConnectionStringAsync(string.Empty);
+            await _databaseService.SetConnectionStringAsync(string.Empty, null);
 
             // 2. Broadcast Cache Annihilation: Ensure no sensitive data lingers in Singleton memory.
             _broker.Send(new ProfileSwappedMessage());
