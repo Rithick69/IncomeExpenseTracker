@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Extensions.Logging;
+using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
 using IncomeExpenditureTracker.Models;
@@ -19,8 +20,10 @@ public class TagService : ITagService
     private readonly IDescriptionParser _descriptionParser;
     private readonly ILogger<TagService> _logger;
 
+    private readonly IApplicationBroker _broker;
+
     // Thread-safe cache registry for stampede defense during multi-file staging
-    private readonly ConcurrentDictionary<string, Lazy<Task<RuleBookSnapshot>>> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<RuleBookSnapshot>>> _ruleCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, Lazy<Task<List<Tag>>>> _allTagscache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -33,11 +36,21 @@ public class TagService : ITagService
     public TagService(
         IDatabaseService databaseService,
         IDescriptionParser descriptionParser,
-        ILogger<TagService> logger)
+        ILogger<TagService> logger,
+        IApplicationBroker broker)
     {
         _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
         _descriptionParser = descriptionParser ?? throw new ArgumentNullException(nameof(descriptionParser));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _broker = broker;
+
+        // -------------------------------------------------------------------------
+        // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
+        // -------------------------------------------------------------------------
+        // When the database swaps, we MUST wipe the ConcurrentDictionary and RuleBook
+        // to prevent Profile A's tags from appearing in Profile B's UI.
+        // -------------------------------------------------------------------------
+        _broker.Register<ProfileSwappedMessage>(this, (message) => ClearCache());
     }
 
     // =========================================================================
@@ -275,7 +288,7 @@ public class TagService : ITagService
     {
         _logger.LogDebug("Requesting RuleBookSnapshot from cache or database.");
 
-        return _cache.GetOrAdd(RULE_CACHE_KEY, _ => new Lazy<Task<RuleBookSnapshot>>(async () =>
+        return _ruleCache.GetOrAdd(RULE_CACHE_KEY, _ => new Lazy<Task<RuleBookSnapshot>>(async () =>
         {
             try
             {
@@ -305,7 +318,7 @@ public class TagService : ITagService
             {
                 // Fault Eviction: Never allow an exception to remain cached in server RAM
                 _logger.LogError(ex, "Critical failure while building RuleBookSnapshot from SQLite. Evicting cache.");
-                _cache.TryRemove(RULE_CACHE_KEY, out var _);
+                _ruleCache.TryRemove(RULE_CACHE_KEY, out var _);
                 throw;
             }
         })).Value;
@@ -490,6 +503,23 @@ public class TagService : ITagService
     public void InvalidateCache()
     {
         _logger.LogInformation("Invalidating RuleBookSnapshot RAM cache.");
-        _cache.TryRemove(RULE_CACHE_KEY, out _);
+        _ruleCache.TryRemove(RULE_CACHE_KEY, out _);
+    }
+
+
+    /// <summary>
+    /// Executes a hard reset of all in-memory tag structures.
+    /// Triggered dynamically by the IApplicationBroker when a user switches profiles.
+    /// </summary>
+    private void ClearCache()
+    {
+        // Clear the ConcurrentDictionary<string, Lazy<...>>
+        _allTagscache.Clear();
+        _tagIdByNameCache.Clear();
+        // Nullify the RuleBookSnapshot so the next transaction extraction
+        // is forced to fetch the new profile's rules from the database.
+        _ruleCache.TryRemove(RULE_CACHE_KEY, out _);
+
+        _logger.LogInformation("Profile swap detected. TagService cache successfully annihilated to prevent data bleed.");
     }
 }

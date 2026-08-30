@@ -8,8 +8,9 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using IncomeExpenditureTracker.Models;
 using Microsoft.Extensions.Logging;
-
+using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Database;
+
 namespace IncomeExpenditureTracker.Services.Entities;
 
 // ------------------------------------------------------------
@@ -31,16 +32,27 @@ public class AccountService : IAccountService
     private readonly IDatabaseService _database;
     private readonly ILogger<AccountService> _logger;
 
+    private readonly IApplicationBroker _broker;
+
     private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _accountIdCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, Lazy<Task<List<Account>>>> _entityAccountsCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, Lazy<Task<List<Account>>>> _accountListCache = new(StringComparer.OrdinalIgnoreCase);
 
-    public AccountService(IDatabaseService database, ILogger<AccountService> logger)
+    public AccountService(IDatabaseService database, ILogger<AccountService> logger, IApplicationBroker broker)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _broker = broker;
+
+        // -------------------------------------------------------------------------
+        // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
+        // -------------------------------------------------------------------------
+        // When the database swaps, we MUST wipe the ConcurrentDictionary
+        // to prevent Profile A's data from appearing in Profile B's UI.
+        // -------------------------------------------------------------------------
+        _broker.Register<ProfileSwappedMessage>(this, (message) => InvalidateCache());
     }
 
     // ------------------------------------------------------------

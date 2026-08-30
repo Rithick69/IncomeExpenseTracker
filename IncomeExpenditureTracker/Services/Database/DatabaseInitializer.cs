@@ -12,7 +12,7 @@ namespace IncomeExpenditureTracker.Services.Database;
 /// Responsible for establishing the baseline SQLite database schema,
 /// relational constraints, and initial domain seeding upon application startup.
 /// </summary>
-public class DatabaseInitializer
+public class DatabaseInitializer : IDatabaseInitializer
 {
     private readonly IDatabaseService _database;
     private readonly ISynonymService _synonymService;

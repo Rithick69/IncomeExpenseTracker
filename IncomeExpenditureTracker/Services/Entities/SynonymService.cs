@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Dapper;
 using System.Collections.Concurrent;
 using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Database;
 using Microsoft.Extensions.Logging;
 
@@ -59,6 +60,8 @@ public class SynonymService : ISynonymService
     private readonly IDatabaseService _database;
     private readonly ILogger<SynonymService> _logger;
 
+    private readonly IApplicationBroker _broker;
+
     // -------------------------------------------------------------------------
     // ASYNC LAZY STAMPEDE DEFENSE
     // -------------------------------------------------------------------------
@@ -69,10 +72,19 @@ public class SynonymService : ISynonymService
     private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyDictionary<string, Synonyms>>>> _categoryCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Lazy<Task<IEnumerable<Synonyms>>>> _allSynonymsCache = new(StringComparer.OrdinalIgnoreCase);
 
-    public SynonymService(IDatabaseService database, ILogger<SynonymService> logger)
+    public SynonymService(IDatabaseService database, ILogger<SynonymService> logger, IApplicationBroker broker)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _broker = broker;
+
+        // -------------------------------------------------------------------------
+        // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
+        // -------------------------------------------------------------------------
+        // When the database swaps, we MUST wipe the ConcurrentDictionary
+        // to prevent Profile A's data from appearing in Profile B's UI.
+        // -------------------------------------------------------------------------
+        _broker.Register<ProfileSwappedMessage>(this, (message) => InvalidateCache(null));
     }
 
     /// <summary>

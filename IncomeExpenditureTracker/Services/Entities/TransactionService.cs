@@ -8,8 +8,8 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Database;
-using DocumentFormat.OpenXml.Presentation;
 
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -35,14 +35,25 @@ public class TransactionService : ITransactionService
 
     private readonly ILogger<TransactionService> _logger;
 
+    private readonly IApplicationBroker _broker;
+
     private readonly ConcurrentDictionary<string, Lazy<Task<List<Transaction>>>> _transactionsCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _transactionCountCache = new(StringComparer.OrdinalIgnoreCase);
 
-    public TransactionService(IDatabaseService database, ILogger<TransactionService> logger)
+    public TransactionService(IDatabaseService database, ILogger<TransactionService> logger, IApplicationBroker broker)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _broker = broker;
+
+        // -------------------------------------------------------------------------
+        // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
+        // -------------------------------------------------------------------------
+        // When the database swaps, we MUST wipe the ConcurrentDictionary
+        // to prevent Profile A's data from appearing in Profile B's UI.
+        // -------------------------------------------------------------------------
+        _broker.Register<ProfileSwappedMessage>(this, (message) => InvalidateCache());
     }
 
     // ------------------------------------------------------------

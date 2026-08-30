@@ -2,11 +2,14 @@
 using System;
 using System.Data;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Dapper;
+using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Messaging;
 
 namespace IncomeExpenditureTracker.Services.Database;
 
@@ -15,17 +18,32 @@ namespace IncomeExpenditureTracker.Services.Database;
 
 public class DatabaseService : IDatabaseService
 {
-    private readonly string _connectionString;
+    private string _connectionString;
+
+    // --- The Airlock Primitives ---
+    // Volatile ensures all threads see the exact same value immediately without caching.
+    private volatile bool _isSwapping = false;
+
+    // Tracks how many queries are currently flying through the database.
+    private int _activeQueries = 0;
+
+    // The "Passport" token. Changes every time a profile is swapped.
+    private Guid _currentProfileSessionId = Guid.NewGuid();
+
     private readonly ILogger<DatabaseService> _logger = null!; // Initialized in constructor
+
+    private readonly SemaphoreSlim _swapLock = new SemaphoreSlim(1, 1);
+    private readonly IApplicationBroker _broker;
 
     // Retry configuration constants
     private const int MaxRetryAttempts = 5;
     private const int BaseDelayMilliseconds = 50;
 
-    public DatabaseService(IConfiguration configuration, ILogger<DatabaseService> logger)
+    public DatabaseService(IConfiguration configuration, ILogger<DatabaseService> logger, IApplicationBroker broker)
     {
         // 1. Assign mandatory dependencies immediately at the top so early returns can never skip them!
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _broker = broker;
 
         // Check if an external environment variable or test config explicitly overrides the DB path
         var configPath = configuration.GetConnectionString("DefaultConnection");
@@ -35,22 +53,53 @@ public class DatabaseService : IDatabaseService
             return;
         }
 
-        // Default Desktop Behavior: Restore your exact LocalApplicationData path and shared cache logic
-        var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var appFolder = Path.Combine(appDataFolder, "IncomeExpenditureTracker");
+        // 2. Default state is now empty. The DatabaseInitializer and core services will not be able
+        // to connect until the Gatekeeper UI authenticates a profile and calls SetConnectionStringAsync.
+        _connectionString = string.Empty;
+    }
 
-        // directory creation is idempotent; if it already exists, this is a no-op
-        Directory.CreateDirectory(appFolder);
-
-        var databaseFile = Path.Combine(appFolder, "transactions.db");
-
-        var builder = new SqliteConnectionStringBuilder
+    /// <summary>
+    /// Safely drains all active queries, swaps the connection string to the new profile,
+    /// and annihilates the SQLite connection pool to release OS file locks.
+    /// </summary>
+    public async Task SetConnectionStringAsync(string newConnectionString)
+    {
+        // 1. SEMAPHORE LOCK: Prevent simultaneous swaps (Double-click defense)
+        await _swapLock.WaitAsync();
+        try
         {
-            DataSource = databaseFile,
-            Cache = SqliteCacheMode.Shared
-        };
+            // 1. Close the gate: prevent any NEW queries from starting.
+            _isSwapping = true;
 
-        _connectionString = builder.ToString();
+            // 2. Wait for the Airlock to drain: Check if any queries are currently executing.
+            // We use Interlocked to safely read the active count across multiple threads.
+            while (Interlocked.CompareExchange(ref _activeQueries, 0, 0) > 0)
+            {
+                // Yield the thread briefly to let active queries finish their work.
+                await Task.Delay(50);
+            }
+
+            // 3. Swap the string securely now that traffic is completely stopped.
+            _connectionString = newConnectionString;
+
+            // Invalidate all old passports!
+            _currentProfileSessionId = Guid.NewGuid();
+
+            // 4. Annihilate the connection pool. This is the critical step that forces
+            // the OS to physically release the Windows file handle on the old .db file.
+            SqliteConnection.ClearAllPools();
+
+            // 6. CACHE ANNIHILATION: Must happen INSIDE the Airlock
+            _broker.Send(new ProfileSwappedMessage());
+        }
+        finally
+        {
+            // 7. Open the gate ONLY after the swap and cache wipe are 100% complete.
+            _isSwapping = false;
+
+            // 8. Release the semaphore so future swaps can occur.
+            _swapLock.Release();
+        }
     }
 
     /// <summary>
@@ -59,6 +108,10 @@ public class DatabaseService : IDatabaseService
     /// </summary>
     public async Task<IDbConnection> GetOpenConnectionAsync()
     {
+        if (string.IsNullOrEmpty(_connectionString))
+        {
+            throw new InvalidOperationException("Attempted to connect to the database before a profile was loaded.");
+        }
         var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
 
@@ -160,48 +213,95 @@ public class DatabaseService : IDatabaseService
     /// </summary>
     private async Task<T> ExecuteWithRetryInternalAsync<T>(Func<Task<T>> operation)
     {
-        int attempt = 0;
-        var random = new Random();
 
+        // 1. Capture the passport BEFORE waiting. This is the database this query was meant for.
+        Guid expectedSessionId = _currentProfileSessionId;
+
+        // 2. AIRLOCK WAITING: Pause execution if a profile swap is currently underway.(Double-Checked Locking)
         while (true)
         {
-            try
+            // Wait if a swap is already actively happening
+            while (_isSwapping)
             {
-                attempt++;
-                return await operation();
+                await Task.Delay(10);
             }
-            catch (SqliteException ex) when (IsTransientLockError(ex))
+
+            // Step onto the scale: register this query as active
+            Interlocked.Increment(ref _activeQueries);
+
+            // DOUBLE-CHECK: Did the swapper close the gate the exact microsecond we stepped forward?
+            if (!_isSwapping)
             {
-                // If we've exhausted our retry budget, log and bubble up the crash
-                if (attempt >= MaxRetryAttempts)
+                // 2. PASSPORT CHECK: Did the profile change while we were waiting in line?
+                if (expectedSessionId != _currentProfileSessionId)
                 {
-                    _logger.LogError(ex, "Database remained locked after {MaxAttempts} exponential retry attempts. Aborting operation.", MaxRetryAttempts);
-                    throw;
+                    // We are in the wrong database! Step off the scale and ABORT immediately.
+                    Interlocked.Decrement(ref _activeQueries);
+
+                    _logger.LogWarning("Query aborted: A profile swap occurred while the query was waiting in the Airlock.");
+                    throw new InvalidOperationException("Database query aborted to prevent cross-profile data bleed.");
                 }
 
-                // -------------------------------------------------------------------------
-                // EXPONENTIAL BACKOFF WITH JITTER
-                // -------------------------------------------------------------------------
-                // Formula: (BaseDelay * 2^attempt) + Random(10, 25) ms
-                // Example: Attempt 1 = ~115ms | Attempt 2 = ~215ms | Attempt 3 = ~415ms
-                // The random jitter prevents multiple background tasks from waking up at the exact
-                // same millisecond and colliding again.
-                // -------------------------------------------------------------------------
-                int exponentialDelay = BaseDelayMilliseconds * (int)Math.Pow(2, attempt);
-                int jitter = random.Next(10, 25);
-                int totalDelay = exponentialDelay + jitter;
-
-                _logger.LogWarning("SQLite lock contention detected (Error Code: {ErrorCode}). Retrying attempt {Attempt}/{MaxAttempts} in {Delay}ms...",
-                    ex.SqliteErrorCode, attempt, MaxRetryAttempts, totalDelay);
-
-                await Task.Delay(totalDelay);
+                // Passport is valid. We are safely inside.
+                break;
             }
-            catch (Exception ex)
+
+            // A swap started! We must step back out, decrement the counter, and wait.
+            Interlocked.Decrement(ref _activeQueries);
+            await Task.Delay(10);
+        }
+
+        try
+        {
+            int attempt = 0;
+            var random = new Random();
+
+            while (true)
             {
-                // Non-transient exceptions (syntax errors, null refs, schema bugs) fail immediately
-                _logger.LogDebug(ex, "Non-transient database exception encountered. Failing immediately without retry.");
-                throw;
+                try
+                {
+                    attempt++;
+                    return await operation();
+                }
+                catch (SqliteException ex) when (IsTransientLockError(ex))
+                {
+                    // If we've exhausted our retry budget, log and bubble up the crash
+                    if (attempt >= MaxRetryAttempts)
+                    {
+                        _logger.LogError(ex, "Database remained locked after {MaxAttempts} exponential retry attempts. Aborting operation.", MaxRetryAttempts);
+                        throw;
+                    }
+
+                    // -------------------------------------------------------------------------
+                    // EXPONENTIAL BACKOFF WITH JITTER
+                    // -------------------------------------------------------------------------
+                    // Formula: (BaseDelay * 2^attempt) + Random(10, 25) ms
+                    // Example: Attempt 1 = ~115ms | Attempt 2 = ~215ms | Attempt 3 = ~415ms
+                    // The random jitter prevents multiple background tasks from waking up at the exact
+                    // same millisecond and colliding again.
+                    // -------------------------------------------------------------------------
+                    int exponentialDelay = BaseDelayMilliseconds * (int)Math.Pow(2, attempt);
+                    int jitter = random.Next(10, 25);
+                    int totalDelay = exponentialDelay + jitter;
+
+                    _logger.LogWarning("SQLite lock contention detected (Error Code: {ErrorCode}). Retrying attempt {Attempt}/{MaxAttempts} in {Delay}ms...",
+                        ex.SqliteErrorCode, attempt, MaxRetryAttempts, totalDelay);
+
+                    await Task.Delay(totalDelay);
+                }
+                catch (Exception ex)
+                {
+                    // Non-transient exceptions (syntax errors, null refs, schema bugs) fail immediately
+                    _logger.LogDebug(ex, "Non-transient database exception encountered. Failing immediately without retry.");
+                    throw;
+                }
             }
+        }
+        finally
+        {
+            // 3. AIRLOCK EXIT: Always decrement the counter, even if the query throws an exception,
+            // to prevent permanently deadlocking the system.
+            Interlocked.Decrement(ref _activeQueries);
         }
     }
 

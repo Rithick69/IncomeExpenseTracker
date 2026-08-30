@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
@@ -23,10 +24,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
         private readonly Mock<IDatabaseService> _mockDatabaseService;
         private readonly Mock<ILogger<TagService>> _mockLogger;
 
+        private readonly Mock<IApplicationBroker> _brokerMock;
+
         public TagServiceConcurrencyTests()
         {
             _mockDatabaseService = new Mock<IDatabaseService>();
             _mockLogger = new Mock<ILogger<TagService>>();
+            _brokerMock = new Mock<IApplicationBroker>();
         }
 
         /*
@@ -48,6 +52,27 @@ namespace IncomeExpenditureTracker.Tests.Integration
          *    Moq provides .Verify(..., Times.Once) to give us this absolute certainty.
          * -------------------------------------------------------------------------------------------------
          */
+
+        [Fact]
+        public void Constructor_RegistersProfileSwappedMessage_ToPreventDataBleed()
+        {
+            var descriptionLogger = new Mock<ILogger<DescriptionParser>>();
+            IDescriptionParser descriptionParser = new DescriptionParser(descriptionLogger.Object);
+
+            // Initialize the TagService (System Under Test)
+            var sut = new TagService(
+                _mockDatabaseService.Object,
+                descriptionParser,
+                _mockLogger.Object,
+                _brokerMock.Object);
+
+            // Assert
+            // Mathematically prove that the service hooked into the teardown event.
+            _brokerMock.Verify(b => b.Register<ProfileSwappedMessage>(
+                sut, // Verifies it registered itself
+                It.IsAny<Action<ProfileSwappedMessage>>()),
+                Times.Once);
+        }
         [Fact]
         public async Task GetRuleBookSnapshotAsync_CacheStampede_ExecutesExactlyOneDatabaseRead()
         {
@@ -84,7 +109,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var sut = new TagService(
                 _mockDatabaseService.Object,
                 descriptionParser,
-                _mockLogger.Object);
+                _mockLogger.Object,
+                _brokerMock.Object);
 
             int concurrentRequestCount = 50;
             var tasks = new Task<RuleBookSnapshot>[concurrentRequestCount];
@@ -148,7 +174,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             var descriptionLogger = new Mock<ILogger<DescriptionParser>>();
             IDescriptionParser descriptionParser = new DescriptionParser(descriptionLogger.Object);
-            var sut = new TagService(_mockDatabaseService.Object, descriptionParser, _mockLogger.Object);
+            var sut = new TagService(_mockDatabaseService.Object, descriptionParser, _mockLogger.Object, _brokerMock.Object);
 
             // Act & Assert
 

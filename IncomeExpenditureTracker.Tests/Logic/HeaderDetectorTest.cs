@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using IncomeExpenditureTracker.Services.Helpers;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Database;
+using IncomeExpenditureTracker.Services.Messaging;
+using Moq;
 
 namespace IncomeExpenditureTracker.Tests.Tests.Logic
 {
@@ -18,6 +20,7 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
     {
         private readonly SqliteConnection _masterConnection;
         private readonly HeaderDetector _headerDetector;
+        private readonly Mock<IApplicationBroker> _brokerMock = new();
 
         public HeaderDetectorTests()
         {
@@ -39,12 +42,12 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
                 .AddInMemoryCollection(inMemorySettings)
                 .Build();
 
-            var databaseService = new DatabaseService(configuration, NullLogger<DatabaseService>.Instance);
+            var databaseService = new DatabaseService(configuration, NullLogger<DatabaseService>.Instance, _brokerMock.Object);
 
             // 5. Run your helper synchronously (ensure your helper actually executes the INSERT sql!)
             databaseService.SetupInMemorySynonymsTable().GetAwaiter().GetResult();
 
-            var synonymService = new SynonymService(databaseService, NullLogger<SynonymService>.Instance);
+            var synonymService = new SynonymService(databaseService, NullLogger<SynonymService>.Instance, _brokerMock.Object);
             _headerDetector = new HeaderDetector(synonymService, NullLogger<HeaderDetector>.Instance);
         }
 
