@@ -8,8 +8,8 @@ namespace IncomeExpenditureTracker.Services.Database
 
     public class PasswordHasher : IPasswordHasher
     {
-        // 100,000 iterations slows down brute-force attacks significantly
-        private const int Iterations = 100000;
+        // 600,000 iterations slows down brute-force attacks significantly
+        private const int Iterations = 600000;
         private const int HashSize = 32; // 256 bits
         private const int SaltSize = 16; // 128 bits
 

@@ -31,7 +31,7 @@ public partial class App : Application
 
 
     // This method runs when the Avalonia framework has finished initializing
-    public override async void OnFrameworkInitializationCompleted()
+    public override void OnFrameworkInitializationCompleted()
     {
         try
         {

@@ -66,7 +66,7 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
 
             _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
             _hasherMock.Setup(h => h.VerifyPassword(password, "hash", "salt")).Returns(true);
-            _cryptoMock.Setup(c => c.BuildEncryptedConnectionString("path", password)).Returns("EncryptedString");
+            _cryptoMock.Setup(c => c.BuildEncryptedConnectionString("path")).Returns("EncryptedString");
 
             // Act
             var result = await _loginService.AuthenticateAndLoadProfileAsync(profileId, password);
@@ -75,7 +75,7 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
             Assert.True(result);
 
             // Proves the Airlock was triggered with the correct cryptographic string
-            _dbServiceMock.Verify(d => d.SetConnectionStringAsync("EncryptedString"), Times.Once);
+            _dbServiceMock.Verify(d => d.SetConnectionStringAsync("EncryptedString", password), Times.Once);
 
             // Proves the Database Schema Initializer was delayed until AFTER the swap
             _dbInitMock.Verify(i => i.InitializeAsync(), Times.Once);
@@ -111,8 +111,8 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
             Assert.False(result);
 
             // Mathematically proves that a bad password never attempts to decrypt or swap the DB
-            _cryptoMock.Verify(c => c.BuildEncryptedConnectionString(It.IsAny<string>(), It.IsAny<SecureString>()), Times.Never);
-            _dbServiceMock.Verify(d => d.SetConnectionStringAsync(It.IsAny<string>()), Times.Never);
+            _cryptoMock.Verify(c => c.BuildEncryptedConnectionString(It.IsAny<string>()), Times.Never);
+            _dbServiceMock.Verify(d => d.SetConnectionStringAsync(It.IsAny<string>(), It.IsAny<SecureString>()), Times.Never);
             _dbInitMock.Verify(i => i.InitializeAsync(), Times.Never);
         }
 
@@ -123,7 +123,7 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
             await _loginService.LogoutAsync();
 
             // Assert: Proves the Airlock was triggered with an empty string, cutting off DB access
-            _dbServiceMock.Verify(d => d.SetConnectionStringAsync(string.Empty), Times.Once);
+            _dbServiceMock.Verify(d => d.SetConnectionStringAsync(string.Empty, null), Times.Once);
 
             // Assert: Proves the Data Bleed defense was triggered to wipe Singleton memory
             _brokerMock.Verify(b => b.Send(It.IsAny<ProfileSwappedMessage>()), Times.Once);
@@ -157,7 +157,7 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
             Assert.False(result);
 
             // Proves we didn't accidentally destroy Alice's active session just because Bob failed to log in
-            _dbServiceMock.Verify(d => d.SetConnectionStringAsync(It.IsAny<string>()), Times.Never);
+            _dbServiceMock.Verify(d => d.SetConnectionStringAsync(It.IsAny<string>(), It.IsAny<SecureString>()), Times.Never);
             _brokerMock.Verify(b => b.Send(It.IsAny<ProfileSwappedMessage>()), Times.Never);
         }
 
@@ -181,7 +181,7 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
 
             _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
             _hasherMock.Setup(h => h.VerifyPassword(password, "hash", "salt")).Returns(true);
-            _cryptoMock.Setup(c => c.BuildEncryptedConnectionString("path", password)).Returns("EncryptedString");
+            _cryptoMock.Setup(c => c.BuildEncryptedConnectionString("path")).Returns("EncryptedString");
 
             // The Initializer crashes midway through execution
             _dbInitMock.Setup(i => i.InitializeAsync()).ThrowsAsync(new InvalidOperationException("Corrupt DB"));
@@ -191,8 +191,69 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
                 _loginService.AuthenticateAndLoadProfileAsync(profileId, password));
 
             // Proves the emergency rollback (LogoutAsync) was successfully executed to prevent a half-loaded state
-            _dbServiceMock.Verify(d => d.SetConnectionStringAsync(string.Empty), Times.Once);
+            _dbServiceMock.Verify(d => d.SetConnectionStringAsync(string.Empty, null), Times.Once);
             _brokerMock.Verify(b => b.Send(It.IsAny<ProfileSwappedMessage>()), Times.AtLeastOnce);
+        }
+
+        [Fact]
+        public async Task AuthenticateAndLoad_ActiveLockout_ThrowsUnauthorizedAccessException()
+        {
+            // Arrange
+            var profileId = "123";
+            using var password = CreateSecureString();
+            var profile = new ProfileDto
+            {
+                ProfileId = profileId,
+                PasswordHash = "hash",
+                PasswordSalt = "salt",
+                // Profile is locked out for 5 more minutes
+                LockoutEndUtc = DateTime.UtcNow.AddMinutes(5)
+            };
+
+            _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
+
+            // Act & Assert
+            var exception = await Assert.ThrowsAsync<UnauthorizedAccessException>(
+                () => _loginService.AuthenticateAndLoadProfileAsync(profileId, password)
+            );
+
+            Assert.Contains("Profile locked", exception.Message);
+
+            // Prove the password hasher was never even called (Short-Circuit Defense)
+            _hasherMock.Verify(h => h.VerifyPassword(It.IsAny<SecureString>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task AuthenticateAndLoad_FifthFailedAttempt_TriggersFiveMinuteLockout()
+        {
+            // Arrange
+            var profileId = "123";
+            using var password = CreateSecureString();
+            var profile = new ProfileDto
+            {
+                ProfileId = profileId,
+                PasswordHash = "hash",
+                PasswordSalt = "salt",
+                FailedAttemptCount = 4 // Currently at 4 fails
+            };
+
+            _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
+
+            // Simulate invalid password
+            _hasherMock.Setup(h => h.VerifyPassword(password, "hash", "salt")).Returns(false);
+
+            // Act
+            var result = await _loginService.AuthenticateAndLoadProfileAsync(profileId, password);
+
+            // Assert
+            Assert.False(result);
+
+            // Verify the registry was called to update the lockout state to 5 fails with a future timestamp
+            _registryMock.Verify(r => r.UpdateLockoutStateAsync(
+                profileId,
+                5,
+                It.Is<DateTime?>(d => d.HasValue && d.Value > DateTime.UtcNow)
+            ), Times.Once);
         }
 
     }

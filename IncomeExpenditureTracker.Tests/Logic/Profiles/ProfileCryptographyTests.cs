@@ -1,5 +1,4 @@
 using System;
-using System.Security;
 using Xunit;
 using IncomeExpenditureTracker.Services.Database;
 
@@ -15,58 +14,38 @@ namespace IncomeExpenditureTracker.Tests.Logic
         }
 
         [Fact]
-        public void BuildEncryptedConnectionString_WithValidInputs_ReturnsFormattedSqlCipherString()
+        public void BuildEncryptedConnectionString_WithValidPath_ReturnsStringWithoutPassword()
         {
             // Arrange
             var dbPath = "C:\\FakeData\\ProfileA.db";
-            var rawPassword = "SuperSecretPassword123!";
-
-            // Constructing a SecureString exactly as the UI will when a user types
-            using var securePassword = new SecureString();
-            foreach (char c in rawPassword)
-            {
-                securePassword.AppendChar(c);
-            }
-            securePassword.MakeReadOnly();
 
             // Act
-            var result = _cryptography.BuildEncryptedConnectionString(dbPath, securePassword);
+            var result = _cryptography.BuildEncryptedConnectionString(dbPath);
 
             // Assert
-            // We check that the builder successfully integrated the path and password.
-            // Note: SqliteConnectionStringBuilder automatically formats keys (e.g., "Data Source", "Password")
+            // We verify the baseline SQLite configurations are present
             Assert.Contains(dbPath, result);
-            Assert.Contains(rawPassword, result);
             Assert.Contains("Mode=ReadWriteCreate", result);
             Assert.Contains("Cache=Shared", result);
+
+            // ARCHITECTURAL GUARDRAIL PROOF:
+            // Mathematically prove the string builder does NOT contain a 'Password' field,
+            // verifying our zero-leak memory defense.
+            Assert.DoesNotContain("Password=", result, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
         public void BuildEncryptedConnectionString_EmptyDatabasePath_ThrowsArgumentException()
         {
-            // Arrange
-            using var securePassword = new SecureString();
-            securePassword.AppendChar('A');
-
             // Act & Assert
             var exception = Assert.Throws<ArgumentException>(() =>
-                _cryptography.BuildEncryptedConnectionString("", securePassword));
+                _cryptography.BuildEncryptedConnectionString(""));
 
-            Assert.Contains("databasePath", exception.ParamName);
+            Assert.Equal("databasePath", exception.ParamName);
         }
 
-        [Fact]
-        public void BuildEncryptedConnectionString_EmptyPassword_ThrowsArgumentException()
-        {
-            // Arrange
-            var dbPath = "C:\\FakeData\\ProfileA.db";
-            using var emptySecurePassword = new SecureString(); // 0 length
-
-            // Act & Assert
-            var exception = Assert.Throws<ArgumentException>(() =>
-                _cryptography.BuildEncryptedConnectionString(dbPath, emptySecurePassword));
-
-            Assert.Contains("securePassword", exception.ParamName);
-        }
+        // NOTE: The 'EmptyPassword_ThrowsArgumentException' test was intentionally deleted.
+        // The method no longer accepts a password parameter, as password injection
+        // has been delegated directly to the DatabaseService via PRAGMA key.
     }
 }

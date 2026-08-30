@@ -13,6 +13,10 @@ namespace IncomeExpenditureTracker.Models
         // Captures the extra column Dapper found without breaking the mapping
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 
+        // Brute Force Defense
+        public int FailedAttemptCount { get; init; } = 0;
+        public DateTime? LockoutEndUtc { get; init; }
+
         // Parameterless constructor strictly required by Dapper for safe deserialization
         public ProfileDto() { }
     }

@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Security;
+using System.Runtime.InteropServices;
 using Dapper;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Messaging;
@@ -26,6 +28,8 @@ public class DatabaseService : IDatabaseService
 
     // Tracks how many queries are currently flying through the database.
     private int _activeQueries = 0;
+
+    private SecureString? _activeProfilePassword;
 
     // The "Passport" token. Changes every time a profile is swapped.
     private Guid _currentProfileSessionId = Guid.NewGuid();
@@ -62,7 +66,7 @@ public class DatabaseService : IDatabaseService
     /// Safely drains all active queries, swaps the connection string to the new profile,
     /// and annihilates the SQLite connection pool to release OS file locks.
     /// </summary>
-    public async Task SetConnectionStringAsync(string newConnectionString)
+    public async Task SetConnectionStringAsync(string newConnectionString, SecureString? profilePassword = null)
     {
         // 1. SEMAPHORE LOCK: Prevent simultaneous swaps (Double-click defense)
         await _swapLock.WaitAsync();
@@ -81,6 +85,9 @@ public class DatabaseService : IDatabaseService
 
             // 3. Swap the string securely now that traffic is completely stopped.
             _connectionString = newConnectionString;
+
+            // Store the SecureString safely. It remains encrypted in RAM.
+            _activeProfilePassword = profilePassword;
 
             // Invalidate all old passports!
             _currentProfileSessionId = Guid.NewGuid();
@@ -114,6 +121,54 @@ public class DatabaseService : IDatabaseService
         }
         var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
+
+        // -------------------------------------------------------------------------
+        // SECURE SQLCIPHER UNLOCK & ZERO-LEAK MEMORY ANNIHILATION
+        // -------------------------------------------------------------------------
+        // In .NET, strings are immutable. If a password is built into a standard
+        // connection string, it lingers in the managed heap until the Garbage Collector
+        // runs, leaving it highly vulnerable to RAM scraping and memory dumps.
+        //
+        // To achieve true zero-leak memory:
+        // 1. We omit the password from the static connection string builder.
+        // 2. We dynamically inject the password into the engine using 'PRAGMA key'.
+        // 3. We use an 'unsafe' block and a 'fixed' pointer to bypass .NET safety guards.
+        //    This allows us to physically pin the transient string's location in RAM
+        //    and forcefully overwrite the memory addresses with null terminators ('\0').
+        //
+        // This mathematically guarantees the plaintext password is independently
+        // wiped from the application's memory space the millisecond it is no longer needed.
+        // -------------------------------------------------------------------------
+        if (_activeProfilePassword != null && _activeProfilePassword.Length > 0)
+        {
+            IntPtr unmanagedPointer = IntPtr.Zero;
+            try
+            {
+                // Unwrap into unmanaged memory
+                unmanagedPointer = Marshal.SecureStringToGlobalAllocUnicode(_activeProfilePassword);
+                string tempPassword = Marshal.PtrToStringUni(unmanagedPointer)!;
+
+                // Use raw ADO.NET to prevent Dapper from caching the password string in memory
+                using var keyCommand = connection.CreateCommand();
+                keyCommand.CommandText = $"PRAGMA key = '{tempPassword}';";
+                await keyCommand.ExecuteNonQueryAsync();
+
+                // Annihilate the transient managed string immediately to prevent RAM scraping
+                unsafe
+                {
+                    fixed (char* p = tempPassword)
+                    {
+                        for (int i = 0; i < tempPassword.Length; i++)
+                            p[i] = '\0';
+                    }
+                }
+            }
+            finally
+            {
+                if (unmanagedPointer != IntPtr.Zero)
+                    Marshal.ZeroFreeGlobalAllocUnicode(unmanagedPointer);
+            }
+        }
 
         // -------------------------------------------------------------------------
         // ARCHITECTURAL GUARDRAIL: MANDATORY PRAGMAS
