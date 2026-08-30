@@ -90,4 +90,10 @@ namespace IncomeExpenditureTracker.Models
     // Any Orchestrator or ViewModel can broadcast this message.
     // =========================================================================
     public record ToastNotificationMessage(string Message, NotificationType Type);
+
+    /// <summary>
+    /// Broadcasted immediately after the DatabaseService successfully swaps the physical .db connection.
+    /// Commands all Singleton services to immediately flush their in-memory caches to prevent data bleed.
+    /// </summary>
+    public record ProfileSwappedMessage();
 }

@@ -10,6 +10,7 @@ using Xunit.Abstractions;
 using Moq;
 using Xunit;
 using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
@@ -21,6 +22,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
         private readonly SqliteConnection _inMemoryConnection;
         private readonly TagService _tagService;
         private readonly Mock<IDatabaseService> _dbServiceWrapper;
+
+        private readonly Mock<IApplicationBroker> _brokerMock = new();
 
         private readonly ITestOutputHelper _output;
 
@@ -78,7 +81,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             IDescriptionParser descriptionParser = new DescriptionParser(descriptionLogger.Object);
             var loggerMock = new Mock<ILogger<TagService>>();
 
-            _tagService = new TagService(_dbServiceWrapper.Object, descriptionParser, loggerMock.Object);
+            _tagService = new TagService(_dbServiceWrapper.Object, descriptionParser, loggerMock.Object, _brokerMock.Object);
         }
 
         [Fact]

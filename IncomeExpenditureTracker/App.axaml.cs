@@ -46,16 +46,7 @@ public partial class App : Application
             var localServiceProvider = services.BuildServiceProvider();
 
             // ---------------------------------------------------------
-            // STEP 2: Initialize Database
-            // ---------------------------------------------------------
-
-            var databaseInitializer =
-                localServiceProvider.GetRequiredService<DatabaseInitializer>();
-
-            await databaseInitializer.InitializeAsync();
-
-            // ---------------------------------------------------------
-            // STEP 3: Setup the main application window
+            // STEP 2: Setup the main application window
             // ---------------------------------------------------------
 
             // Check if we are running as a desktop application

@@ -87,13 +87,12 @@ public static class ServiceRegistration
 
         services.AddSingleton<IDatabaseService, DatabaseService>(); // Singleton because it manages the database connection and should be shared across the application.
 
-        services.AddTransient<DatabaseInitializer>();
+        services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
 
         // ---------------------------------------------------------
         // Helpers
         // ---------------------------------------------------------
 
-        services.AddSingleton<ISynonymService, SynonymService>(); // Singleton because it maintains a cache of synonyms, readonly service, non blocking, thread-safe.
         services.AddTransient<IFieldMapper<IXLWorksheet>, FieldMapper>();
         services.AddTransient<IHeaderDetector<IXLWorksheet>, HeaderDetector>();
         services.AddTransient<ITransactionExtractor<IXLWorksheet>, ExcelTransactionExtractor>();
@@ -109,6 +108,7 @@ public static class ServiceRegistration
         services.AddSingleton<IAccountService, AccountService>();
         services.AddSingleton<IImportBatchService, ImportBatchService>();
         services.AddSingleton<ITransactionService, TransactionService>();
+        services.AddSingleton<ISynonymService, SynonymService>(); // Singleton because it maintains a cache of synonyms, readonly service, non blocking, thread-safe.
 
         // ---------------------------------------------------------
         // Statement Generic Processing Layer

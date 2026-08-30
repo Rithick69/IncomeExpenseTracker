@@ -42,4 +42,11 @@ public interface IDatabaseService
     /// Initiates an explicit SQLite database transaction that returns a result, wrapped in a retry loop.
     /// </summary>
     Task<T> ExecuteInTransactionWithRetryAsync<T>(Func<IDbConnection, IDbTransaction, Task<T>> action);
+
+    /// <summary>
+    /// Safely drains all active queries, swaps the connection string,
+    /// and annihilates the SQLite connection pool to release OS file locks.
+    /// </summary>
+    /// <param name="newConnectionString">The encrypted or profile-specific connection string.</param>
+    Task SetConnectionStringAsync(string newConnectionString);
 }

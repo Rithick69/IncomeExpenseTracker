@@ -6,7 +6,9 @@ using IncomeExpenditureTracker.Tests.Helpers;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
+using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Database;
+using Moq;
 
 
 namespace IncomeExpenditureTracker.Tests.Tests.Logic
@@ -19,6 +21,8 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
     {
         // 1. Notice the interface is generic, but we do NOT declare the static ExcelStatementGenerator here.
         private readonly IFieldMapper<IXLWorksheet> _fieldMapper;
+
+        private readonly Mock<IApplicationBroker> _brokerMock = new();
         private readonly SqliteConnection _masterConnection;
 
         public FieldMapperTests()
@@ -41,12 +45,12 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
                 .AddInMemoryCollection(inMemorySettings)
                 .Build();
 
-            var databaseService = new DatabaseService(configuration, NullLogger<DatabaseService>.Instance);
+            var databaseService = new DatabaseService(configuration, NullLogger<DatabaseService>.Instance, _brokerMock.Object);
 
             // 5. Run your helper synchronously (ensure your helper actually executes the INSERT sql!)
             databaseService.SetupInMemorySynonymsTable().GetAwaiter().GetResult();
 
-            var synonymService = new SynonymService(databaseService, NullLogger<SynonymService>.Instance);
+            var synonymService = new SynonymService(databaseService, NullLogger<SynonymService>.Instance, _brokerMock.Object);
 
             // 4. Finally, inject SynonymService and NullLogger into your FieldMapper
             _fieldMapper = new FieldMapper(synonymService, NullLogger<FieldMapper>.Instance);

@@ -14,6 +14,7 @@ using Xunit.Abstractions;
 
 // Note: Update these namespaces to match your actual project structure
 using IncomeExpenditureTracker.Services.Database;
+using IncomeExpenditureTracker.Services.Messaging;
 
 namespace IncomeExpenditureTracker.Tests.Integration
 {
@@ -41,9 +42,10 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 .Build();
 
             var mockLogger = new Mock<ILogger<DatabaseService>>();
+            var mockBroker = new Mock<IApplicationBroker>();
 
             // 3. Initialize your exact DatabaseService
-            _databaseService = new DatabaseService(configuration, mockLogger.Object);
+            _databaseService = new DatabaseService(configuration, mockLogger.Object, mockBroker.Object);
 
             // 4. Manually initialize the SQLite Schema using Dapper
             InitializeSchema().GetAwaiter().GetResult();

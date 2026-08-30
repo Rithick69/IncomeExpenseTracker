@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
+using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Database;
 
 namespace IncomeExpenditureTracker.Services.Entities;
@@ -24,16 +25,28 @@ public class SubCategoryService : ISubCategoryService
     private readonly IDatabaseService _database;
     private readonly ILogger<SubCategoryService> _logger;
 
+    private readonly IApplicationBroker _broker;
+
     private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _subCategoryIdCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, Lazy<Task<List<SubCategory>>>> _subCategoryListCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<string, Lazy<Task<List<SubCategory>>>> _subCategoriesByCategoryIdCache = new(StringComparer.OrdinalIgnoreCase);
 
-    public SubCategoryService(IDatabaseService database, ILogger<SubCategoryService> logger)
+    public SubCategoryService(IDatabaseService database, ILogger<SubCategoryService> logger, IApplicationBroker broker)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _broker = broker;
+
+        // -------------------------------------------------------------------------
+        // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
+        // -------------------------------------------------------------------------
+        // When the database swaps, we MUST wipe the ConcurrentDictionary
+        // to prevent Profile A's data from appearing in Profile B's UI.
+        // -------------------------------------------------------------------------
+        _broker.Register<ProfileSwappedMessage>(this, (message) => InvalidateCache());
+
     }
 
     // ------------------------------------------------------------
