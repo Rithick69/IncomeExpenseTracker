@@ -44,29 +44,15 @@ Unlike bloated financial advisory apps that rely on subjective heuristics, this 
 
 ## 🛠️ Tech Stack & Dependencies
 
-| Component / Library | Technology | Version | Purpose                                     |
-| ------------------- | ---------- | ------- | ------------------------------------------- |
-| **Framework**       | .NET (C#)  | `8.0.x` | Core application runtime and backend logic. |
-
-|
-| **Presentation Layer** | Avalonia UI | `[Insert Version]` | Cross-platform MVVM desktop UI rendering.
-
-|
-| **Database Engine** | SQLite | `[Insert Version]` | Local relational persistence with WAL journal mode.
-
-|
-| **ORM / Data Access** | Dapper | `[Insert Version]` | High-performance micro-ORM for coordinate-optimized queries.
-
-|
-| **Excel Spreadsheet I/O** | ClosedXML | `[Insert Version]` | Stream-based workbook loading and worksheet manipulation.
-
-|
-| **Dependency Injection** | Microsoft.Extensions.DependencyInjection | `[Insert Version]` | Interface-driven service lifecycle management.
-
-|
-| **Structured Logging** | Microsoft.Extensions.Logging | `[Insert Version]` | Asynchronous lifecycle, debug, and error telemetry.
-
-|
+| Component / Library       | Technology                               | Version            | Purpose                                                      |
+| ------------------------- | ---------------------------------------- | ------------------ | ------------------------------------------------------------ |
+| **Framework**             | .NET (C#)                                | `8.0.x`            | Core application runtime and backend logic.                  |
+| **Presentation Layer**    | Avalonia UI                              | `[Insert Version]` | Cross-platform MVVM desktop UI rendering.                    |
+| **Database Engine**       | SQLite                                   | `[Insert Version]` | Local relational persistence with WAL journal mode.          |
+| **ORM / Data Access**     | Dapper                                   | `[Insert Version]` | High-performance micro-ORM for coordinate-optimized queries. |
+| **Excel Spreadsheet I/O** | ClosedXML                                | `[Insert Version]` | Stream-based workbook loading and worksheet manipulation.    |
+| **Dependency Injection**  | Microsoft.Extensions.DependencyInjection | `[Insert Version]` | Interface-driven service lifecycle management.               |
+| **Structured Logging**    | Microsoft.Extensions.Logging             | `[Insert Version]` | Asynchronous lifecycle, debug, and error telemetry.          |
 
 ---
 
