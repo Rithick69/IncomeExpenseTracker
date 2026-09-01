@@ -4,12 +4,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 using Moq;
-using IncomeExpenditureTracker.ViewModels;
+using IncomeExpenditureTracker.UI.Shared;
+using IncomeExpenditureTracker.UI.Ledger;
 using IncomeExpenditureTracker.Services.Orchestration;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Models;
 
-namespace IncomeExpenditureTracker.Tests.Logic.ViewModels
+namespace IncomeExpenditureTracker.Tests.UI.ViewModels
 {
     public class TransactionReviewViewModelTests
     {

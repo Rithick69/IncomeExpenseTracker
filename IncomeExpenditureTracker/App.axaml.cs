@@ -9,8 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 
 // Import ViewModels and Views
-using IncomeExpenditureTracker.ViewModels;
-using IncomeExpenditureTracker.Views;
+using IncomeExpenditureTracker.UI.Shell;
+using IncomeExpenditureTracker.UI.Shared;
 
 // Import the dependency injection setup
 using IncomeExpenditureTracker.DependencyInjection;
@@ -45,8 +45,15 @@ public partial class App : Application
 
             var localServiceProvider = services.BuildServiceProvider();
 
+            // =========================================================================
+            // STEP 2: INITIALIZE THE PROFILE REGISTRY (SYSTEM.DB)
+            // Resolve the service and block synchronously just for startup creation
+            // =========================================================================
+            var registry = localServiceProvider.GetRequiredService<IProfileRegistry>();
+            registry.InitializeRegistryAsync().GetAwaiter().GetResult();
+
             // ---------------------------------------------------------
-            // STEP 2: Setup the main application window
+            // STEP 3: Setup the main application window
             // ---------------------------------------------------------
 
             // Check if we are running as a desktop application

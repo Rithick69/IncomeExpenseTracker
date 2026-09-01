@@ -96,4 +96,11 @@ namespace IncomeExpenditureTracker.Models
     /// Commands all Singleton services to immediately flush their in-memory caches to prevent data bleed.
     /// </summary>
     public record ProfileSwappedMessage();
+
+    /// <summary>
+    /// Equivalent to a React Router navigation payload.
+    /// Tells the shell which ViewModel to inject into the ContentControl.
+    /// </summary>
+
+    public record NavigationMessage(string Destination);
 }

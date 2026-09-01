@@ -14,7 +14,13 @@ using IncomeExpenditureTracker.Services.Orchestration;
 using IncomeExpenditureTracker.Services.Tagging;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Messaging;
-using IncomeExpenditureTracker.ViewModels;
+using IncomeExpenditureTracker.UI.Shell;
+using IncomeExpenditureTracker.UI.Shared;
+using IncomeExpenditureTracker.UI.Gatekeeper;
+using IncomeExpenditureTracker.UI.ImportHub;
+using IncomeExpenditureTracker.UI.Ledger;
+using IncomeExpenditureTracker.UI.MasterData;
+using Microsoft.Extensions.Configuration;
 namespace IncomeExpenditureTracker.DependencyInjection;
 
 /// <summary>
@@ -29,19 +35,36 @@ public static class ServiceRegistration
 {
     public static void Register(IServiceCollection services)
     {
+        // 1. Build the Configuration (Equivalent to dotenv.config())
+        // This allows you to use appsettings.json or environment variables if needed
+        var configuration = new ConfigurationBuilder()
+            // .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true) // Uncomment if using appsettings
+            .Build();
+
+        // 2. Register it as a Singleton so ProfileRegistry can resolve it
+        services.AddSingleton<IConfiguration>(configuration);
+
         // =========================================================
-        // 1. LOGGING CONFIGURATION (The Record Keeper)
+        // 2. LOGGING CONFIGURATION (The Record Keeper)
         // =========================================================
 
         // 1. Get the cross-platform application data folder
         string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        Console.WriteLine($"LocalApplicationData: {appDataPath}");
+
         string appDirectory = Path.Combine(appDataPath, "IncomeExpenditureTracker");
         string logDirectory = Path.Combine(appDirectory, "Logs");
+
+        Console.WriteLine($"Log directory: {logDirectory}");
 
         // 2. Ensure the directory exists (Directory.CreateDirectory does nothing if it already exists)
         Directory.CreateDirectory(logDirectory);
 
         string logFilePath = Path.Combine(logDirectory, "tracker-.txt");
+
+        Console.WriteLine($"Log file path: {logFilePath}");
+
 
         // Build the Serilog configuration
         var serilogLogger = new LoggerConfiguration()
@@ -80,6 +103,17 @@ public static class ServiceRegistration
         services.AddTransient<StatementEditViewModel>();
         services.AddTransient<MasterDataViewModel>();
         services.AddTransient<TransactionReviewViewModel>();
+        services.AddTransient<LoginViewModel>();
+        services.AddTransient<RegisterViewModel>();
+
+        // ---------------------------------------------------------
+        // Profiles
+        // ---------------------------------------------------------
+
+        services.AddTransient<IPasswordHasher, PasswordHasher>();
+        services.AddTransient<IProfileCryptography, ProfileCryptography>();
+        services.AddTransient<IProfileLoginService, ProfileLoginService>();
+        services.AddTransient<IProfileRegistry, ProfileRegistry>();
 
         // ---------------------------------------------------------
         // Database

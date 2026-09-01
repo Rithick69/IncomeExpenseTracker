@@ -2,11 +2,14 @@ using System;
 using System.Linq;
 using Xunit;
 using Moq;
-using IncomeExpenditureTracker.ViewModels;
+using IncomeExpenditureTracker.UI.Shared;
+using IncomeExpenditureTracker.UI.Shell;
+using IncomeExpenditureTracker.UI.Gatekeeper;
 using IncomeExpenditureTracker.Services.Messaging;
+using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Models;
 
-namespace IncomeExpenditureTracker.Tests.ViewModels
+namespace IncomeExpenditureTracker.Tests.UI.ViewModels
 {
     public class MainWindowViewModelTests
     {
@@ -21,6 +24,9 @@ namespace IncomeExpenditureTracker.Tests.ViewModels
         {
             // Arrange
             var mockBroker = new Mock<IApplicationBroker>();
+            var profileLoginService = new Mock<IProfileLoginService>();
+            var profileRegistry = new Mock<IProfileRegistry>();
+            var passwordHasher = new Mock<IPasswordHasher>();
             Action<ToastNotificationMessage>? capturedCallback = null;
 
             // Intercept the ViewModel's subscription to ToastNotificationMessage
@@ -29,8 +35,12 @@ namespace IncomeExpenditureTracker.Tests.ViewModels
                       {
                           capturedCallback = callback;
                       });
+            // 1. Instantiate the REAL child ViewModels
+            // Note: If these require services in their constructors, pass your mocked services (like mockBroker.Object) here too.
+            var loginViewModel = new LoginViewModel(mockBroker.Object, profileLoginService.Object);
+            var registerViewModel = new RegisterViewModel(mockBroker.Object, profileRegistry.Object, passwordHasher.Object);
 
-            var viewModel = new MainWindowViewModel(mockBroker.Object);
+            var viewModel = new MainWindowViewModel(mockBroker.Object, loginViewModel, registerViewModel);
 
             // Act: Simulate a background orchestrator sending a success toast
             var message = new ToastNotificationMessage("Database backed up!", NotificationType.Success);
@@ -47,7 +57,14 @@ namespace IncomeExpenditureTracker.Tests.ViewModels
         {
             // Arrange
             var mockBroker = new Mock<IApplicationBroker>();
-            var viewModel = new MainWindowViewModel(mockBroker.Object);
+            var profileLoginService = new Mock<IProfileLoginService>();
+            var profileRegistry = new Mock<IProfileRegistry>();
+            var passwordHasher = new Mock<IPasswordHasher>();
+
+            var loginViewModel = new LoginViewModel(mockBroker.Object, profileLoginService.Object);
+            var registerViewModel = new RegisterViewModel(mockBroker.Object, profileRegistry.Object, passwordHasher.Object);
+
+            var viewModel = new MainWindowViewModel(mockBroker.Object, loginViewModel, registerViewModel);
 
             // Manually inject two toasts into the UI stack
             var toast1 = new ToastAlert("Error 1", NotificationType.Error);

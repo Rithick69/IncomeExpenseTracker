@@ -1,0 +1,158 @@
+<!--
+  @component  LoginView
+  @desc       Presentational layout for user authentication
+  @route      /UI/Gatekeeper/LoginView.axaml
+  @access     Public (Rendered in MainWindow)
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.Gatekeeper"
+             x:Class="IncomeExpenditureTracker.UI.Gatekeeper.LoginView"
+             x:DataType="vm:LoginViewModel"
+             Background="#F5F5FA">
+
+    <UserControl.Styles>
+        <!-- Force TextBox to have a white background and black text normally -->
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Setter Property="CaretBrush" Value="Black"/>
+            <Setter Property="BorderBrush" Value="#D1D5DB"/>
+        </Style>
+
+        <!-- Force text to stay black when hovered or focused -->
+        <Style Selector="TextBox:pointerover">
+            <Setter Property="Foreground" Value="Black"/>
+        </Style>
+        <Style Selector="TextBox:focus">
+            <Setter Property="Foreground" Value="Black"/>
+        </Style>
+
+        <!-- Override Avalonia's default dark hover/focus backgrounds -->
+        <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#4F46E5"/>
+        </Style>
+        <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#4F46E5"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
+
+        <!-- Fix Reveal Password Button icon color -->
+        <Style Selector="TextBox.revealPasswordButton[AcceptsReturn=False]:not(TextBox:empty)">
+             <Setter Property="InnerRightContent" Value="#4F46E5">
+                 <Template>
+                     <ToggleButton Classes="passwordBoxRevealButton"
+                                   IsChecked="{Binding $parent[TextBox].RevealPassword, Mode=TwoWay}"
+                                   ClipToBounds="True" />
+                 </Template>
+             </Setter>
+        </Style>
+    </UserControl.Styles>
+
+    <Design.DataContext>
+        <!--@desc Mock data context for XAML designer preview -->
+        <vm:LoginViewModel/>
+    </Design.DataContext>
+
+    <!-- Elevated White Card -->
+    <Border HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Background="White"
+            CornerRadius="12"
+            Padding="40,40,40,30"
+            BoxShadow="0 10 30 0 #15000000">
+
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+
+            <!--@desc Header -->
+            <TextBlock Grid.Row="0"
+                       Text="Login to Your Profile"
+                       FontSize="26"
+                       FontWeight="Bold"
+                       Foreground="#4F46E5"
+                       Margin="0,0,0,30"
+                       HorizontalAlignment="Center"/>
+
+            <!-- Username / Profile Selector -->
+            <TextBox Grid.Row="1"
+                     Watermark="Profile Name"
+                     Text="{Binding Username}"
+                     Width="280"
+                     Height="42"
+                     CornerRadius="6"
+                     VerticalContentAlignment="Center"
+                     Margin="0,0,0,15" />
+
+            <!--
+              Secure Password Input
+              Added Classes="revealPasswordButton" for the native Avalonia toggle switch
+            -->
+            <TextBox Grid.Row="2"
+                     x:Name="PasswordInput"
+                     Watermark="Enter Profile Password"
+                     PasswordChar="•"
+                     Classes="revealPasswordButton"
+                     Width="280"
+                     Height="42"
+                     CornerRadius="6"
+                     VerticalContentAlignment="Center"
+                     Margin="0,0,0,25" />
+
+            <!--
+              Submit Button
+            -->
+            <Button Grid.Row="3"
+                    Content="{Binding LoginButtonText}"
+                    Command="{Binding LoginCommand}"
+                    CommandParameter="{Binding #PasswordInput}"
+                    Width="280"
+                    Height="45"
+                    Background="#4F46E5"
+                    Foreground="White"
+                    FontSize="16"
+                    FontWeight="SemiBold"
+                    CornerRadius="6"
+                    HorizontalAlignment="Center"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center">
+                <Button.Styles>
+                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="#4338CA"/>
+                        <Setter Property="TextBlock.Foreground" Value="White"/>
+                    </Style>
+                </Button.Styles>
+            </Button>
+
+            <!-- @desc Error Message Display -->
+            <TextBlock Grid.Row="4"
+                       Text="{Binding ErrorMessage}"
+                       Foreground="#EF4444"
+                       Margin="0,15,0,0"
+                       TextWrapping="Wrap"
+                       MaxWidth="280"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+            <!-- @desc Create a new Profile -->
+            <Button Grid.Row="5"
+                    Content="Create a new profile"
+                    Command="{Binding NavigateToRegisterCommand}"
+                    Background="Transparent"
+                    Foreground="#4F46E5"
+                    Cursor="Hand"
+                    Margin="0,20,0,0"
+                    HorizontalAlignment="Center">
+                <Button.Styles>
+                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="TextBlock.Foreground" Value="#3730A3"/>
+                    </Style>
+                </Button.Styles>
+            </Button>
+
+        </Grid>
+    </Border>
+</UserControl>

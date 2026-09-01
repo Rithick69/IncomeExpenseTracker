@@ -50,13 +50,13 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
         public async Task AuthenticateAndLoad_ValidCredentials_SwapsDbAndInitializesSchema()
         {
             // Arrange
-            var profileId = "123";
+            var profileName = "Charlie";
             using var password = CreateSecureString();
             var profile = new ProfileDto
             {
 
-                ProfileId = profileId,
-                ProfileName = "Charlie",
+                ProfileId = "123",
+                ProfileName = profileName,
                 DatabaseFilePath = "path",
                 PasswordHash = "hash",
                 PasswordSalt = "salt",
@@ -64,12 +64,12 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
 
             };
 
-            _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
+            _registryMock.Setup(r => r.GetProfileByNameAsync(profileName)).ReturnsAsync(profile);
             _hasherMock.Setup(h => h.VerifyPassword(password, "hash", "salt")).Returns(true);
             _cryptoMock.Setup(c => c.BuildEncryptedConnectionString("path")).Returns("EncryptedString");
 
             // Act
-            var result = await _loginService.AuthenticateAndLoadProfileAsync(profileId, password);
+            var result = await _loginService.AuthenticateAndLoadProfileAsync(profileName, password);
 
             // Assert
             Assert.True(result);
@@ -85,13 +85,13 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
         public async Task AuthenticateAndLoad_InvalidPassword_ShortCircuitsBeforeDatabaseSwap()
         {
             // Arrange
-            var profileId = "123";
+            var profileName = "Charlie";
             using var badPassword = CreateSecureString();
             var profile = new ProfileDto
             {
 
-                ProfileId = profileId,
-                ProfileName = "Charlie",
+                ProfileId = "123",
+                ProfileName = profileName,
                 DatabaseFilePath = "path",
                 PasswordHash = "hash",
                 PasswordSalt = "salt",
@@ -99,13 +99,13 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
 
             };
 
-            _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
+            _registryMock.Setup(r => r.GetProfileByNameAsync(profileName)).ReturnsAsync(profile);
 
             // SIMULATE FAILED LOGIN
             _hasherMock.Setup(h => h.VerifyPassword(badPassword, "hash", "salt")).Returns(false);
 
             // Act
-            var result = await _loginService.AuthenticateAndLoadProfileAsync(profileId, badPassword);
+            var result = await _loginService.AuthenticateAndLoadProfileAsync(profileName, badPassword);
 
             // Assert - The Short-Circuit Defense
             Assert.False(result);
@@ -133,13 +133,13 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
         public async Task Authenticate_WhenFailedLoginOccurs_DoesNotFlushExistingCaches()
         {
             // Arrange (Simulate Alice is currently logged in, but Bob types the wrong password)
-            var profileId = "bob123";
+            var profileName = "Bob";
             using var badPassword = CreateSecureString();
             var profile = new ProfileDto
             {
 
-                ProfileId = profileId,
-                ProfileName = "Bob",
+                ProfileId = "123",
+                ProfileName = profileName,
                 DatabaseFilePath = "path",
                 PasswordHash = "hash",
                 PasswordSalt = "salt",
@@ -147,11 +147,11 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
 
             };
 
-            _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
+            _registryMock.Setup(r => r.GetProfileByNameAsync(profileName)).ReturnsAsync(profile);
             _hasherMock.Setup(h => h.VerifyPassword(badPassword, "hash", "salt")).Returns(false);
 
             // Act
-            var result = await _loginService.AuthenticateAndLoadProfileAsync(profileId, badPassword);
+            var result = await _loginService.AuthenticateAndLoadProfileAsync(profileName, badPassword);
 
             // Assert
             Assert.False(result);
@@ -165,13 +165,13 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
         public async Task Authenticate_WhenSchemaInitializationFails_ExecutesEmergencyRollback()
         {
             // Arrange (Simulate a corrupted database file crashing the DatabaseInitializer)
-            var profileId = "123";
+            var profileName = "Charlie";
             using var password = CreateSecureString();
             var profile = new ProfileDto
             {
 
-                ProfileId = profileId,
-                ProfileName = "Charlie",
+                ProfileId = "123",
+                ProfileName = profileName,
                 DatabaseFilePath = "path",
                 PasswordHash = "hash",
                 PasswordSalt = "salt",
@@ -179,7 +179,7 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
 
             };
 
-            _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
+            _registryMock.Setup(r => r.GetProfileByNameAsync(profileName)).ReturnsAsync(profile);
             _hasherMock.Setup(h => h.VerifyPassword(password, "hash", "salt")).Returns(true);
             _cryptoMock.Setup(c => c.BuildEncryptedConnectionString("path")).Returns("EncryptedString");
 
@@ -188,7 +188,7 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
 
             // Act & Assert
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                _loginService.AuthenticateAndLoadProfileAsync(profileId, password));
+                _loginService.AuthenticateAndLoadProfileAsync(profileName, password));
 
             // Proves the emergency rollback (LogoutAsync) was successfully executed to prevent a half-loaded state
             _dbServiceMock.Verify(d => d.SetConnectionStringAsync(string.Empty, null), Times.Once);
@@ -199,22 +199,22 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
         public async Task AuthenticateAndLoad_ActiveLockout_ThrowsUnauthorizedAccessException()
         {
             // Arrange
-            var profileId = "123";
+            var profileName = "Charlie";
             using var password = CreateSecureString();
             var profile = new ProfileDto
             {
-                ProfileId = profileId,
+                ProfileName = profileName,
                 PasswordHash = "hash",
                 PasswordSalt = "salt",
                 // Profile is locked out for 5 more minutes
                 LockoutEndUtc = DateTime.UtcNow.AddMinutes(5)
             };
 
-            _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
+            _registryMock.Setup(r => r.GetProfileByNameAsync(profileName)).ReturnsAsync(profile);
 
             // Act & Assert
             var exception = await Assert.ThrowsAsync<UnauthorizedAccessException>(
-                () => _loginService.AuthenticateAndLoadProfileAsync(profileId, password)
+                () => _loginService.AuthenticateAndLoadProfileAsync(profileName, password)
             );
 
             Assert.Contains("Profile locked", exception.Message);
@@ -227,30 +227,30 @@ namespace IncomeExpenditureTracker.Tests.Logic.Profiles
         public async Task AuthenticateAndLoad_FifthFailedAttempt_TriggersFiveMinuteLockout()
         {
             // Arrange
-            var profileId = "123";
+            var profileName = "alice";
             using var password = CreateSecureString();
             var profile = new ProfileDto
             {
-                ProfileId = profileId,
+                ProfileName = profileName,
                 PasswordHash = "hash",
                 PasswordSalt = "salt",
                 FailedAttemptCount = 4 // Currently at 4 fails
             };
 
-            _registryMock.Setup(r => r.GetProfileByIdAsync(profileId)).ReturnsAsync(profile);
+            _registryMock.Setup(r => r.GetProfileByNameAsync(profileName)).ReturnsAsync(profile);
 
             // Simulate invalid password
             _hasherMock.Setup(h => h.VerifyPassword(password, "hash", "salt")).Returns(false);
 
             // Act
-            var result = await _loginService.AuthenticateAndLoadProfileAsync(profileId, password);
+            var result = await _loginService.AuthenticateAndLoadProfileAsync(profileName, password);
 
             // Assert
             Assert.False(result);
 
             // Verify the registry was called to update the lockout state to 5 fails with a future timestamp
             _registryMock.Verify(r => r.UpdateLockoutStateAsync(
-                profileId,
+                profileName,
                 5,
                 It.Is<DateTime?>(d => d.HasValue && d.Value > DateTime.UtcNow)
             ), Times.Once);

@@ -1,7 +1,9 @@
 using System.Security;
-
-public interface IPasswordHasher
+namespace IncomeExpenditureTracker.Services.Database
 {
-    (string Hash, string Salt) HashPassword(SecureString password);
-    bool VerifyPassword(SecureString password, string hash, string salt);
+    public interface IPasswordHasher
+    {
+        (string Hash, string Salt) HashPassword(SecureString password);
+        bool VerifyPassword(SecureString password, string hash, string salt);
+    }
 }
