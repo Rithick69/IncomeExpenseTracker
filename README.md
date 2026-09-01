@@ -1,7 +1,3 @@
-Here is the updated `README.md` file, fully synchronized with the **Income & Expenditure Tracker: Backend Architecture Context v2.9** specifications.
-
----
-
 # 📊 Income & Expenditure Tracker
 
 > A high-performance, resilient desktop personal finance application built with C# (.NET 8), Avalonia UI, SQLite, Dapper, and ClosedXML.
@@ -19,14 +15,19 @@ Unlike bloated financial advisory apps that rely on subjective heuristics, this 
 ## ✨ Key Features
 
 - **⚡ Concurrent Lock-Free Ingestion:** Stage up to 5 multi-year Excel workbooks simultaneously using non-blocking asynchronous workflows (`Task.WhenAll` and `ConcurrentDictionary`).
+
 - **🛡️ Ironclad OS Resource Management:** Strictly enforced `IDisposable` patterns and atomic `DiscardFile` routines guarantee Windows OS file locks are released immediately upon stream transfer, error trapping, or cancellation.
+
 - **🧠 User-Confirmed Symmetrical Self-Learning:** Uses atomic services to dynamically learn new bank headers, category mappings, and merchant keyword rules. Learning triggers **only** after explicit user verification via a decoupled, fire-and-forget background "Ripple Effect" mechanism.
 
 - **🛡️ Concurrency & Stampede Defense:** All reference and lookup services utilize an async lazy cache registry (`ConcurrentDictionary<string, Lazy<Task<T>>>`) with automatic fault eviction.
+
 - **🔒 Master Transaction Atomicity & Zero-Lock Math:** Batch persistence executes under a single master database transaction token (`conn, tx`), holding all entity creation, batch auditing, and bulk transaction insertion in the WAL buffer for a single disk synchronization and 100% all-or-nothing rollback protection.
 
 - **⚡ Race-Condition Free Upserts & Stateless WAL Queries:** Source, account, and tagging services execute atomic SQLite upserts, while dashboard queries hit native C-compiled B-tree indexes for sub-2-millisecond retrievals.
+
 - **🎯 Deterministic Tagging & Ambiguity Guardrails:** Evaluates multi-keyword merchant descriptions using a 3-tier matrix.
+
 - **🏎️ Zero-Allocation Tokenization & Thread-Local Memory:** `DescriptionParser` replaces regex with zero-allocation character math, truncates descriptions to 255 characters, and explicitly strips out suspicious HTML/Script tags to prevent SQL overflow and XSS vulnerabilities.
 
 - **📐 $O(1)$ Coordinate-Driven Math:** High-volume transaction loops operate strictly on boundary-resolved integer coordinates (`TransactionColumnCoordinates`).
@@ -43,73 +44,249 @@ Unlike bloated financial advisory apps that rely on subjective heuristics, this 
 
 ## 🛠️ Tech Stack & Dependencies
 
-| Component / Library       | Technology                               | Version            | Purpose                                                     |
-| ------------------------- | ---------------------------------------- | ------------------ | ----------------------------------------------------------- |
-| **Framework**             | .NET (C#)                                | `8.0.x`            | Core application runtime and backend logic                  |
-| **Presentation Layer**    | Avalonia UI                              | `[Insert Version]` | Cross-platform MVVM desktop UI rendering                    |
-| **Database Engine**       | SQLite                                   | `[Insert Version]` | Local relational persistence with WAL journal mode          |
-| **ORM / Data Access**     | Dapper                                   | `[Insert Version]` | High-performance micro-ORM for coordinate-optimized queries |
-| **Excel Spreadsheet I/O** | ClosedXML                                | `[Insert Version]` | Stream-based workbook loading and worksheet manipulation    |
-| **Dependency Injection**  | Microsoft.Extensions.DependencyInjection | `[Insert Version]` | Interface-driven service lifecycle management               |
-| **Structured Logging**    | Microsoft.Extensions.Logging             | `[Insert Version]` | Asynchronous lifecycle, debug, and error telemetry          |
+| Component / Library | Technology | Version | Purpose                                     |
+| ------------------- | ---------- | ------- | ------------------------------------------- |
+| **Framework**       | .NET (C#)  | `8.0.x` | Core application runtime and backend logic. |
+
+|
+| **Presentation Layer** | Avalonia UI | `[Insert Version]` | Cross-platform MVVM desktop UI rendering.
+
+|
+| **Database Engine** | SQLite | `[Insert Version]` | Local relational persistence with WAL journal mode.
+
+|
+| **ORM / Data Access** | Dapper | `[Insert Version]` | High-performance micro-ORM for coordinate-optimized queries.
+
+|
+| **Excel Spreadsheet I/O** | ClosedXML | `[Insert Version]` | Stream-based workbook loading and worksheet manipulation.
+
+|
+| **Dependency Injection** | Microsoft.Extensions.DependencyInjection | `[Insert Version]` | Interface-driven service lifecycle management.
+
+|
+| **Structured Logging** | Microsoft.Extensions.Logging | `[Insert Version]` | Asynchronous lifecycle, debug, and error telemetry.
+
+|
 
 ---
 
 ## 🏗️ Architecture & Core Principles
 
-The backend is engineered around strict separation of concerns and high-concurrency systems design:
+- **Orchestration Ownership (`StatementManager`):** The manager strictly coordinates workflows, thread-safe staging queues, and workbook stream lifecycles. It acts as the universal error sink.
 
-1. **Orchestration Ownership (`StatementManager`):** The manager strictly coordinates workflows, thread-safe staging queues, and workbook stream lifecycles. It acts as the universal error sink.
+- **In-Memory & Read-Only Analysis:** Extractors, parsers, and preview analysis routines operate solely on in-memory `IXLWorksheet` instances and DTOs.
 
-2. **In-Memory & Read-Only Analysis:** Extractors, parsers, and preview analysis routines operate solely on in-memory `IXLWorksheet` instances and DTOs.
+- **Resilient SQLite Access:** Every database query is routed through a centralized `DatabaseService.ExecuteWithRetryAsync()` wrapper to safely handle `SQLITE_BUSY` contentions natively.
 
-3. **Resilient SQLite Access:** Every database query is routed through a centralized `DatabaseService.ExecuteWithRetryAsync()` wrapper to safely handle `SQLITE_BUSY` contentions natively.
+- **Open-Closed Schema Flexibility:** All data transfer across extraction boundaries relies on namespaced, case-insensitive dictionaries (`Dictionary<string, DetectedField>`).
 
-4. **Open-Closed Schema Flexibility:** All data transfer across extraction boundaries relies on namespaced, case-insensitive dictionaries (`Dictionary<string, DetectedField>`).
+- **Concurrency & Stampede Defense:** All reference and lookup services implement thread-safe lazy caching with automatic fault eviction.
 
-5. **Concurrency & Stampede Defense:** All reference and lookup services implement thread-safe lazy caching with automatic fault eviction.
+- **Domain Isolation:** Header detection and dictionary pre-seeding strictly segregate domain concepts (e.g., transaction columns vs. account metadata fields) to prevent cross-contamination.
 
-6. **Domain Isolation:** Header detection and dictionary pre-seeding strictly segregate domain concepts (e.g., transaction columns vs. account metadata fields) to prevent cross-contamination.
+- **Master Transaction Boundaries & Single Disk Sync:** Batch persistence routines hold all operations under a single database transaction token to guarantee atomicity and minimize filesystem disk synchronization overhead.
 
-7. **Master Transaction Boundaries & Single Disk Sync:** Batch persistence routines hold all operations under a single database transaction token to guarantee atomicity and minimize filesystem disk synchronization overhead.
+- **Strict UI Facades (Post-Persistence):** The MVVM frontend strictly interacts with centralized orchestrators, allowing errors to bubble up directly to Avalonia ViewModels for user broadcast.
 
-8. **Strict UI Facades (Post-Persistence):** The MVVM frontend strictly interacts with centralized orchestrators, allowing errors to bubble up directly to Avalonia ViewModels for user broadcast.
+- **Secure UI Binding Contract:** Visual controls passing passwords bypass managed string heap retention by passing references directly to commands, enabling instantaneous memory eradication (`passwordBox.Text = string.Empty`).
+- **Dynamic View Routing:** The application utilizes a single-page `<ContentControl>` router reacting to `NavigationMessage` payloads emitted through the `IApplicationBroker` to shift between the authentication Gatekeeper and the main Dashboard.
+- **Global Design System:** All Avalonia visual definitions (typography, themes, behaviors) reside centrally in `App.axaml`, acting as a global CSS controller.
 
 ---
 
 ## 📂 Solution Structure
 
-The solution is structured into modular responsibilities across domain entities, services, helpers, and isolated test fixtures:
-
 ```plaintext
 IncomeExpenseTracker/
+├── .gitignore
 ├── IncomeExpenditureTracker.Tests/
-│    ├── Fixtures/ (Manages isolated SQLite WAL databases & dynamic in-memory Excel generation)
-│    ├── Helpers/
-│    ├── Integration/
-│    ├── Logic/
-│    └── Observability/ (TestOutputLoggerProvider & StatementErrorSink)
-│
-└── IncomeExpenditureTracker/
-     ├── Models/
-     │    ├── Diagnostics/
-     │    ├── Entities/
-     │    ├── Import/
-     │    ├── PreviewInsights/
-     │    └── Utilities/
-     ├── Services/
-     │    ├── Database/ (DatabaseInitializer & DatabaseService)
-     │    ├── DependencyInjections/
-     │    ├── Entities/ (AccountService, EntityService, TransactionService, ImportBatchService, TagService, SynonymService)
-     │    ├── Helpers/ (HeaderDetector, FieldMapper, StrictAccountParser, DescriptionParser)
-     │    ├── Importing/ (ExcelStatementExtractor, ExcelStatementImport)
-     │    ├── Orchestration/ (MasterDataOrchestrator, TransactionReviewOrchestrator)
-     │    ├── PreviewInsights/ (ConfidenceService)
-     │    ├── StatementManagement/ (StatementManager, StatementLoader, StatementEditService)
-     │    ├── Tagging/ (TagEngine)
-     │    └── TransactionExtractor/ (ExcelTransactionExtractor)
-     ├── ViewModels/
-     └── Views/
+│   ├── Architecture/
+│   │   └── Tools/
+│   │       ├── DatabaseEncapsulationTests.cs
+│   │       ├── IArchitectureValidator.cs
+│   │       └── NetArchTestValidator.cs
+│   ├── Fixtures/
+│   │   ├── DatabaseTestFixture.cs
+│   │   └── ExcelStatementGenerator.cs
+│   ├── Helpers/
+│   │   └── SeedSynonymTable.cs
+│   ├── IncomeExpenditureTracker.Tests.csproj
+│   ├── Integration/
+│   │   ├── DatabaseServiceAirlockTests.cs
+│   │   ├── HeadlessWorkflowIntegrationTests.cs
+│   │   ├── MasterDataOrchestratorTests.cs
+│   │   ├── StatementManagerTests.cs
+│   │   ├── TagServiceConcurrencyTests.cs
+│   │   ├── TransactionManagementTests.cs
+│   │   └── TransactionReviewOrchestratorTests.cs
+│   ├── Logic/
+│   │   ├── ConfidenceServiceTest.cs
+│   │   ├── DescriptionParserTest.cs
+│   │   ├── ExcelStatemenetImportTests.cs
+│   │   ├── ExcelTransactionExtractorTest.cs
+│   │   ├── FieldMapperTest.cs
+│   │   ├── HeaderDetectorTest.cs
+│   │   ├── Profiles/
+│   │   │   ├── PasswordHasherTests.cs
+│   │   │   ├── ProfileCryptographyTests.cs
+│   │   │   ├── ProfileLoginServiceTests.cs
+│   │   │   └── ProfileRegistryTests.cs
+│   │   ├── StatementEditSessionTests.cs
+│   │   └── TagEngineTest.cs
+│   ├── Observability/
+│   │   ├── StatementErrorSink.cs
+│   │   └── TestOutputLoggerProvider.cs
+│   └── UI/
+│       └── ViewModels/
+│           ├── GateKeeper/
+│           │   ├── LoginViewModelTests.cs
+│           │   └── RegisterViewModelTests.cs
+│           ├── Ledger/
+│           │   └── TransactionReviewViewModelTests.cs
+│           ├── MasterData/
+│           │   └── MasterDataViewModelTests.cs
+│           └── Shell/
+│               └── MainWindowViewModelTests.cs
+├── IncomeExpenditureTracker/
+│   ├── App.axaml
+│   ├── App.axaml.cs
+│   ├── Assets/
+│   │   └── avalonia-logo.ico
+│   ├── IncomeExpenditureTracker.csproj
+│   ├── Models/
+│   │   ├── Diagnostics/
+│   │   │   ├── ErrorSeverity.cs
+│   │   │   └── FileStagingError.cs
+│   │   ├── Entities/
+│   │   │   ├── Account.cs
+│   │   │   ├── Category.cs
+│   │   │   ├── Entity.cs
+│   │   │   ├── ImportBatch.cs
+│   │   │   ├── ProfileDto.cs
+│   │   │   ├── SubCategory.cs
+│   │   │   ├── Synonym.cs
+│   │   │   ├── Tag.cs
+│   │   │   ├── TagRule.cs
+│   │   │   └── Transaction.cs
+│   │   ├── Import/
+│   │   │   ├── DetectedField.cs
+│   │   │   ├── SheetMetaData.cs
+│   │   │   └── SynonymFieldType.cs
+│   │   ├── PreviewInsights/
+│   │   │   ├── PreviewTracker.cs
+│   │   │   ├── StatementPreview.cs
+│   │   │   └── TransactionPreview.cs
+│   │   └── utilities/
+│   │       ├── AmountParserResult.cs
+│   │       ├── AppMessages.cs
+│   │       ├── FieldScoringRules.cs
+│   │       ├── LoadingProgress.cs
+│   │       ├── StagedFileTracker.cs
+│   │       ├── SystemConstants.cs
+│   │       ├── TagEngineDTOs.cs
+│   │       ├── ToastAlert.cs
+│   │       └── TransactionReviewDTOs.cs
+│   ├── Program.cs
+│   ├── Services/
+│   │   ├── Database/
+│   │   │   ├── DatabaseInitializer.cs
+│   │   │   ├── DatabaseService.cs
+│   │   │   ├── IDatabaseInitializer.cs
+│   │   │   ├── IDatabaseService.cs
+│   │   │   └── Profiles/
+│   │   │       ├── IPasswordHasher.cs
+│   │   │       ├── IProfileCryptography.cs
+│   │   │       ├── IProfileLoginService.cs
+│   │   │       ├── IProfileRegistry.cs
+│   │   │       ├── PasswordHasher.cs
+│   │   │       ├── ProfileCryptography.cs
+│   │   │       ├── ProfileLoginService.cs
+│   │   │       └── ProfileRegistry.cs
+│   │   ├── DependencyInjections/
+│   │   │   └── ServiceRegistration.cs
+│   │   ├── Entities/
+│   │   │   ├── AccountService.cs
+│   │   │   ├── CategoryService.cs
+│   │   │   ├── EntityService.cs
+│   │   │   ├── IAccountService.cs
+│   │   │   ├── ICategoryService.cs
+│   │   │   ├── IEntityService.cs
+│   │   │   ├── IImportBatchService.cs
+│   │   │   ├── ISubCategoryService.cs
+│   │   │   ├── ISynonymService.cs
+│   │   │   ├── ITagService.cs
+│   │   │   ├── ITransactionService.cs
+│   │   │   ├── ImportBatchService.cs
+│   │   │   ├── SubCategoryService.cs
+│   │   │   ├── SynonymService.cs
+│   │   │   ├── TagService.cs
+│   │   │   └── TransactionService.cs
+│   │   ├── Helpers/
+│   │   │   ├── DescriptionParser.cs
+│   │   │   ├── FieldMapper.cs
+│   │   │   ├── HeaderDetector.cs
+│   │   │   ├── IDescriptionParser.cs
+│   │   │   ├── IFieldMapper.cs
+│   │   │   ├── IHeaderDetector.cs
+│   │   │   ├── IStrictAmountParser.cs
+│   │   │   └── StrictAmountParser.cs
+│   │   ├── Importing/
+│   │   │   ├── ExcelStatementExtractor.cs
+│   │   │   ├── ExcelStatementImport.cs
+│   │   │   ├── IStatementExtractor.cs
+│   │   │   └── IStatementImport.cs
+│   │   ├── Messaging/
+│   │   │   ├── IApplicationBroker.cs
+│   │   │   └── ToolkitMessengerAdapter.cs
+│   │   ├── Orchestration/
+│   │   │   ├── IMasterDataOrchestrator.cs
+│   │   │   ├── ITransactionReviewOrchestrator.cs
+│   │   │   ├── MasterDataOrchestrator.cs
+│   │   │   └── TransactionReviewOrchestrator.cs
+│   │   ├── PreviewInsights/
+│   │   │   ├── ConfidenceService.cs
+│   │   │   └── IConfidenceService.cs
+│   │   ├── StatementManagement/
+│   │   │   ├── IStatementEditSession.cs
+│   │   │   ├── IStatementLoader.cs
+│   │   │   ├── StatementEditService.cs
+│   │   │   ├── StatementLoader.cs
+│   │   │   └── StatementManager.cs
+│   │   ├── Tagging/
+│   │   │   ├── ITagEngine.cs
+│   │   │   └── TagEngine.cs
+│   │   └── TransactionExtractor/
+│   │       ├── ExcelTransactionExtractor.cs
+│   │       └── ITransactionExtractor.cs
+│   ├── UI/
+│   │   ├── GateKeeper/
+│   │   │   ├── ViewModels/
+│   │   │   │   ├── LoginViewModel.cs
+│   │   │   │   └── RegisterViewModel.cs
+│   │   │   └── Views/
+│   │   │       ├── LoginView.axaml
+│   │   │       ├── LoginView.axaml.cs
+│   │   │       ├── RegisterView.axaml
+│   │   │       └── RegisterView.axaml.cs
+│   │   ├── ImportHub/
+│   │   │   └── StatementEditViewModel.cs
+│   │   ├── Ledger/
+│   │   │   └── TransactionReviewViewModel.cs
+│   │   ├── MasterData/
+│   │   │   └── MasterDataViewModel.cs
+│   │   ├── Shared/
+│   │   │   └── ViewModelBase.cs
+│   │   └── Shell/
+│   │       ├── ViewModels/
+│   │       │   └── MainWindowViewModel.cs
+│   │       └── Views/
+│   │           ├── MainWindow.axaml.cs
+│   │           └── MainWindowView.axaml
+│   ├── ViewLocator.cs
+│   └── app.manifest
+├── Income_Expenditure_tracker.sln
+├── LICENSE
+└── README.md
 
 ```
 
@@ -117,10 +294,12 @@ IncomeExpenseTracker/
 
 ## ⚡ High-Level Processing Pipeline
 
-The execution flow strictly abides by the zero-lock math processing phase and the single-transaction persistence phase:
-
 ```plaintext
-[Avalonia UI]
+[Avalonia UI: Gatekeeper] ──► Startup Profile Selector (AppProfile_{Guid}.db)
+   ▼
+[ProfileLoginService] ──► Validates via PBKDF2 & Instantly Eradicates Memory
+   ▼
+[MainWindow Router] ──► Dynamic View Swap (ContentControl)
    ▼
 [StatementManager] ──► Orchestrates concurrent staging via ConcurrentDictionary
    │
@@ -166,65 +345,27 @@ The execution flow strictly abides by the zero-lock math processing phase and th
 
 - [x] Phase 3 Complete: Zero-Allocation Tagging Ecosystem & Master Import Integration.
 
-- [x] **Phase 4 Complete: Integration, Concurrency & Orchestration Testing:** Validated stampede defense with 50 concurrent threads. Transaction Management natively handles `SQLITE_BUSY` contentions, validated using physical temporary `.db` files and explicit `Rollback()` testing.
+- [x] Phase 4 Complete: Integration, Concurrency & Orchestration Testing. Validated stampede defense with 50 concurrent threads. Transaction Management natively handles `SQLITE_BUSY` contentions, validated using physical temporary `.db` files and explicit `Rollback()` testing.
 
-- [x] **Phase 4.5 Complete: Master Data Orchestration:** Established `MasterDataOrchestrator` for taxonomy tree management, implementing floating tags and the `Misc Tag` (ID 999) fallback. Established `TransactionReviewOrchestrator` for high-speed Dapper bulk `UPDATE` statements and decoupled "Ripple Effect" background rule learning.
+- [x] Phase 4.5 Complete: Master Data Orchestration. Established `MasterDataOrchestrator` for taxonomy tree management, implementing floating tags and the `Misc Tag` (ID 999) fallback. Established `TransactionReviewOrchestrator` for high-speed Dapper bulk `UPDATE` statements and decoupled "Ripple Effect" background rule learning.
 
-- [x] **Phase 4 Finalization: Headless Testing & Extractor Edge Cases:** Fully validated 100% atomic master rollbacks. Fixed the `IsValidRow` audit trail to explicitly pass rows with `NeedsReview == true`. Implemented file-agnostic parsing via `IStrictAccountParser`, and integrated HTML/XSS description sanitization alongside `ParseErrorMessage` string aggregation.
+- [x] Phase 4 Finalization: Headless Testing & Extractor Edge Cases. Fully validated 100% atomic master rollbacks. Fixed the `IsValidRow` audit trail to explicitly pass rows with `NeedsReview == true`. Implemented file-agnostic parsing via `IStrictAccountParser`, and integrated HTML/XSS description sanitization alongside `ParseErrorMessage` string aggregation.
 
-### 🎯 Immediate Focus (Phase 5)
+- [x] Phase 5 Complete: Reactive UI Messenger & MVVM Refactor. Established `IApplicationBroker` for cross-thread domain messaging, utilizing `AppMessages.cs` record envelopes. Zero-leak `ViewModelBase` enforces safe teardown logic via `IDisposable`.
+- [x] Phase 6 Complete: Secure User Profiles & Data Isolation. Integrated SQLCipher via PRAGMA key logic and engineered a thread-safe Database Airlock for seamless SQLite profile swapping (`ProfileCryptography.cs`).
+- [x] Phase 7 (Gatekeeper & Routing) Complete: Engineered the `LoginView` and `RegisterView` utilizing Secure UI Binding. Configured `MainWindow.axaml` and `MainWindowViewModel` to act as a 2-column dynamic `<ContentControl>` router reacting to `NavigationMessage` payloads.
 
-- [ ] **Phase 5: Reactive UI Messenger & MVVM Refactor:** Establish an application-wide messaging broker (`IMessenger` / Event Aggregator) to synchronize standalone management views with active staging sessions. Refactor `StatementManager` to record errors and emit UI toast notifications, and build Avalonia UI ViewModels using transient `ObservableCollection` caching.
+### 🎯 Immediate Focus (Phase 7: Functional UI Integration)
+
+- [ ] **Phase 7: Core Presentation Layer (Data Grids):** Build out the Import Hub (`StatementEditViewModel`) with drag-and-drop ingestion support, and implement the Hybrid Ledger (`TransactionReviewViewModel`) virtualized B-tree transaction grids utilizing raw Avalonia controls to validate end-to-end data pipelines prior to styling.
 
 ### 🔮 Future Roadmap
-
-- [ ] **Phase 6: User Profiles & Data Isolation:** Implement a Startup Profile Selector UI, integrate SQLite connection string swapping, and implement encrypted database storage (e.g., SQLCipher).
-
-- [ ] **Phase 7: Core Presentation Layer (Transactions):** Build the main Avalonia MVVM Dashboard and Transaction Data Grid bound to stateless WAL B-tree queries with pagination, filtering, and search.
 
 - [ ] **Phase 8: Analytics & Visualization:** Write aggregation queries and integrate a charting library (like LiveCharts2) for spending trends and visual summaries.
 
 - [ ] **Phase 9: Management & Edit Services:** Build the "Shopping Cart" UI for the `StatementEditSession` pre-import verification grid and simple CRUD management screens utilizing the `MasterDataOrchestrator`.
 
----
-
-## 💻 Getting Started
-
-### Prerequisites
-
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or later.
-- An IDE such as **Visual Studio 2022**, **JetBrains Rider**, or **VS Code** with the C# Dev Kit.
-
-### Build & Run
-
-1. **Clone the repository:**
-
-```bash
-git clone https://github.com/yourusername/IncomeExpenditureTracker.git
-cd IncomeExpenditureTracker
-
-```
-
-2. **Restore dependencies:**
-
-```bash
-dotnet restore
-
-```
-
-3. **Build the solution:**
-
-```bash
-dotnet build --configuration Release
-
-```
-
-4. **Run the application:**
-
-```bash
-dotnet run --project src/IncomeExpenditureTracker.UI
-
-```
+- [ ] **Phase 10: Global Design System:** Transition crude UI data grids into a cohesive style architecture, utilizing `App.axaml` as a global CSS controller for typography, Indigo color accents, and seamless Light/Dark mode transitions.
 
 ---
 
@@ -256,8 +397,4 @@ When contributing or utilizing AI assistants for further development on this rep
 
 12. **Enforce Master Transaction Atomicity:** Multi-step database persistence must execute entirely within a single database transaction token (`conn, tx`), ensuring complete rollback capability and minimal filesystem synchronization overhead.
 
----
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
+13. **Strict UI Memory Lifecycles:** Never capture raw authentication string inputs; bind visual inputs using the Secure UI Binding Contract to `PasswordBox` references to permit instantaneous null-terminator application upon command completion.
