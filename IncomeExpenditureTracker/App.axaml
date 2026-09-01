@@ -3,13 +3,108 @@
              x:Class="IncomeExpenditureTracker.App"
              xmlns:local="using:IncomeExpenditureTracker"
              RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+             <!-- "Default" listens to the OS. You can programmatically change this to "Light" or "Dark" via a toggle switch later. -->
 
     <Application.DataTemplates>
         <local:ViewLocator/>
     </Application.DataTemplates>
-  
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- 1. THEME-SPECIFIC COLORS (Swaps automatically based on Light/Dark mode) -->
+            <ResourceDictionary.ThemeDictionaries>
+
+                <!-- LIGHT MODE PALETTE -->
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="AppBackground" Color="#F3F4F6" />
+                    <SolidColorBrush x:Key="AppSurface" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="TextPrimary" Color="#111827" />
+                    <SolidColorBrush x:Key="TextSecondary" Color="#6B7280" />
+                    <BoxShadows x:Key="CardShadow">0 4 14 0 #0D000000</BoxShadows>
+                </ResourceDictionary>
+
+                <!-- DARK MODE PALETTE -->
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="AppBackground" Color="#4F46E5" /> <!-- Deep slate background -->
+                    <SolidColorBrush x:Key="AppSurface" Color="#71408d" />    <!-- Elevated dark card -->
+                    <SolidColorBrush x:Key="TextPrimary" Color="#F9FAFB" />   <!-- Crisp off-white text -->
+                    <SolidColorBrush x:Key="TextSecondary" Color="#9CA3AF" /> <!-- Legible gray text -->
+                    <BoxShadows x:Key="CardShadow">0 4 14 0 #60000000</BoxShadows> <!-- Harder shadow for depth in dark mode -->
+                </ResourceDictionary>
+
+            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- 2. GLOBAL COLORS & FONTS (Stays the same in both themes) -->
+            <!-- Indigo pops beautifully on both pure white and deep dark backgrounds -->
+            <SolidColorBrush x:Key="IndigoPrimary" Color="#4F46E5" />
+            <SolidColorBrush x:Key="IndigoHover" Color="#4338CA" />
+            <SolidColorBrush x:Key="IndigoSubtle" Color="#204F46E5" /> <!-- 12% opacity Indigo for secondary hovers -->
+
+            <FontFamily x:Key="DataFont">Inter, Segoe UI, Roboto, Helvetica Neue, sans-serif</FontFamily>
+        </ResourceDictionary>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
+
+        <!-- Global Window Style -->
+        <Style Selector="Window">
+            <Setter Property="Background" Value="{DynamicResource AppBackground}"/>
+            <Setter Property="FontFamily" Value="{DynamicResource DataFont}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        </Style>
+
+        <!-- UI Component: Data Cards -->
+        <Style Selector="Border.Card">
+            <Setter Property="Background" Value="{DynamicResource AppSurface}"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="20"/>
+            <Setter Property="BoxShadow" Value="{DynamicResource CardShadow}"/>
+        </Style>
+
+        <!-- UI Component: Primary Action Buttons -->
+        <Style Selector="Button.Primary">
+            <Setter Property="Background" Value="{DynamicResource IndigoPrimary}"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/> <!-- Always white text on Indigo -->
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.Primary:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource IndigoHover}"/>
+            <Setter Property="TextBlock.Foreground" Value="#FFFFFF"/>
+        </Style>
+
+        <!-- UI Component: Secondary Action Buttons -->
+        <Style Selector="Button.Secondary">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource IndigoPrimary}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource IndigoSubtle}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="16,10"/>
+        </Style>
+        <Style Selector="Button.Secondary:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource IndigoSubtle}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource IndigoPrimary}"/>
+        </Style>
+
+        <!-- Typography: Large Balances / Dashboard Numbers -->
+        <Style Selector="TextBlock.DisplayNumber">
+            <Setter Property="Foreground" Value="{DynamicResource IndigoPrimary}"/>
+            <Setter Property="FontSize" Value="36"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="LetterSpacing" Value="-0.5"/>
+        </Style>
+
+        <!-- Typography: Data Table Headers -->
+        <Style Selector="TextBlock.DataHeader">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="LetterSpacing" Value="1"/>
+        </Style>
     </Application.Styles>
 </Application>

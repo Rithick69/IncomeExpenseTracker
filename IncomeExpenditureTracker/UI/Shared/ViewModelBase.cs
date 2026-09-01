@@ -27,7 +27,7 @@ using IncomeExpenditureTracker.Services.Messaging;
  * ============================================================================
  */
 
-namespace IncomeExpenditureTracker.ViewModels
+namespace IncomeExpenditureTracker.UI.Shared
 {
     // 1. ObservableObject wires up the magical data-binding UI notifications
     // 2. IDisposable ensures we clean up our broker subscriptions

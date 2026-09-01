@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.Gatekeeper"
+             x:Class="IncomeExpenditureTracker.UI.Gatekeeper.RegisterView"
+             x:DataType="vm:RegisterViewModel"
+             Background="#F5F5FA">
+
+    <UserControl.Styles>
+        <!-- Force TextBox to have a white background and black text normally -->
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Setter Property="CaretBrush" Value="Black"/>
+            <Setter Property="BorderBrush" Value="#D1D5DB"/>
+        </Style>
+
+        <!-- Force text to stay black when hovered or focused -->
+        <Style Selector="TextBox:pointerover">
+            <Setter Property="Foreground" Value="Black"/>
+        </Style>
+        <Style Selector="TextBox:focus">
+            <Setter Property="Foreground" Value="Black"/>
+        </Style>
+
+        <!-- Override Avalonia's default dark hover/focus backgrounds -->
+        <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#4F46E5"/>
+        </Style>
+        <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#4F46E5"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
+        <!-- Fix Reveal Password Button icon color -->
+        <Style Selector="TextBox.revealPasswordButton[AcceptsReturn=False]:not(TextBox:empty)">
+                    <Setter Property="InnerRightContent" Value="#4F46E5">
+                        <Template>
+                            <ToggleButton Classes="passwordBoxRevealButton"
+                                        IsChecked="{Binding $parent[TextBox].RevealPassword, Mode=TwoWay}"
+                                        ClipToBounds="True" />
+                        </Template>
+                    </Setter>
+                </Style>
+    </UserControl.Styles>
+
+    <Design.DataContext>
+        <!--@desc Mock data context for XAML designer preview -->
+        <vm:RegisterViewModel/>
+    </Design.DataContext>
+
+    <!-- Elevated White Card -->
+    <Border HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Background="White"
+            CornerRadius="12"
+            Padding="40,40,40,30"
+            BoxShadow="0 10 30 0 #15000000">
+
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+
+            <TextBlock Grid.Row="0"
+                Text="Create New Profile"
+                FontSize="26"
+                FontWeight="Bold"
+                Foreground="#4F46E5"
+                Margin="0,0,0,30"
+                HorizontalAlignment="Center"/>
+
+            <TextBox Grid.Row="1"
+                Watermark="New Profile Name"
+                Text="{Binding NewProfileName}"
+                Width="280"
+                Height="42"
+                CornerRadius="6"
+                VerticalContentAlignment="Center"
+                Margin="0,0,0,15"/>
+
+            <!-- Secure UI Contract -->
+            <TextBox Grid.Row="2"
+                x:Name="NewPasswordInput"
+                Watermark="New Password"
+                PasswordChar="•"
+                Classes="revealPasswordButton"
+                Width="280"
+                Height="42"
+                CornerRadius="6"
+                VerticalContentAlignment="Center"
+                Margin="0,0,0,25" />
+
+            <Button Grid.Row="3"
+                Content="{Binding RegisterButtonText}"
+                Command="{Binding RegisterCommand}"
+                CommandParameter="{Binding #NewPasswordInput}"
+                Width="280"
+                Height="45"
+                Background="#4F46E5"
+                Foreground="White"
+                FontSize="16"
+                FontWeight="SemiBold"
+                CornerRadius="6"
+                HorizontalAlignment="Center"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center">
+                <Button.Styles>
+                    <!-- Hover state for Indigo Button -->
+                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="#4338CA"/>
+                    </Style>
+                </Button.Styles>
+            </Button>
+
+            <TextBlock Grid.Row="4"
+                Text="{Binding ErrorMessage}"
+                Foreground="#EF4444"
+                Margin="0,15,0,0"
+                TextWrapping="Wrap"
+                MaxWidth="280"
+                HorizontalAlignment="Center"
+                TextAlignment="Center"
+                IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+            <!-- React Router <Link> equivalent -->
+            <Button Grid.Row="5"
+                Content="Back to Login"
+                Command="{Binding NavigateToLoginCommand}"
+                Background="Transparent"
+                Foreground="#4F46E5"
+                Cursor="Hand"
+                Margin="0,20,0,0"
+                HorizontalAlignment="Center">
+                <Button.Styles>
+                    <!-- Hover state for Text Link Button -->
+                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="TextBlock.Foreground" Value="#3730A3"/>
+                    </Style>
+                </Button.Styles>
+            </Button>
+
+        </Grid>
+    </Border>
+</UserControl>

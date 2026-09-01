@@ -1,0 +1,97 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:IncomeExpenditureTracker.UI.Shell"
+        xmlns:u="using:IncomeExpenditureTracker.Models"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1024" d:DesignHeight="768"
+        x:Class="IncomeExpenditureTracker.UI.Shell.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="Income &amp; Expenditure Tracker"
+        Width="1024" Height="768">
+        <!-- Background removed; globally inherited from App.axaml -->
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- SIDEBAR NAVIGATION -->
+        <Border Grid.Column="0" Background="{DynamicResource AppSurface}" Padding="15">
+            <StackPanel Spacing="10">
+                <TextBlock Text="MENU" Classes="DataHeader" Margin="0,0,0,20"/>
+
+                <Button Content="Dashboard" Background="Transparent" Foreground="{DynamicResource TextPrimary}" Width="220" HorizontalContentAlignment="Left" Padding="10,8" />
+                <Button Content="Import Statements" Background="Transparent" Foreground="{DynamicResource TextPrimary}" Width="220" HorizontalContentAlignment="Left" Padding="10,8" />
+                <Button Content="Transaction Ledger" Background="Transparent" Foreground="{DynamicResource TextPrimary}" Width="220" HorizontalContentAlignment="Left" Padding="10,8" />
+                <Button Content="Master Data" Background="Transparent" Foreground="{DynamicResource TextPrimary}" Width="220" HorizontalContentAlignment="Left" Padding="10,8" />
+            </StackPanel>
+        </Border>
+
+        <!-- MAIN CONTENT AREA & TOP BAR -->
+        <Grid Grid.Column="1" RowDefinitions="Auto, *, Auto">
+
+            <!-- Top App Bar -->
+            <Border Grid.Row="0" Background="{DynamicResource AppSurface}" Padding="20,15" BoxShadow="{DynamicResource CardShadow}">
+                <TextBlock Text="Income &amp; Expenditure Tracker" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}" />
+            </Border>
+
+            <!-- ROUTER OUTLET -->
+            <ContentControl Grid.Row="1" Content="{Binding CurrentPage}" Margin="20" />
+
+            <!-- Global Progress Bar Overlay -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource AppSurface}"
+                    Padding="15"
+                    BoxShadow="{DynamicResource CardShadow}">
+                <StackPanel>
+                    <TextBlock Text="{Binding LoadingStatus}"
+                               Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,5"/>
+                    <ProgressBar Value="{Binding LoadingPercentage}"
+                                 Maximum="100" Height="4" Foreground="{DynamicResource IndigoPrimary}"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Toast Notification Stack Overlay -->
+        <ItemsControl Grid.ColumnSpan="2"
+                      ItemsSource="{Binding Toasts}"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Top"
+                      Margin="20">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="u:ToastAlert">
+                    <Border Classes="Card"
+                            Padding="12,12,8,12"
+                            Margin="0,0,0,10">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Message}"
+                                       Foreground="{DynamicResource TextPrimary}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"
+                                       MaxWidth="300"
+                                       Margin="0,0,15,0"/>
+                            <Button Grid.Column="1"
+                                    Content="✕"
+                                    Background="Transparent"
+                                    Foreground="{DynamicResource TextSecondary}"
+                                    BorderThickness="0"
+                                    Padding="8,4"
+                                    Cursor="Hand"
+                                    VerticalAlignment="Top"
+                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissToastCommand}"
+                                    CommandParameter="{Binding Id}"/>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Grid>
+</Window>

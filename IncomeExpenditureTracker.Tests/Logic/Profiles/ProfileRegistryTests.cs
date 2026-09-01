@@ -58,7 +58,7 @@ namespace IncomeExpenditureTracker.Tests.Integration.Profiles
 
             // Act
             await _registry.RegisterProfileAsync(newProfile);
-            var fetchedProfile = await _registry.GetProfileByIdAsync(newProfile.ProfileId);
+            var fetchedProfile = await _registry.GetProfileByNameAsync(newProfile.ProfileName);
 
             // Assert
             Assert.NotNull(fetchedProfile);

@@ -7,8 +7,9 @@ using CommunityToolkit.Mvvm.Input;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Orchestration;
 using IncomeExpenditureTracker.Services.Messaging;
+using IncomeExpenditureTracker.UI.Shared;
 
-namespace IncomeExpenditureTracker.ViewModels
+namespace IncomeExpenditureTracker.UI.MasterData
 {
     public partial class MasterDataViewModel : ViewModelBase
     {

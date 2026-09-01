@@ -1,6 +1,7 @@
 using System;
 using System.Security;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Messaging;
@@ -37,61 +38,74 @@ namespace IncomeExpenditureTracker.Services.Database
             _broker = broker;
         }
 
-        public async Task<bool> AuthenticateAndLoadProfileAsync(string profileId, SecureString password)
+        public async Task<bool> AuthenticateAndLoadProfileAsync(string profileName, SecureString password)
         {
-            if (string.IsNullOrWhiteSpace(profileId) || password == null || password.Length == 0)
+            if (string.IsNullOrWhiteSpace(profileName) || password == null || password.Length == 0)
                 return false;
 
-            // 1. Fetch the profile metadata from the unencrypted system.db directory
-            var profile = await _registry.GetProfileByIdAsync(profileId);
-            if (profile == null)
+            // =========================================================================
+            // 1. INPUT SANITIZATION (The Guardrail)
+            // Strip whitespace and strictly enforce alphanumeric characters, hyphens, and underscores.
+            // This physically blocks SQL wildcard injections (%) and Log Forging (\r, \n).
+            // =========================================================================
+            var sanitizedProfileName = profileName.Trim();
+            if (!Regex.IsMatch(sanitizedProfileName, @"^[a-zA-Z0-9\-_]+$"))
             {
-                _logger.LogWarning("Login failed: Profile ID {ProfileId} not found.", profileId);
+                _logger.LogWarning("Login rejected: Malformed Profile ID attempted.");
                 return false;
             }
 
-            // 2. Check if currently locked out
+            // 2. Fetch the profile metadata from the unencrypted system.db directory using the SANITIZED input
+            var profile = await _registry.GetProfileByNameAsync(sanitizedProfileName);
+            if (profile == null)
+            {
+                _logger.LogWarning("Login failed: Profile Name {ProfileName} not found.", sanitizedProfileName);
+                return false;
+            }
+
+
+            // 3. Check if currently locked out
             if (profile.LockoutEndUtc.HasValue && profile.LockoutEndUtc.Value > DateTime.UtcNow)
             {
                 var remaining = profile.LockoutEndUtc.Value - DateTime.UtcNow;
                 throw new UnauthorizedAccessException($"Profile locked. Try again in {Math.Ceiling(remaining.TotalMinutes)} minutes.");
             }
 
-            // 3. Cryptographic Verification: Hash the provided SecureString and compare it to the stored Hash/Salt
+            // 4. Cryptographic Verification: Hash the provided SecureString and compare it to the stored Hash/Salt
             bool isAuthorized = _hasher.VerifyPassword(password, profile.PasswordHash, profile.PasswordSalt);
 
             if (!isAuthorized)
             {
                 _logger.LogWarning("Login failed: Invalid password for profile {ProfileName}.", profile.ProfileName);
 
-                // 4a. Increment failures and apply a 5-minute lockout if the 5-attempt threshold is reached
+                // 5a. Increment failures and apply a 5-minute lockout if the 5-attempt threshold is reached
                 int newFailCount = profile.FailedAttemptCount + 1;
                 DateTime? newLockout = newFailCount >= 5 ? DateTime.UtcNow.AddMinutes(5) : null;
 
-                await _registry.UpdateLockoutStateAsync(profile.ProfileId, newFailCount, newLockout);
+                await _registry.UpdateLockoutStateAsync(profile.ProfileName, newFailCount, newLockout);
                 return false;
             }
 
-            // 4b. Handle Success: Reset lockout counters back to zero
+            // 5b. Handle Success: Reset lockout counters back to zero
             if (profile.FailedAttemptCount > 0)
             {
-                await _registry.UpdateLockoutStateAsync(profile.ProfileId, 0, null);
+                await _registry.UpdateLockoutStateAsync(profile.ProfileName, 0, null);
             }
 
             try
             {
-                // 5. Build the SQLCipher connection string. The cryptography service handles
+                // 6. Build the SQLCipher connection string. The cryptography service handles
                 // unwrapping the SecureString in unmanaged memory and zeroing it out immediately.
                 var connectionString = _cryptography.BuildEncryptedConnectionString(profile.DatabaseFilePath);
 
-                // 6. Trigger the Airlock: Swap the connection string and annihilate old file locks.
+                // 7. Trigger the Airlock: Swap the connection string and annihilate old file locks.
                 await _databaseService.SetConnectionStringAsync(connectionString, password);
 
-                // 7. Broadcast Cache Annihilation: If Profile A was logged in, this forces
+                // 8. Broadcast Cache Annihilation: If Profile A was logged in, this forces
                 // TagService and CategoryService to wipe Profile A's data from RAM immediately.
                 _broker.Send(new ProfileSwappedMessage());
 
-                // 8. Delayed Initialization: Now that the encrypted file is unlocked,
+                // 9. Delayed Initialization: Now that the encrypted file is unlocked,
                 // execute the PRAGMAs and schema creations.
                 await _dbInitializer.InitializeAsync();
 

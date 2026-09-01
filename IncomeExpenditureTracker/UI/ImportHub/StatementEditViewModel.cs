@@ -5,8 +5,9 @@ using CommunityToolkit.Mvvm.Input;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.StatementManagement;
 using IncomeExpenditureTracker.Services.Messaging;
+using IncomeExpenditureTracker.UI.Shared;
 
-namespace IncomeExpenditureTracker.ViewModels
+namespace IncomeExpenditureTracker.UI.ImportHub
 {
     public partial class StatementEditViewModel : ViewModelBase
     {

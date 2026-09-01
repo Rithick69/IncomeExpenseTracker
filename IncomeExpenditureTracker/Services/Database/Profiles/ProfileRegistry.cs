@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
@@ -64,11 +65,32 @@ namespace IncomeExpenditureTracker.Services.Database
 
         public async Task RegisterProfileAsync(ProfileDto profile)
         {
+            // 1. Backend Sanitization Guardrail
+            var sanitizedName = profile.ProfileName?.Trim();
+
+            if (string.IsNullOrWhiteSpace(sanitizedName) || !Regex.IsMatch(sanitizedName, @"^[a-zA-Z0-9\-_ ]+$"))
+            {
+                throw new ArgumentException("Invalid Profile Name. Only alphanumeric characters, spaces, hyphens, and underscores are allowed.");
+            }
+
+            // Ensure IDs are strictly formatted (e.g., GUIDs) to prevent path traversal attacks
+            var profileId = profile.ProfileId;
+            if (!Guid.TryParse(profileId, out _))
+            {
+                profileId = Guid.NewGuid().ToString();
+            }
             using var connection = new SqliteConnection(_systemDbConnectionString);
             var sql = @"
                 INSERT INTO Profiles (ProfileId, ProfileName, DatabaseFilePath, PasswordHash, PasswordSalt)
                 VALUES (@ProfileId, @ProfileName, @DatabaseFilePath, @PasswordHash, @PasswordSalt)";
-            await connection.ExecuteAsync(sql, profile);
+            await connection.ExecuteAsync(sql, new
+            {
+                ProfileId = profileId,
+                ProfileName = sanitizedName,
+                profile.DatabaseFilePath,
+                profile.PasswordHash,
+                profile.PasswordSalt
+            });
         }
 
         public async Task DeleteProfileAsync(string profileId)
@@ -77,12 +99,12 @@ namespace IncomeExpenditureTracker.Services.Database
             await connection.ExecuteAsync("DELETE FROM Profiles WHERE ProfileId = @ProfileId", new { ProfileId = profileId });
         }
 
-        public async Task<ProfileDto?> GetProfileByIdAsync(string profileId)
+        public async Task<ProfileDto?> GetProfileByNameAsync(string profileName)
         {
             using var connection = new SqliteConnection(_systemDbConnectionString);
-            return await connection.QuerySingleOrDefaultAsync<ProfileDto>(
-                "SELECT * FROM Profiles WHERE ProfileId = @ProfileId",
-                new { ProfileId = profileId });
+            var sql = "SELECT * FROM Profiles WHERE ProfileName = @ProfileName";
+
+            return await connection.QuerySingleOrDefaultAsync<ProfileDto>(sql, new { ProfileName = profileName });
         }
 
         public async Task UpdateLockoutStateAsync(string profileId, int failedAttemptCount, DateTime? lockoutEndUtc)
