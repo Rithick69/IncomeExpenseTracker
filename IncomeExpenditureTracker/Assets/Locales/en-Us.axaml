@@ -1,0 +1,23 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="clr-namespace:System;assembly=mscorlib">
+
+    <!-- PATTERN: Locale_[Module]_[ElementType]_[Action] -->
+
+    <!-- GLOBAL / SHARED -->
+    <system:String x:Key="Locale_Global_Button_Save">Save</system:String>
+    <system:String x:Key="Locale_Global_Button_Cancel">Cancel</system:String>
+    <system:String x:Key="Locale_Global_Button_Confirm">Confirm</system:String>
+
+    <!-- GATEKEEPER MODULE -->
+    <system:String x:Key="Locale_Gatekeeper_Title_Login">Welcome Back</system:String>
+    <system:String x:Key="Locale_Gatekeeper_Label_ProfileName">Profile Name</system:String>
+    <system:String x:Key="Locale_Gatekeeper_Label_Password">Master Vault Password</system:String>
+    <system:String x:Key="Locale_Gatekeeper_Button_Login">Unlock Profile</system:String>
+
+    <system:String x:Key="Locale_Gatekeeper_Title_Register">Create New Profile</system:String>
+    <system:String x:Key="Locale_Gatekeeper_Label_BaseCurrency">Base Currency Symbol</system:String>
+    <system:String x:Key="Locale_Gatekeeper_Button_Register">Generate Encrypted Vault</system:String>
+    <system:String x:Key="Locale_Gatekeeper_Text_CurrencyWarning">This profile operates strictly in the selected currency. Imported foreign amounts will be recorded at a 1:1 face value without conversion.</system:String>
+
+</ResourceDictionary>

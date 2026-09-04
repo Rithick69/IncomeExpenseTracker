@@ -47,9 +47,12 @@ namespace IncomeExpenditureTracker.Services.Database
                 CREATE TABLE IF NOT EXISTS Profiles (
                     ProfileId TEXT PRIMARY KEY,
                     ProfileName TEXT UNIQUE NOT NULL,
+                    Nickname TEXT UNIQUE NOT NULL,
                     DatabaseFilePath TEXT NOT NULL,
                     PasswordHash TEXT NOT NULL,
                     PasswordSalt TEXT NOT NULL,
+                    MasterKeyHash TEXT NOT NULL,
+                    MasterKeySalt TEXT NOT NULL,
                     CreatedDate  DATETIME DEFAULT (datetime('now')),
                     FailedAttemptCount INTEGER NOT NULL DEFAULT 0,
                     LockoutEndUtc TEXT NULL
@@ -60,7 +63,7 @@ namespace IncomeExpenditureTracker.Services.Database
         public async Task<IEnumerable<ProfileDto>> GetAllProfilesAsync()
         {
             using var connection = new SqliteConnection(_systemDbConnectionString);
-            return await connection.QueryAsync<ProfileDto>("SELECT * FROM Profiles ORDER BY ProfileName");
+            return await connection.QueryAsync<ProfileDto>("SELECT * FROM Profiles ORDER BY Nickname ASC");
         }
 
         public async Task RegisterProfileAsync(ProfileDto profile)
@@ -68,9 +71,16 @@ namespace IncomeExpenditureTracker.Services.Database
             // 1. Backend Sanitization Guardrail
             var sanitizedName = profile.ProfileName?.Trim();
 
+            var santizedNickname = profile.Nickname?.Trim();
+
             if (string.IsNullOrWhiteSpace(sanitizedName) || !Regex.IsMatch(sanitizedName, @"^[a-zA-Z0-9\-_ ]+$"))
             {
                 throw new ArgumentException("Invalid Profile Name. Only alphanumeric characters, spaces, hyphens, and underscores are allowed.");
+            }
+
+            if (string.IsNullOrWhiteSpace(santizedNickname) || !Regex.IsMatch(santizedNickname, @"^[a-zA-Z0-9\-_ ]+$"))
+            {
+                throw new ArgumentException("Invalid Nickname. Only alphanumeric characters, spaces, hyphens, and underscores are allowed.");
             }
 
             // Ensure IDs are strictly formatted (e.g., GUIDs) to prevent path traversal attacks
@@ -81,15 +91,18 @@ namespace IncomeExpenditureTracker.Services.Database
             }
             using var connection = new SqliteConnection(_systemDbConnectionString);
             var sql = @"
-                INSERT INTO Profiles (ProfileId, ProfileName, DatabaseFilePath, PasswordHash, PasswordSalt)
-                VALUES (@ProfileId, @ProfileName, @DatabaseFilePath, @PasswordHash, @PasswordSalt)";
+                INSERT INTO Profiles (ProfileId, ProfileName, Nickname, DatabaseFilePath, PasswordHash, PasswordSalt, MasterKeyHash, MasterKeySalt)
+                VALUES (@ProfileId, @ProfileName, @Nickname, @DatabaseFilePath, @PasswordHash, @PasswordSalt, @MasterKeyHash, @MasterKeySalt)";
             await connection.ExecuteAsync(sql, new
             {
                 ProfileId = profileId,
                 ProfileName = sanitizedName,
+                Nickname = santizedNickname,
                 profile.DatabaseFilePath,
                 profile.PasswordHash,
-                profile.PasswordSalt
+                profile.PasswordSalt,
+                profile.MasterKeyHash,
+                profile.MasterKeySalt
             });
         }
 

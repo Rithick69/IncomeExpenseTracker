@@ -2,7 +2,10 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Threading;
+using Avalonia.Controls.ApplicationLifetimes;
+using Microsoft.Extensions.DependencyInjection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input; // Needed for [RelayCommand]
 using IncomeExpenditureTracker.Services.Messaging;
@@ -23,13 +26,41 @@ namespace IncomeExpenditureTracker.UI.Shell
 {
     /// <summary>
     /// The root context of the application.
-    /// Acts as the Global Notification Hub, listening to the Broker for any
+    /// Acts as the Global Router, Dialog Controller, Global Notification Hub, listening to the Broker for any
     /// ToastNotificationMessage sent by any service or ViewModel.
     /// </summary>
     public partial class MainWindowViewModel : ViewModelBase
     {
+        private readonly IServiceProvider _serviceProvider;
+
         // =========================================================================
-        // OBSERVABLE PROPERTIES (The Waiter's Tray)
+        // ROUTING STATE (The ContentControl binding)
+        // =========================================================================
+        // @desc    Acts as our React Router <Outlet /> state.
+        //          Holds the current child ViewModel (e.g., LoginViewModel, MasterDataViewModel)
+        // @state   ViewModelBase
+        [ObservableProperty]
+        private ViewModelBase? _currentView;
+
+        // =========================================================================
+        // GLOBAL DIALOG STATE (The Modal Overlay)
+        // =========================================================================
+        [ObservableProperty]
+        private bool _isDialogVisible;
+
+        [ObservableProperty]
+        private string _dialogTitle = string.Empty;
+
+        [ObservableProperty]
+        private string _dialogBody = string.Empty;
+
+        [ObservableProperty]
+        private bool _isConfirmationDialog;
+
+        private TaskCompletionSource<bool>? _currentDialogTcs;
+
+        // =========================================================================
+        // TOAST & PROGRESS STATE (The Status Tray)
         // =========================================================================
 
         // 1. The Visual Toast Stack
@@ -45,39 +76,44 @@ namespace IncomeExpenditureTracker.UI.Shell
         [ObservableProperty]
         private string _loadingStatus = "Ready";
 
-        // @desc    Acts as our React Router <Outlet /> state.
-        //          Holds the current child ViewModel (e.g., LoginViewModel, MasterDataViewModel)
-        // @state   ViewModelBase
+        // =========================================================================
+        // SHELL LAYOUT STATE (Menu vs. Gatekeeper Messages)
+        // =========================================================================
         [ObservableProperty]
-        private ViewModelBase? _currentPage;
+        private bool _isMenuVisible;
 
-        private readonly LoginViewModel _loginViewModel;
-        private readonly RegisterViewModel _registerViewModel;
-        // private readonly DashboardViewModel _dashboardViewModel;
+        [ObservableProperty]
+        private bool _isWelcomeMessageVisible;
+
+        [ObservableProperty]
+        private string _welcomeMessageText = "Welcome to the Tracker. Please authenticate to continue."; // Your generic message
+
+        [ObservableProperty]
+        private bool _isCopyButtonVisible;
 
         // =========================================================================
         // CONSTRUCTOR
         // =========================================================================
-        public MainWindowViewModel(IApplicationBroker broker, LoginViewModel loginViewModel, RegisterViewModel registerViewModel)
+        public MainWindowViewModel(IApplicationBroker broker, IServiceProvider serviceProvider)
             : base(broker)
         {
-            // Subscribe to Legacy File Staging events
-            Broker.Register<FileStagingErrorMessage>(this, OnFileStagingErrorReceived);
-            Broker.Register<StagingBatchCompletedMessage>(this, OnStagingCompleted);
-            Broker.Register<StagingProgressMessage>(this, OnProgressReceived);
+            _serviceProvider = serviceProvider;
 
-            // Subscribe to the new Global Notification Stream
-            Broker.Register<ToastNotificationMessage>(this, OnToastReceived);
-
-            // Register the router listener
+            // 1. Subscribe to Routing
             Broker.Register<NavigationMessage>(this, OnNavigationRequested);
 
-            // MERN Equivalent: <Route path="/" element={<LoginView />} />
-            CurrentPage = loginViewModel;
+            // 2. Subscribe to Global Dialogs
+            Broker.Register<ShowHelperMessage>(this, OnShowHelperRequested);
+            Broker.Register<ShowConfirmationMessage>(this, OnShowConfirmationRequested);
 
-            _loginViewModel = loginViewModel;
-            _registerViewModel = registerViewModel;
-            // _dashboardViewModel = dashboardViewModel;
+            // 3. Subscribe to Toasts & Progress
+            Broker.Register<ToastNotificationMessage>(this, OnToastReceived);
+            Broker.Register<StagingProgressMessage>(this, OnProgressReceived);
+            Broker.Register<FileStagingErrorMessage>(this, OnFileStagingErrorReceived);
+            Broker.Register<StagingBatchCompletedMessage>(this, OnStagingCompleted);
+
+            // 4. Initial Route
+            NavigateTo("Login");
         }
 
         // =========================================================================
@@ -86,16 +122,111 @@ namespace IncomeExpenditureTracker.UI.Shell
 
         private void OnNavigationRequested(NavigationMessage message)
         {
+            NavigateTo(message.Destination);
+        }
+
+        private void NavigateTo(string destination)
+        {
             RunOnUIThread(() =>
             {
-                CurrentPage = message.Destination switch
+                // 1. EVALUATE THE ZONE
+                // If we are routing to Login or Register, hide the menu and show the generic message.
+                if (destination == "Login" || destination == "Register")
                 {
-                    "Dashboard" => _loginViewModel, // TODO: Swap to _dashboardViewModel when built
-                    "Register" => _registerViewModel,
-                    "Login" => _loginViewModel,
-                    _ => CurrentPage // Fallback
+                    IsMenuVisible = false;
+                    IsWelcomeMessageVisible = true;
+                }
+                else
+                {
+                    // For Dashboard, Settings, etc. - show the menu, hide the welcome message.
+                    IsMenuVisible = true;
+                    IsWelcomeMessageVisible = false;
+                }
+
+                // CRITICAL: Utilizing _serviceProvider requests a brand new
+                // Transient instance from the DI container, destroying stale state.
+                CurrentView = destination switch
+                {
+                    "Login" => _serviceProvider.GetRequiredService<LoginViewModel>(),
+                    "Register" => _serviceProvider.GetRequiredService<RegisterViewModel>(),
+                    // "Dashboard" => _serviceProvider.GetRequiredService<DashboardViewModel>(),
+                    _ => throw new ArgumentException($"Unknown route: {destination}")
                 };
             });
+        }
+
+        // =========================================================================
+        // DIALOG LOGIC
+        // =========================================================================
+        private void OnShowHelperRequested(ShowHelperMessage message)
+        {
+            RunOnUIThread(() =>
+            {
+                DialogTitle = message.Title;
+                DialogBody = message.Body;
+                // Capture the TCS so the Confirm button can resolve it
+                _currentDialogTcs = message.CompletionSource;
+                IsCopyButtonVisible = message.ShowCopyButton;
+                IsConfirmationDialog = false;
+                IsDialogVisible = true;
+            });
+        }
+
+        private void OnShowConfirmationRequested(ShowConfirmationMessage message)
+        {
+            RunOnUIThread(() =>
+            {
+                DialogTitle = message.Title;
+                DialogBody = message.Body;
+                _currentDialogTcs = message.CompletionSource;
+                IsConfirmationDialog = true;
+                IsCopyButtonVisible = false;
+                IsDialogVisible = true;
+            });
+        }
+
+        [RelayCommand]
+        public void ConfirmDialog()
+        {
+            IsDialogVisible = false;
+            if (IsConfirmationDialog && _currentDialogTcs != null)
+            {
+                _currentDialogTcs.TrySetResult(true);
+                _currentDialogTcs = null;
+            }
+        }
+
+        [RelayCommand]
+        public void CancelDialog()
+        {
+            IsDialogVisible = false;
+            if (IsConfirmationDialog && _currentDialogTcs != null)
+            {
+                _currentDialogTcs.TrySetResult(false);
+                _currentDialogTcs = null;
+            }
+        }
+
+        // =========================================================================
+        // TOAST & PROGRESS LOGIC
+        // =========================================================================
+
+        // Copy Command
+        [RelayCommand]
+        public async Task CopyToClipboardAsync()
+        {
+            // Access the Avalonia System Clipboard
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                var clipboard = desktop.MainWindow?.Clipboard;
+                if (clipboard != null)
+                {
+                    await clipboard.SetTextAsync(DialogBody);
+
+                    // Fire a toast so the user knows it worked!
+                    Broker.Send(new ToastNotificationMessage("Copied to clipboard!", NotificationType.Success));
+                }
+            }
         }
 
         private void OnProgressReceived(StagingProgressMessage message)

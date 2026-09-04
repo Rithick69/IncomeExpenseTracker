@@ -1,6 +1,6 @@
 <!--
   @component  LoginView
-  @desc       Presentational layout for user authentication
+  @desc       Presentational layout for user authentication (Netflix-Style Profile Selector)
   @route      /UI/Gatekeeper/LoginView.axaml
   @access     Public (Rendered in MainWindow)
 -->
@@ -9,150 +9,165 @@
              xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.Gatekeeper"
              x:Class="IncomeExpenditureTracker.UI.Gatekeeper.LoginView"
              x:DataType="vm:LoginViewModel"
-             Background="#F5F5FA">
+             x:Name="RootControl">
 
-    <UserControl.Styles>
-        <!-- Force TextBox to have a white background and black text normally -->
-        <Style Selector="TextBox">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="Foreground" Value="Black"/>
-            <Setter Property="CaretBrush" Value="Black"/>
-            <Setter Property="BorderBrush" Value="#D1D5DB"/>
-        </Style>
-
-        <!-- Force text to stay black when hovered or focused -->
-        <Style Selector="TextBox:pointerover">
-            <Setter Property="Foreground" Value="Black"/>
-        </Style>
-        <Style Selector="TextBox:focus">
-            <Setter Property="Foreground" Value="Black"/>
-        </Style>
-
-        <!-- Override Avalonia's default dark hover/focus backgrounds -->
-        <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#4F46E5"/>
-        </Style>
-        <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#4F46E5"/>
-            <Setter Property="BorderThickness" Value="2"/>
-        </Style>
-
-        <!-- Fix Reveal Password Button icon color -->
-        <Style Selector="TextBox.revealPasswordButton[AcceptsReturn=False]:not(TextBox:empty)">
-             <Setter Property="InnerRightContent" Value="#4F46E5">
-                 <Template>
-                     <ToggleButton Classes="passwordBoxRevealButton"
-                                   IsChecked="{Binding $parent[TextBox].RevealPassword, Mode=TwoWay}"
-                                   ClipToBounds="True" />
-                 </Template>
-             </Setter>
-        </Style>
-    </UserControl.Styles>
+    <!-- The UserControl Background now inherits from App.axaml Window Style -->
 
     <Design.DataContext>
-        <!--@desc Mock data context for XAML designer preview -->
         <vm:LoginViewModel/>
     </Design.DataContext>
 
-    <!-- Elevated White Card -->
-    <Border HorizontalAlignment="Center"
+    <!--
+      GLOBAL DESIGN SYSTEM ALIGNMENT:
+      Utilizing the 'Card' class defined in App.axaml for unified Background, CornerRadius, and Shadow.
+    -->
+    <Border Classes="Card"
+            HorizontalAlignment="Center"
             VerticalAlignment="Center"
-            Background="White"
-            CornerRadius="12"
-            Padding="40,40,40,30"
-            BoxShadow="0 10 30 0 #15000000">
+            Width="400"
+            Padding="40">
 
-        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+        <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
 
-            <!--@desc Header -->
+            <!-- @desc Header -->
             <TextBlock Grid.Row="0"
-                       Text="Login to Your Profile"
+                       Text="{DynamicResource Locale_Gatekeeper_Title_Login}"
+                       Classes="DisplayNumber"
                        FontSize="26"
-                       FontWeight="Bold"
-                       Foreground="#4F46E5"
                        Margin="0,0,0,30"
                        HorizontalAlignment="Center"/>
 
-            <!-- Username / Profile Selector -->
-            <TextBox Grid.Row="1"
-                     Watermark="Profile Name"
-                     Text="{Binding Username}"
-                     Width="280"
-                     Height="42"
-                     CornerRadius="6"
-                     VerticalContentAlignment="Center"
-                     Margin="0,0,0,15" />
+            <!-- ========================================== -->
+            <!-- PHASE 1: THE NETFLIX GRID                  -->
+            <!-- ========================================== -->
+            <ItemsControl Grid.Row="1"
+                          ItemsSource="{Binding Profiles}"
+                          IsVisible="{Binding !IsPasswordPromptVisible}"
+                          HorizontalAlignment="Stretch">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <!-- Clicking the button passes the ProfileDto to the command -->
+                        <Button Content="{Binding Nickname}"
+                                Classes="Secondary"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,0,0,10"
+                                Command="{Binding #RootControl.((vm:LoginViewModel)DataContext).SelectProfileCommand}"
+                                CommandParameter="{Binding}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
 
-            <!--
-              Secure Password Input
-              Added Classes="revealPasswordButton" for the native Avalonia toggle switch
-            -->
-            <TextBox Grid.Row="2"
-                     x:Name="PasswordInput"
-                     Watermark="Enter Profile Password"
-                     PasswordChar="•"
-                     Classes="revealPasswordButton"
-                     Width="280"
-                     Height="42"
-                     CornerRadius="6"
-                     VerticalContentAlignment="Center"
-                     Margin="0,0,0,25" />
+            <!-- ========================================== -->
+            <!-- PHASE 2: THE SECURE PASSWORD PROMPT        -->
+            <!-- ========================================== -->
+            <StackPanel Grid.Row="1" IsVisible="{Binding IsPasswordPromptVisible}" Spacing="15">
 
-            <!--
-              Submit Button
-            -->
-            <Button Grid.Row="3"
-                    Content="{Binding LoginButtonText}"
-                    Command="{Binding LoginCommand}"
-                    CommandParameter="{Binding #PasswordInput}"
-                    Width="280"
-                    Height="45"
-                    Background="#4F46E5"
-                    Foreground="White"
-                    FontSize="16"
-                    FontWeight="SemiBold"
-                    CornerRadius="6"
-                    HorizontalAlignment="Center"
-                    HorizontalContentAlignment="Center"
-                    VerticalContentAlignment="Center">
-                <Button.Styles>
-                    <Style Selector="Button:pointerover /template/ ContentPresenter">
-                        <Setter Property="Background" Value="#4338CA"/>
-                        <Setter Property="TextBlock.Foreground" Value="White"/>
-                    </Style>
-                </Button.Styles>
-            </Button>
+                <!-- Greeting utilizing the Nickname -->
+                <TextBlock Text="{Binding SelectedProfile.Nickname, StringFormat='Welcome back, {0}'}"
+                           Foreground="{DynamicResource TextPrimary}"
+                           HorizontalAlignment="Center"
+                           FontWeight="SemiBold"/>
 
-            <!-- @desc Error Message Display -->
-            <TextBlock Grid.Row="4"
+                <!-- Autofilled ProfileName (Read-Only) -->
+                <TextBox Text="{Binding Username}"
+                         IsReadOnly="True"
+                         Watermark="Profile Name" />
+
+                <!-- Standard Login Controls (Hidden if Delete is active) -->
+                <StackPanel IsVisible="{Binding !IsDeletePromptVisible}" Spacing="15">
+
+                    <TextBox x:Name="VaultPasswordBox"
+                             Watermark="Enter Profile Password"
+                             PasswordChar="•"
+                             Classes="revealPasswordButton" />
+
+                    <Button Content="{Binding LoginButtonText}"
+                            Command="{Binding LoginCommand}"
+                            CommandParameter="{Binding #VaultPasswordBox}"
+                            Classes="Primary"
+                            HorizontalAlignment="Stretch" />
+
+                    <Grid ColumnDefinitions="*,*">
+                        <!-- Switch to Delete mode -->
+                        <Button Grid.Column="0"
+                                Content="Delete Profile"
+                                Command="{Binding InitiateDeleteCommand}"
+                                Background="Transparent"
+                                Foreground="Red"
+                                HorizontalAlignment="Left" />
+
+                        <!-- Back Button to return to the grid -->
+                        <Button Grid.Column="1"
+                                Content="{DynamicResource Locale_Global_Button_Cancel}"
+                                Command="{Binding CancelSelectionCommand}"
+                                Classes="Secondary"
+                                HorizontalAlignment="Right" />
+                    </Grid>
+                </StackPanel>
+
+                <!-- ========================================== -->
+                <!-- PHASE 3: THE VAULT NUKE PROMPT             -->
+                <!-- ========================================== -->
+                <StackPanel IsVisible="{Binding IsDeletePromptVisible}" Spacing="15">
+
+                    <TextBlock Text="Enter Password or Master Key to authorize deletion:"
+                               Foreground="Red"
+                               TextWrapping="Wrap"/>
+
+                    <TextBox x:Name="DeleteAuthBox" PasswordChar="•" />
+
+                    <Button Content="PERMANENTLY DELETE"
+                            Command="{Binding ConfirmDeleteCommand}"
+                            CommandParameter="{Binding #DeleteAuthBox}"
+                            Background="Red"
+                            Foreground="White"
+                            HorizontalAlignment="Stretch" />
+
+                    <Button Content="{DynamicResource Locale_Global_Button_Cancel}"
+                            Command="{Binding CancelDeleteCommand}"
+                            Classes="Secondary"
+                            HorizontalAlignment="Stretch" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- @desc Error Message Display (Shared across all phases) -->
+            <TextBlock Grid.Row="2"
                        Text="{Binding ErrorMessage}"
                        Foreground="#EF4444"
-                       Margin="0,15,0,0"
+                       Margin="0,20,0,0"
                        TextWrapping="Wrap"
-                       MaxWidth="280"
                        HorizontalAlignment="Center"
                        TextAlignment="Center"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-            <!-- @desc Create a new Profile -->
-            <Button Grid.Row="5"
+            <!-- @desc Create a new Profile (Hidden when entering password) -->
+            <Button Grid.Row="3"
                     Content="Create a new profile"
                     Command="{Binding NavigateToRegisterCommand}"
+                    IsVisible="{Binding !IsPasswordPromptVisible}"
                     Background="Transparent"
-                    Foreground="#4F46E5"
+                    Foreground="{DynamicResource AccentIndigo}"
                     Cursor="Hand"
-                    Margin="0,20,0,0"
+                    Margin="0,30,0,0"
+                    HorizontalAlignment="Center" />
+            <!-- @desc Emergency Factory Reset (Developer Tool) -->
+            <Button Grid.Row="4"
+                    Content="Factory Reset App"
+                    Command="{Binding FactoryResetCommand}"
+                    IsVisible="{Binding !IsPasswordPromptVisible}"
+                    Background="Transparent"
+                    Foreground="{DynamicResource TextSecondary}"
+                    FontSize="12"
+                    Cursor="Hand"
+                    Margin="0,40,0,0"
                     HorizontalAlignment="Center">
                 <Button.Styles>
                     <Style Selector="Button:pointerover /template/ ContentPresenter">
                         <Setter Property="Background" Value="Transparent"/>
-                        <Setter Property="TextBlock.Foreground" Value="#3730A3"/>
+                        <Setter Property="TextBlock.Foreground" Value="Red"/>
                     </Style>
                 </Button.Styles>
             </Button>
-
         </Grid>
     </Border>
 </UserControl>

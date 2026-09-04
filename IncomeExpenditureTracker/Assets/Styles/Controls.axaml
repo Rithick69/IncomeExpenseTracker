@@ -1,0 +1,64 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- GLOBAL WINDOW STYLE -->
+    <Style Selector="Window">
+        <Setter Property="Background" Value="{DynamicResource BackgroundPrimary}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource InterFont}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+    </Style>
+
+    <!-- UI COMPONENT: DATA CARDS -->
+    <Style Selector="Border.Card">
+        <Setter Property="Background" Value="{DynamicResource BackgroundSecondary}"/>
+        <Setter Property="CornerRadius" Value="12"/>
+        <Setter Property="Padding" Value="20"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BoxShadow" Value="{DynamicResource CardShadow}"/>
+    </Style>
+
+    <!-- UI COMPONENT: PRIMARY BUTTONS -->
+    <Style Selector="Button.Primary">
+        <Setter Property="Background" Value="{DynamicResource AccentIndigo}"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="16,10"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.Primary:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentIndigoHover}"/>
+        <Setter Property="TextBlock.Foreground" Value="#FFFFFF"/>
+    </Style>
+
+    <!-- UI COMPONENT: TEXTBOX & COMBOBOX (Form Inputs) -->
+    <Style Selector="TextBox, ComboBox">
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="12,8"/>
+        <Setter Property="Background" Value="{DynamicResource BackgroundPrimary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+    </Style>
+
+    <!-- UI COMPONENT: DATAGRID (Tabular Numerals Enforced) -->
+    <Style Selector="DataGrid">
+        <Setter Property="Background" Value="{DynamicResource BackgroundPrimary}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <!-- Enforces tabular lining for numbers so columns of currency align perfectly -->
+        <Setter Property="FontFeatures" Value="tnum"/>
+    </Style>
+    <Style Selector="DataGridColumnHeader">
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+        <Setter Property="Background" Value="{DynamicResource BackgroundSecondary}"/>
+    </Style>
+
+    <!-- TYPOGRAPHY: DASHBOARD NUMBERS -->
+    <Style Selector="TextBlock.DisplayNumber">
+        <Setter Property="Foreground" Value="{DynamicResource AccentIndigo}"/>
+        <Setter Property="FontSize" Value="36"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="LetterSpacing" Value="-0.5"/>
+    </Style>
+</Styles>
