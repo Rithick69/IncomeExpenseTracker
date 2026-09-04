@@ -50,6 +50,7 @@ namespace IncomeExpenditureTracker.Tests.Integration.Profiles
             {
                 ProfileId = Guid.NewGuid().ToString(),
                 ProfileName = "Alice",
+                Nickname = "Ally",
                 DatabaseFilePath = "C:\\Db\\Alice.db",
                 PasswordHash = "FakeHash",
                 PasswordSalt = "FakeSalt",
@@ -74,6 +75,7 @@ namespace IncomeExpenditureTracker.Tests.Integration.Profiles
             {
                 ProfileId = Guid.NewGuid().ToString(),
                 ProfileName = "Bob",
+                Nickname = "Robert",
                 DatabaseFilePath = "path1",
                 PasswordHash = "hash",
                 PasswordSalt = "salt",
@@ -85,6 +87,7 @@ namespace IncomeExpenditureTracker.Tests.Integration.Profiles
             {
                 ProfileId = Guid.NewGuid().ToString(),
                 ProfileName = "Bob",
+                Nickname = "Robert",
                 DatabaseFilePath = "path2",
                 PasswordHash = "hash",
                 PasswordSalt = "salt",

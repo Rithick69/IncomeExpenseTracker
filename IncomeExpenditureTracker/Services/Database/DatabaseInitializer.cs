@@ -49,6 +49,13 @@ public class DatabaseInitializer : IDatabaseInitializer
             await _database.ExecuteWithRetryAsync(async (connection) =>
             {
                 var schemaDdl = @"
+
+                CREATE TABLE IF NOT EXISTS UserSettings (
+                    SettingKey TEXT PRIMARY KEY,
+                    SettingValue TEXT NOT NULL,
+                    UpdatedAt DATETIME DEFAULT (datetime('now'))
+                );
+
                 ------------------------------------------------------------
                 -- CATEGORIES
                 ------------------------------------------------------------

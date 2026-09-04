@@ -1,4 +1,4 @@
-
+using System.Threading.Tasks;
 namespace IncomeExpenditureTracker.Models
 {
     /* ============================================================================
@@ -102,5 +102,34 @@ namespace IncomeExpenditureTracker.Models
     /// Tells the shell which ViewModel to inject into the ContentControl.
     /// </summary>
 
-    public record NavigationMessage(string Destination);
+    public record NavigationMessage(string Destination, object? Parameter = null);
+
+    // -------------------------------------------------------------------------
+    // GLOBAL DIALOG & MODAL MESSAGES
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Triggers a standard informational modal overlay.
+    /// Used for tips, recovery keys, or read-only alerts.
+    /// </summary>
+    public record ShowHelperMessage(
+        string Title,
+        string Body,
+        bool IsCritical = false,
+        string? ContextLink = null, // Optional link to a help article or documentation
+        TaskCompletionSource<bool>? CompletionSource = null,
+        bool ShowCopyButton = false
+    );
+
+    /// <summary>
+    /// Triggers a Yes/No confirmation overlay.
+    /// Utilizes TaskCompletionSource so the calling ViewModel can await the user's
+    /// decision without ever touching the Avalonia UI thread directly.
+    /// </summary>
+    public record ShowConfirmationMessage(
+        string Title,
+        string Body,
+        TaskCompletionSource<bool> CompletionSource,
+        string ConfirmText = "Confirm",
+        string CancelText = "Cancel");
 }

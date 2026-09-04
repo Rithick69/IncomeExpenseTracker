@@ -6,6 +6,7 @@ namespace IncomeExpenditureTracker.Models
     {
         public string ProfileId { get; init; } = string.Empty;
         public string ProfileName { get; init; } = string.Empty;
+        public string Nickname { get; init; } = string.Empty;
         public string DatabaseFilePath { get; init; } = string.Empty;
         public string PasswordHash { get; init; } = string.Empty;
         public string PasswordSalt { get; init; } = string.Empty;
@@ -16,6 +17,9 @@ namespace IncomeExpenditureTracker.Models
         // Brute Force Defense
         public int FailedAttemptCount { get; init; } = 0;
         public DateTime? LockoutEndUtc { get; init; }
+
+        public string MasterKeyHash { get; init; } = string.Empty;
+        public string MasterKeySalt { get; init; } = string.Empty;
 
         // Parameterless constructor strictly required by Dapper for safe deserialization
         public ProfileDto() { }

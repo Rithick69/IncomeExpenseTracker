@@ -27,6 +27,10 @@ using IncomeExpenditureTracker.Services.Messaging;
  * ============================================================================
  */
 
+// Rule of Thumb
+// UI-Triggered Commands ([RelayCommand]): No RunOnUIThread needed. The await context automatically returns you to the UI thread.
+// Broker-Triggered Handlers (or Timers): Must use RunOnUIThread, because the execution originates from a background worker thread, bypassing the UI synchronization context.
+
 namespace IncomeExpenditureTracker.UI.Shared
 {
     // 1. ObservableObject wires up the magical data-binding UI notifications

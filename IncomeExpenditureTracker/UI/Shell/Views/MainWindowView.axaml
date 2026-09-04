@@ -10,61 +10,163 @@
         Icon="/Assets/avalonia-logo.ico"
         Title="Income &amp; Expenditure Tracker"
         Width="1024" Height="768">
-        <!-- Background removed; globally inherited from App.axaml -->
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
+    <!-- Root Grid allows the Dialog and Toasts to overlay absolutely everything -->
     <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="250" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
 
-        <!-- SIDEBAR NAVIGATION -->
-        <Border Grid.Column="0" Background="{DynamicResource AppSurface}" Padding="15">
-            <StackPanel Spacing="10">
-                <TextBlock Text="MENU" Classes="DataHeader" Margin="0,0,0,20"/>
+        <!-- ========================================== -->
+        <!-- BASE APPLICATION SHELL LAYER               -->
+        <!-- ========================================== -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" /> <!-- Sidebar Column -->
+                <ColumnDefinition Width="*" />    <!-- Main Content Column -->
+            </Grid.ColumnDefinitions>
 
-                <Button Content="Dashboard" Background="Transparent" Foreground="{DynamicResource TextPrimary}" Width="220" HorizontalContentAlignment="Left" Padding="10,8" />
-                <Button Content="Import Statements" Background="Transparent" Foreground="{DynamicResource TextPrimary}" Width="220" HorizontalContentAlignment="Left" Padding="10,8" />
-                <Button Content="Transaction Ledger" Background="Transparent" Foreground="{DynamicResource TextPrimary}" Width="220" HorizontalContentAlignment="Left" Padding="10,8" />
-                <Button Content="Master Data" Background="Transparent" Foreground="{DynamicResource TextPrimary}" Width="220" HorizontalContentAlignment="Left" Padding="10,8" />
-            </StackPanel>
-        </Border>
+            <!-- SIDEBAR NAVIGATION (Hidden in Gatekeeper Zone) -->
+            <Border Grid.Column="0"
+                    Width="250"
+                    Background="{DynamicResource BackgroundSecondary}"
+                    BorderBrush="{DynamicResource BorderSubtle}"
+                    BorderThickness="0,0,1,0"
+                    IsVisible="{Binding IsMenuVisible}"
+                    Padding="15">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="MENU"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource TextSecondary}"
+                               Margin="0,0,0,20"/>
 
-        <!-- MAIN CONTENT AREA & TOP BAR -->
-        <Grid Grid.Column="1" RowDefinitions="Auto, *, Auto">
-
-            <!-- Top App Bar -->
-            <Border Grid.Row="0" Background="{DynamicResource AppSurface}" Padding="20,15" BoxShadow="{DynamicResource CardShadow}">
-                <TextBlock Text="Income &amp; Expenditure Tracker" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}" />
+                    <!-- Styling relies on global defaults. Active state logic will come later. -->
+                    <Button Content="Dashboard" Background="Transparent" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                    <Button Content="Import Statements" Background="Transparent" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                    <Button Content="Transaction Ledger" Background="Transparent" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                    <Button Content="Master Data" Background="Transparent" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                </StackPanel>
             </Border>
 
-            <!-- ROUTER OUTLET -->
-            <ContentControl Grid.Row="1" Content="{Binding CurrentPage}" Margin="20" />
+            <!-- MAIN CONTENT AREA & TOP BAR -->
+            <Grid Grid.Column="1" RowDefinitions="Auto, *, Auto">
 
-            <!-- Global Progress Bar Overlay -->
-            <Border Grid.Row="2"
-                    Background="{DynamicResource AppSurface}"
-                    Padding="15"
-                    BoxShadow="{DynamicResource CardShadow}">
-                <StackPanel>
-                    <TextBlock Text="{Binding LoadingStatus}"
-                               Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,5"/>
-                    <ProgressBar Value="{Binding LoadingPercentage}"
-                                 Maximum="100" Height="4" Foreground="{DynamicResource IndigoPrimary}"/>
+                <!-- AUTHENTICATED TOP BAR (Hidden in Gatekeeper Zone) -->
+                <Border Grid.Row="0"
+                        Background="{DynamicResource BackgroundPrimary}"
+                        Padding="20,15"
+                        BorderBrush="{DynamicResource BorderSubtle}"
+                        BorderThickness="0,0,0,1"
+                        IsVisible="{Binding IsMenuVisible}">
+                    <TextBlock Text="Income &amp; Expenditure Tracker" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}" />
+                </Border>
+
+                <!-- GATEKEEPER TOP BAR (Visible only in Gatekeeper Zone) -->
+                <Border Grid.Row="0"
+                        Background="{DynamicResource BackgroundPrimary}"
+                        Padding="20,15"
+                        BorderBrush="{DynamicResource BorderSubtle}"
+                        BorderThickness="0,0,0,1"
+                        IsVisible="{Binding IsWelcomeMessageVisible}">
+                    <TextBlock Text="{Binding WelcomeMessageText}"
+                               FontSize="16"
+                               FontWeight="Medium"
+                               Foreground="{DynamicResource TextSecondary}"
+                               HorizontalAlignment="Center" />
+                </Border>
+
+                <!-- ROUTER OUTLET (Dynamically mounts LoginView, RegisterView, DashboardView) -->
+                <ContentControl Grid.Row="1" Content="{Binding CurrentView}" Margin="20" />
+
+                <!-- GLOBAL PROGRESS BAR OVERLAY (Bottom of screen) -->
+                <Border Grid.Row="2"
+                        Background="{DynamicResource BackgroundSecondary}"
+                        Padding="15"
+                        BorderBrush="{DynamicResource BorderSubtle}"
+                        BorderThickness="0,1,0,0"
+                        IsVisible="{Binding LoadingPercentage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding LoadingStatus}"
+                                   Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,5"/>
+                        <ProgressBar Value="{Binding LoadingPercentage}"
+                                     Maximum="100" Height="4" Foreground="{DynamicResource AccentIndigo}"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- ========================================== -->
+        <!-- Z-INDEX 100: GLOBAL DIALOG OVERLAY         -->
+        <!-- ========================================== -->
+        <Grid Background="#99000000"
+              IsVisible="{Binding IsDialogVisible}"
+              ZIndex="100">
+            <Border Classes="Card"
+                    Width="450"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                <StackPanel Spacing="15">
+                    <!-- Title and Optional Copy Button Header -->
+                    <Grid ColumnDefinitions="*, Auto">
+                        <TextBlock Grid.Column="0"
+                                Text="{Binding DialogTitle}"
+                                FontSize="20"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource TextPrimary}"
+                                VerticalAlignment="Center" />
+
+                        <Button Grid.Column="1"
+                                Content="📋 Copy"
+                                Command="{Binding CopyToClipboardCommand}"
+                                IsVisible="{Binding IsCopyButtonVisible}"
+                                Background="Transparent"
+                                Foreground="{DynamicResource AccentIndigo}"
+                                Cursor="Hand"
+                                Padding="8,4">
+                            <Button.Styles>
+                                <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="TextBlock.Foreground" Value="{DynamicResource TextPrimary}"/>
+                                </Style>
+                            </Button.Styles>
+                        </Button>
+                    </Grid>
+
+                    <SelectableTextBlock Text="{Binding DialogBody}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextSecondary}"
+                               SelectionBrush="{DynamicResource AccentIndigo}" />
+
+                    <Grid ColumnDefinitions="*, *" Margin="0,20,0,0">
+                        <Button Grid.Column="0"
+                                Content="Confirm"
+                                Command="{Binding ConfirmDialogCommand}"
+                                Classes="Primary"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,0,5,0" />
+
+                        <!-- Cancel button only shows if it's a Yes/No confirmation dialog -->
+                        <Button Grid.Column="1"
+                                Content="Cancel"
+                                Command="{Binding CancelDialogCommand}"
+                                IsVisible="{Binding IsConfirmationDialog}"
+                                Classes="Secondary"
+                                HorizontalAlignment="Stretch"
+                                Margin="5,0,0,0" />
+                    </Grid>
                 </StackPanel>
             </Border>
         </Grid>
 
-        <!-- Toast Notification Stack Overlay -->
-        <ItemsControl Grid.ColumnSpan="2"
-                      ItemsSource="{Binding Toasts}"
+        <!-- ========================================== -->
+        <!-- Z-INDEX 200: TOAST NOTIFICATION STACK      -->
+        <!-- ========================================== -->
+        <ItemsControl ItemsSource="{Binding Toasts}"
                       HorizontalAlignment="Right"
                       VerticalAlignment="Top"
-                      Margin="20">
+                      Margin="20"
+                      ZIndex="200">
             <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="u:ToastAlert">
                     <Border Classes="Card"
@@ -78,6 +180,7 @@
                                        VerticalAlignment="Center"
                                        MaxWidth="300"
                                        Margin="0,0,15,0"/>
+
                             <Button Grid.Column="1"
                                     Content="✕"
                                     Background="Transparent"
@@ -87,7 +190,14 @@
                                     Cursor="Hand"
                                     VerticalAlignment="Top"
                                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissToastCommand}"
-                                    CommandParameter="{Binding Id}"/>
+                                    CommandParameter="{Binding Id}">
+                                <Button.Styles>
+                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="TextBlock.Foreground" Value="{DynamicResource TextPrimary}"/>
+                                    </Style>
+                                </Button.Styles>
+                            </Button>
                         </Grid>
                     </Border>
                 </DataTemplate>

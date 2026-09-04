@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using Serilog;
 using Microsoft.Extensions.Logging;
+using IncomeExpenditureTracker.Services.Settings;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
 using IncomeExpenditureTracker.Services.Importing;
@@ -114,6 +115,11 @@ public static class ServiceRegistration
         services.AddTransient<IProfileCryptography, ProfileCryptography>();
         services.AddTransient<IProfileLoginService, ProfileLoginService>();
         services.AddTransient<IProfileRegistry, ProfileRegistry>();
+
+        // ---------------------------------------------------------
+        // Settings
+        // ---------------------------------------------------------
+        services.AddTransient<IUserSettingsService, UserSettingsService>();
 
         // ---------------------------------------------------------
         // Database
