@@ -23,7 +23,7 @@ namespace IncomeExpenditureTracker.Services.Entities;
 // • Credit card providers
 // • Wallet services
 //-------------------------------------------------------------
-public class EntityService : IEntityService
+public class EntityService : IEntityService, IDisposable
 {
     private readonly IDatabaseService _database;
     private readonly ILogger<EntityService> _logger;
@@ -39,7 +39,7 @@ public class EntityService : IEntityService
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        _broker = broker;
+        _broker = broker ?? throw new ArgumentNullException(nameof(broker));
 
         // -------------------------------------------------------------------------
         // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
@@ -303,5 +303,11 @@ public class EntityService : IEntityService
         _entityIdCache.Clear();
         _entityListCache.Clear();
         _logger.LogInformation("Evicted EntityService RAM cache due to data mutation.");
+    }
+
+    public void Dispose()
+    {
+        _broker.UnregisterAll(this);
+        GC.SuppressFinalize(this);
     }
 }

@@ -119,7 +119,7 @@ public static class ServiceRegistration
         // ---------------------------------------------------------
         // Settings
         // ---------------------------------------------------------
-        services.AddTransient<IUserSettingsService, UserSettingsService>();
+        services.AddSingleton<IUserSettingsService, UserSettingsService>();
 
         // ---------------------------------------------------------
         // Database
@@ -148,6 +148,7 @@ public static class ServiceRegistration
         services.AddSingleton<IAccountService, AccountService>();
         services.AddSingleton<IImportBatchService, ImportBatchService>();
         services.AddSingleton<ITransactionService, TransactionService>();
+        services.AddSingleton<IPayeeService, PayeeService>();
         services.AddSingleton<ISynonymService, SynonymService>(); // Singleton because it maintains a cache of synonyms, readonly service, non blocking, thread-safe.
 
         // ---------------------------------------------------------

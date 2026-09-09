@@ -27,6 +27,33 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
             _descriptionParser = new DescriptionParser(NullLogger<DescriptionParser>.Instance);
         }
 
+        [Theory]
+        // 1. Standard cleaning: removes dates, long IDs, and special chars, collapses spaces
+        [InlineData("POS PURCHASE 12-10-2023 #924010035959984 STARBUCKS-COFFEE", "POS PURCHASE STARBUCKS COFFEE")]
+        // 2. Short numbers are kept (under 5 digits) and special characters become spaces
+        [InlineData("7-ELEVEN STORE 1234", "7 ELEVEN STORE 1234")]
+        [InlineData("AMZN Mktp US*AMZN.COM/BILLWA", "AMZN MKTP US AMZN COM BILLWA")]
+        // 3. Different Date Formats
+        [InlineData("PAYMENT 01/10/24 REF 123456", "PAYMENT REF")]
+        // 4. TIER 1 GUARDRAIL: If only noise is present, return original (trimmed and uppercase)
+        [InlineData("12-10-2023 924010035959984", "12-10-2023 924010035959984")]
+        [InlineData("## 12/12/2023", "## 12/12/2023")]
+        // 5. Null or Whitespace handling
+        [InlineData("   ", "")]
+        [InlineData(null, "")]
+        public void SanitizeMerchantString_WithVariousBankStrings_CleansCorrectlyAndRespectsGuardrails(string input, string expected)
+        {
+            // =========================================================================
+            // ACT: Call the sanitization method
+            // =========================================================================
+            var actual = _descriptionParser.SanitizeMerchantString(input);
+
+            // =========================================================================
+            // ASSERT: Verify the cleaned string matches the expected output
+            // =========================================================================
+            Assert.Equal(expected, actual);
+        }
+
         [Fact]
         public void ExtractTokens_WithStandardBankString_StripsDigitsAndReturnsCleanTokenList()
         {

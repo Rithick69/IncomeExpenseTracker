@@ -154,4 +154,28 @@ public interface IMasterDataOrchestrator
     Task DeleteSynonymAsync(int id, CancellationToken ct = default);
 
     #endregion
+
+    // =========================================================================
+    // USER PREFERENCE MANAGEMENT
+    // =========================================================================
+    #region User Preference Management
+
+    Task<string?> GetUserSettingsAsync(string key, CancellationToken ct = default);
+    Task SetUserSettingAsync(string key, string value, CancellationToken ct = default);
+    Task<List<UserSetting>> GetAllSettingsAsync(CancellationToken ct = default);
+
+    #endregion
+
+    // =========================================================================
+    // PAYEE MANAGEMENT
+    // =========================================================================
+    #region Payee Management
+
+    Task<IEnumerable<Payee>> GetAllPayeesAsync(CancellationToken ct = default);
+    Task<Payee> CreatePayeeAsync(Payee payee, CancellationToken ct = default);
+    Task UpdatePayeeAsync(Payee payee, CancellationToken ct = default);
+    Task DeletePayeeAsync(long payeeId, CancellationToken ct = default);
+    Task AddPayeeMappingAsync(string cleanedDescription, long payeeId, CancellationToken ct = default);
+    Task MergePayeesAsync(long targetPayeeId, List<long> sourcePayeeIds, CancellationToken ct = default);
+    #endregion
 }

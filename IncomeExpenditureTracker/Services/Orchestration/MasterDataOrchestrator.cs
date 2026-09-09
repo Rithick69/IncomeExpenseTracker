@@ -6,6 +6,7 @@ using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Messaging;
+using IncomeExpenditureTracker.Services.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace IncomeExpenditureTracker.Services.Orchestration;
@@ -28,6 +29,10 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     private readonly IImportBatchService _importBatchService;
 
     private readonly ISynonymService _synonymService;
+
+    private readonly IPayeeService _payeeService;
+
+    private readonly IUserSettingsService _userSettingsService;
 
     private readonly IApplicationBroker _broker;
 
@@ -67,6 +72,8 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         ITransactionService transactionService,
         IImportBatchService importBatchService,
         ISynonymService synonymService,
+        IPayeeService payeeService,
+        IUserSettingsService userSettingsService,
         IApplicationBroker applicationBroker,
         ILogger<MasterDataOrchestrator> logger)
     {
@@ -79,6 +86,8 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         _transactionService = transactionService ?? throw new ArgumentNullException(nameof(transactionService));
         _importBatchService = importBatchService ?? throw new ArgumentNullException(nameof(importBatchService));
         _synonymService = synonymService ?? throw new ArgumentNullException(nameof(synonymService));
+        _payeeService = payeeService ?? throw new ArgumentNullException(nameof(payeeService));
+        _userSettingsService = userSettingsService ?? throw new ArgumentNullException(nameof(userSettingsService));
         _broker = applicationBroker ?? throw new ArgumentNullException(nameof(applicationBroker));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -349,6 +358,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
 
     public async Task DeleteTagSafeAsync(int tagId, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         try
         {
             // Prevent deletion of the ultimate system safeguard
@@ -379,6 +389,11 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
             });
             _logger.LogInformation("Successfully safely deleted tag ID {TagId} and reassigned transactions.", tagId);
             _broker.Send(new EntityDeletedMessage("Tag", $"ID: {tagId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            // Let cancellations bubble up without sending an error message to the UI
+            throw;
         }
         catch (Exception ex)
         {
@@ -790,6 +805,163 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         }
     }
 
+    #endregion
+
+    // =========================================================================
+    // User Preference MANAGEMENT
+    // =========================================================================
+    #region User Preference Management
+
+    public async Task<string?> GetUserSettingsAsync(string key, CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await _userSettingsService.GetSettingAsync(key);
+            return result;
+        }
+        catch (Exception)
+        {
+            _broker.Send(new CrudErrorMessage("UserSettings", "Get", $"Could not fetch user settings."));
+            throw;
+        }
+    }
+
+    public async Task SetUserSettingAsync(string key, string value, CancellationToken ct = default)
+    {
+        try
+        {
+            await _userSettingsService.SetSettingAsync(key, value);
+            _broker.Send(new EntityUpdatedMessage("UserSetting", key));
+        }
+        catch (Exception)
+        {
+            _broker.Send(new CrudErrorMessage("UserSettings", "Update", $"Could not update user setting."));
+            throw;
+        }
+    }
+
+    public async Task<List<UserSetting>> GetAllSettingsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await _userSettingsService.GetAllSettingsAsync();
+        }
+        catch (Exception)
+        {
+            _broker.Send(new CrudErrorMessage("UserSettings", "Get", $"Could not fetch user settings."));
+            throw;
+        }
+    }
+    #endregion
+
+    // =========================================================================
+    // PAYEE MANAGEMENT
+    // =========================================================================
+    #region Payee Management
+
+    public async Task<IEnumerable<Payee>> GetAllPayeesAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await _payeeService.GetAllAsync();
+            return result;
+        }
+        catch (Exception)
+        {
+            _broker.Send(new CrudErrorMessage("Payee", "Get", $"Could not fetch payees."));
+            throw;
+        }
+    }
+
+    public async Task<Payee> CreatePayeeAsync(Payee payee, CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await _payeeService.CreateAsync(payee);
+            _broker.Send(new EntitySavedMessage("Payee", payee.Name));
+            return result;
+        }
+        catch (Exception)
+        {
+            _broker.Send(new CrudErrorMessage("Payee", "Create", $"Could not create payee."));
+            throw;
+        }
+    }
+
+    public async Task UpdatePayeeAsync(Payee payee, CancellationToken ct = default)
+    {
+        try
+        {
+            await _payeeService.UpdateAsync(payee);
+            _broker.Send(new EntityUpdatedMessage("Payee", payee.Name));
+        }
+        catch (Exception)
+        {
+            _broker.Send(new CrudErrorMessage("Payee", "Update", $"Could not update payee."));
+            throw;
+        }
+    }
+
+    public async Task DeletePayeeAsync(long payeeId, CancellationToken ct = default)
+    {
+        try
+        {
+            await _payeeService.DeleteAsync(payeeId);
+
+            _broker.Send(new EntityDeletedMessage("Payee", $"ID: {payeeId}"));
+        }
+        catch (Exception)
+        {
+            _broker.Send(new CrudErrorMessage("Payee", "Delete", $"Could not delete payee."));
+            throw;
+        }
+    }
+
+    public async Task AddPayeeMappingAsync(string cleanedDescription, long payeeId, CancellationToken ct = default)
+    {
+        try
+        {
+            await _payeeService.AddMappingAsync(cleanedDescription, payeeId);
+
+            _broker.Send(new EntitySavedMessage("PayeeMapping", cleanedDescription));
+        }
+        catch (Exception)
+        {
+            _broker.Send(new CrudErrorMessage("PayeeMapping", "Create", $"Could not add mapping for payee."));
+            throw;
+        }
+    }
+
+    public async Task MergePayeesAsync(long targetPayeeId, List<long>? sourcePayeeIds, CancellationToken ct = default)
+    {
+        // 1. Fail fast if the user cancelled
+        ct.ThrowIfCancellationRequested();
+
+        // 2. Guard clause: validate input before calling the mocked service
+        ArgumentNullException.ThrowIfNull(sourcePayeeIds);
+
+        if (sourcePayeeIds.Contains(targetPayeeId))
+        {
+            throw new InvalidOperationException("Target payee cannot be present in the source payees list.");
+        }
+
+        try
+        {
+            await _payeeService.MergeEntitiesAsync(targetPayeeId, sourcePayeeIds);
+
+            _broker.Send(new EntityUpdatedMessage("Payee", $"Merged into Target_ID: {targetPayeeId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            // Let cancellations bubble up without sending an error message to the UI
+            throw;
+        }
+        catch (Exception)
+        {
+            _broker.Send(new CrudErrorMessage("Payee", "Merge", $"Could not merge payees."));
+            throw;
+        }
+    }
     #endregion
 
 }

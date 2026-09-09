@@ -14,7 +14,7 @@ using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Entities;
 
-public class TagService : ITagService
+public class TagService : ITagService, IDisposable
 {
     private readonly IDatabaseService _databaseService;
     private readonly IDescriptionParser _descriptionParser;
@@ -42,7 +42,7 @@ public class TagService : ITagService
         _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
         _descriptionParser = descriptionParser ?? throw new ArgumentNullException(nameof(descriptionParser));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _broker = broker;
+        _broker = broker ?? throw new ArgumentNullException(nameof(broker));
 
         // -------------------------------------------------------------------------
         // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
@@ -521,5 +521,11 @@ public class TagService : ITagService
         _ruleCache.TryRemove(RULE_CACHE_KEY, out _);
 
         _logger.LogInformation("Profile swap detected. TagService cache successfully annihilated to prevent data bleed.");
+    }
+
+    public void Dispose()
+    {
+        _broker.UnregisterAll(this);
+        GC.SuppressFinalize(this);
     }
 }

@@ -17,13 +17,13 @@ public class StrictAccountParser : IStrictAccountParser
     {
         // 1. Guard against empty/null data from any file type
         if (string.IsNullOrWhiteSpace(rawText))
-            return AccountParseResult.Failure(rawText ?? "", "Value is blank or whitespace.");
+            return AccountParseResult.Failure(rawText ?? "");
 
         string cleaned = rawText.Replace("\u00A0", " ").Trim();
 
         // 2. Universal File Guard: Catch spreadsheet formula errors (works for Excel and CSVs)
         if (cleaned.StartsWith("#") && (cleaned.Contains("!") || cleaned.Contains("N/A") || cleaned.Contains("NAME?")))
-            return AccountParseResult.Failure(cleaned, $"Spreadsheet formula error detected: {cleaned}");
+            return AccountParseResult.Failure(cleaned);
 
         // 3. String Fast-Path: Instantly parse clean numbers without Regex overhead
         const NumberStyles fastStyles = NumberStyles.AllowDecimalPoint | NumberStyles.AllowThousands | NumberStyles.AllowLeadingSign;
@@ -40,7 +40,7 @@ public class StrictAccountParser : IStrictAccountParser
     public static AccountParseResult ParseStrictString(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
-            return AccountParseResult.Failure("", "Value is blank or whitespace.");
+            return AccountParseResult.Failure("");
 
         string normalized = text.Trim().ToUpperInvariant();
 
@@ -51,7 +51,7 @@ public class StrictAccountParser : IStrictAccountParser
         bool isCredit = CreditRegex.IsMatch(normalized);
 
         if (isDebit && isCredit)
-            return AccountParseResult.Failure(text, "Ambiguous: Contains both Debit (DR) and Credit (CR) markers.");
+            return AccountParseResult.Failure(text);
 
         // ---------------------------------------------------------------------
         // LAYER 2: Whitelist Token Removal
@@ -65,34 +65,34 @@ public class StrictAccountParser : IStrictAccountParser
 
         candidate = candidate.Trim();
         if (string.IsNullOrWhiteSpace(candidate))
-            return AccountParseResult.Failure(text, "Contains only currency symbols or accounting markers with no numeric value.");
+            return AccountParseResult.Failure(text);
 
         // ---------------------------------------------------------------------
         // LAYER 3: Zero-Tolerance Character Guard
         // ---------------------------------------------------------------------
         if (IllegalCharacterRegex.IsMatch(candidate))
-            return AccountParseResult.Failure(text, "Contains illegal characters (unrecognized letters, symbols, or code).");
+            return AccountParseResult.Failure(text);
 
         // ---------------------------------------------------------------------
         // LAYER 4: Structural Grammar Guard
         // ---------------------------------------------------------------------
         int hyphenCount = candidate.Count(c => c == '-');
         if (hyphenCount > 1)
-            return AccountParseResult.Failure(text, "Invalid structure: Multiple hyphens detected (possible date or range).");
+            return AccountParseResult.Failure(text);
 
         if (hyphenCount == 1 && !candidate.StartsWith("-") && !candidate.EndsWith("-"))
-            return AccountParseResult.Failure(text, "Invalid structure: Hyphen appears in the middle of the number.");
+            return AccountParseResult.Failure(text);
 
         if (candidate.Count(c => c == '.') > 1)
-            return AccountParseResult.Failure(text, "Invalid structure: Multiple decimal points detected (possible IP or version number).");
+            return AccountParseResult.Failure(text);
 
         int openParen = candidate.Count(c => c == '(');
         int closeParen = candidate.Count(c => c == ')');
         if (openParen != closeParen || openParen > 1)
-            return AccountParseResult.Failure(text, "Invalid structure: Unbalanced or nested parentheses.");
+            return AccountParseResult.Failure(text);
 
         if (openParen == 1 && (!candidate.StartsWith("(") || !candidate.EndsWith(")")))
-            return AccountParseResult.Failure(text, "Invalid structure: Parentheses must wrap the entire outside of the number.");
+            return AccountParseResult.Failure(text);
 
         // ---------------------------------------------------------------------
         // LAYER 5: Clean Exact Extraction
@@ -101,14 +101,14 @@ public class StrictAccountParser : IStrictAccountParser
         string pureNumber = candidate.Trim('(', ')', '-', ' ');
 
         if (string.IsNullOrWhiteSpace(pureNumber))
-            return AccountParseResult.Failure(text, "No digits remained after formatting cleanup.");
+            return AccountParseResult.Failure(text);
 
         const NumberStyles styles = NumberStyles.AllowDecimalPoint | NumberStyles.AllowThousands;
 
         if (!decimal.TryParse(pureNumber, styles, CultureInfo.InvariantCulture, out var absoluteValue) &&
             !decimal.TryParse(pureNumber, styles, CultureInfo.CurrentCulture, out absoluteValue))
         {
-            return AccountParseResult.Failure(text, "Number format is unrecognized or out of numeric bounds.");
+            return AccountParseResult.Failure(text);
         }
 
         // Apply Debit/Credit sign overrides if detected

@@ -30,7 +30,7 @@ public interface ITransactionService
 
     /// <summary>
     /// Executes a high-speed Dapper bulk update to apply UI corrections.
-    /// (Tags, Dates, Amounts, Entities). Clears the NeedsReview flag automatically.
+    /// (Tags, Dates, Amounts, Entities). Clears the Review flag automatically.
     /// </summary>
     Task UpdateTransactionsBulkAsync(
         IEnumerable<TransactionCorrectionDTO> corrections,
@@ -62,6 +62,15 @@ public interface ITransactionService
     /// </summary>
     Task<int> GetFilteredTransactionCountAsync(
         TransactionFilterArgs args,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null);
+
+    /// <summary>
+    /// Executes a retroactive sweep to re-tag all transactions from a specific source to a new target tag. This is useful for bulk corrections when a payee or source mapping changes.
+    /// </summary>
+    Task ExecuteRetroactiveSweepAsync(
+        string source,
+        int targetTagId,
         IDbConnection? conn = null,
         IDbTransaction? tx = null);
 }

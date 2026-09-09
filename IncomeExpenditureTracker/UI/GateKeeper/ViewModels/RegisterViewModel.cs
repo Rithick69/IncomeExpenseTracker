@@ -39,6 +39,9 @@ public partial class RegisterViewModel : ViewModelBase
     private string _errorMessage = string.Empty;
 
     [ObservableProperty]
+    private string _successMessage = string.Empty;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RegisterButtonText))]
     private bool _isLoading;
 
@@ -59,21 +62,39 @@ public partial class RegisterViewModel : ViewModelBase
         _broker = broker;
     }
 
+    public void SetError(string message)
+    {
+        SuccessMessage = string.Empty;
+        ErrorMessage = message;
+    }
+
+    public void SetSuccess(string message)
+    {
+        ErrorMessage = string.Empty;
+        SuccessMessage = message;
+    }
+
     // @desc    Executes profile creation securely wiping the UI control afterward
     [RelayCommand]
     private async Task RegisterAsync(object passwordBoxControl)
     {
+        if (IsLoading)
+        {
+            // Prevent multiple concurrent registrations
+            return;
+        }
         ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
 
         if (passwordBoxControl is not TextBox passwordBox || string.IsNullOrWhiteSpace(passwordBox.Text))
         {
-            ErrorMessage = "Password cannot be empty.";
+            SetError("Password cannot be empty.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(ProfileName) || string.IsNullOrWhiteSpace(Nickname))
         {
-            ErrorMessage = "Profile Name and Nickname are required.";
+            SetError("Profile Name and Nickname are required.");
             return;
         }
 
@@ -81,14 +102,14 @@ public partial class RegisterViewModel : ViewModelBase
         var sanitizedName = ProfileName?.Trim();
         if (string.IsNullOrWhiteSpace(sanitizedName) || !Regex.IsMatch(sanitizedName, @"^[a-zA-Z0-9\-_ ]+$"))
         {
-            ErrorMessage = "Profile name can only contain letters, numbers, hyphens, and underscores.";
+            SetError("Profile name can only contain letters, numbers, hyphens, and underscores.");
             return;
         }
 
         var sanitizedNickname = Nickname?.Trim();
         if (string.IsNullOrWhiteSpace(sanitizedNickname) || !Regex.IsMatch(sanitizedNickname, @"^[a-zA-Z0-9\-_ ]+$"))
         {
-            ErrorMessage = "Nickname can only contain letters, numbers, hyphens, and underscores.";
+            SetError("Nickname can only contain letters, numbers, hyphens, and underscores.");
             return;
         }
 
@@ -166,6 +187,8 @@ public partial class RegisterViewModel : ViewModelBase
                     ShowCopyButton: true
                 ));
 
+                SetSuccess("Vault generated successfully! Loading Workspace...");
+
                 // Execution safely pauses right here on the UI thread
                 await modalTcs.Task;
 
@@ -179,11 +202,11 @@ public partial class RegisterViewModel : ViewModelBase
             {
                 if (ex.Message.Contains("UNIQUE constraint failed"))
                 {
-                    ErrorMessage = "Profile name is already taken. Please choose a different name.";
+                    SetError("Profile name is already taken. Please choose a different name.");
                 }
                 else
                 {
-                    ErrorMessage = $"Failed to create profile. {ex.Message}";
+                    SetError($"Failed to create profile. {ex.Message}");
                 }
                 Broker.Send(new ToastNotificationMessage("An unexpected error occurred during registration.", NotificationType.Error));
 
@@ -202,6 +225,7 @@ public partial class RegisterViewModel : ViewModelBase
         Nickname = string.Empty;
         SelectedCurrency = "₹"; // Reset to default
         ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
     }
 
     private string GenerateMasterKey()

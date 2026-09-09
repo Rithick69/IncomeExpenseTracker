@@ -30,12 +30,14 @@ namespace IncomeExpenditureTracker.Tests.Logic
         private readonly Mock<IDescriptionParser> _descParserMock = new();
         private readonly Mock<ITagEngine> _tagEngineMock = new();
 
+        private readonly Mock<IPayeeService> _payeeMock = new();
+
         private ExcelStatementImport CreateService()
         {
             return new ExcelStatementImport(
                 _dbMock.Object, _entityMock.Object, _accountMock.Object,
                 _extractorMock.Object, _descParserMock.Object, _tagEngineMock.Object,
-                _batchMock.Object, _transactionMock.Object, _loggerMock.Object);
+                _batchMock.Object, _transactionMock.Object, _payeeMock.Object, _loggerMock.Object);
         }
 
         /// <summary>

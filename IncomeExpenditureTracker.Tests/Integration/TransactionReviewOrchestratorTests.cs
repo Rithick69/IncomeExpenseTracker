@@ -20,6 +20,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
         private readonly Mock<ITransactionService> _transactionMock = new();
         private readonly Mock<IImportBatchService> _batchMock = new();
         private readonly Mock<ITagService> _tagMock = new();
+        private readonly Mock<IPayeeService> _payeeMock = new();
 
         private readonly Mock<ILogger<TransactionReviewOrchestrator>> _loggerMock = new();
         private readonly Mock<IApplicationBroker> _brokerMock = new();
@@ -31,16 +32,20 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 _transactionMock.Object,
                 _batchMock.Object,
                 _tagMock.Object,
+                _payeeMock.Object,
                 _loggerMock.Object,
                 _brokerMock.Object);
         }
 
         private void SetupDatabaseTransactionMock()
         {
+            var dbConnMock = new Mock<IDbConnection>();
+            var dbTransMock = new Mock<IDbTransaction>();
+
             _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()))
                    .Returns<Func<IDbConnection, IDbTransaction, Task>>(async action =>
                    {
-                       await action.Invoke(null!, null!);
+                       await action.Invoke(dbConnMock.Object, dbTransMock.Object);
                    });
         }
 
@@ -69,6 +74,51 @@ namespace IncomeExpenditureTracker.Tests.Integration
             Assert.NotNull(result);
             Assert.Single(result.Items);
             Assert.Equal(expectedCount, result.TotalCount);
+        }
+
+        [Fact]
+        public async Task GetTransactionsAsync_ServiceThrowsException_SendsErrorMessageToBrokerAndRethrows()
+        {
+            // Arrange
+            var orchestrator = CreateOrchestrator();
+            var args = new TransactionFilterArgs();
+
+            _transactionMock.Setup(x => x.GetFilteredTransactionsAsync(args, null, null))
+                            .ThrowsAsync(new InvalidOperationException("DB Timeout"));
+
+            // Act & Assert
+            await Assert.ThrowsAsync<InvalidOperationException>(() => orchestrator.GetTransactionsAsync(args));
+        }
+
+        // =========================================================================
+        // APPLY CORRECTIONS TESTS
+        // =========================================================================
+
+        [Fact]
+        public async Task ApplyCorrectionsAsync_WithSourceAndTargetIds_ExecutesRetroactiveSweeps()
+        {
+            // Arrange
+            var orchestrator = CreateOrchestrator();
+            SetupDatabaseTransactionMock();
+
+            var corrections = new List<TransactionCorrectionDTO>
+            {
+                new TransactionCorrectionDTO
+                {
+                    TransactionId = 1,
+                    RawDescription = "UBER EATS",
+                    Source = "UBER", // Must have a source to trigger sweeps
+                    PayeeId = 100,
+                    TargetTagId = 5
+                }
+            };
+
+            // Act
+            await orchestrator.ApplyCorrectionsAsync(corrections);
+
+            // Assert
+            _payeeMock.Verify(x => x.ExecuteRetroactiveSweepAsync("UBER", 100, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _transactionMock.Verify(x => x.ExecuteRetroactiveSweepAsync("UBER", 5, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
         }
 
         /// <summary>
@@ -120,25 +170,6 @@ namespace IncomeExpenditureTracker.Tests.Integration
             Assert.True(backgroundTaskCompleted, "Background learning task did not execute within the timeout.");
         }
 
-        /// <summary>
-        /// Objective: Validate 100% All-or-Nothing Revert. Reverting an import batch must delete
-        /// all child transactions before deleting the master batch record under a unified token.
-        /// </summary>
-        [Fact]
-        public async Task RevertImportBatchAsync_DeletesTransactionsAndBatchRecord()
-        {
-            // Arrange
-            var orchestrator = CreateOrchestrator();
-            SetupDatabaseTransactionMock();
-            int batchId = 123;
-
-            // Act
-            await orchestrator.RevertImportBatchAsync(batchId);
-
-            // Assert
-            _transactionMock.Verify(x => x.DeleteByBatchIdAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _batchMock.Verify(x => x.DeleteBatchAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-        }
 
         /// <summary>
         /// Objective: Edge Case. If the corrections list is null or empty, the method must exit
@@ -232,6 +263,30 @@ namespace IncomeExpenditureTracker.Tests.Integration
             }
 
             Assert.True(backgroundTaskCompleted, "Background learning task did not execute within the timeout.");
+        }
+
+        // =========================================================================
+        // REVERT IMPORT BATCH TESTS
+        // =========================================================================
+
+        /// <summary>
+        /// Objective: Validate 100% All-or-Nothing Revert. Reverting an import batch must delete
+        /// all child transactions before deleting the master batch record under a unified token.
+        /// </summary>
+        [Fact]
+        public async Task RevertImportBatchAsync_DeletesTransactionsAndBatchRecord()
+        {
+            // Arrange
+            var orchestrator = CreateOrchestrator();
+            SetupDatabaseTransactionMock();
+            int batchId = 123;
+
+            // Act
+            await orchestrator.RevertImportBatchAsync(batchId);
+
+            // Assert
+            _transactionMock.Verify(x => x.DeleteByBatchIdAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _batchMock.Verify(x => x.DeleteBatchAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
         }
 
         /// <summary>

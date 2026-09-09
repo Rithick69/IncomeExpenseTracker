@@ -66,7 +66,7 @@
                 <TextBlock Text="{Binding SelectedProfile.Nickname, StringFormat='Welcome back, {0}'}"
                            Foreground="{DynamicResource TextPrimary}"
                            HorizontalAlignment="Center"
-                           FontWeight="SemiBold"/>
+                           FontWeight="SemiBold" />
 
                 <!-- Autofilled ProfileName (Read-Only) -->
                 <TextBox Text="{Binding Username}"
@@ -79,13 +79,15 @@
                     <TextBox x:Name="VaultPasswordBox"
                              Watermark="Enter Profile Password"
                              PasswordChar="•"
-                             Classes="revealPasswordButton" />
+                             Classes="revealPasswordButton"
+                             IsEnabled="{Binding !IsLoading}" />
 
                     <Button Content="{Binding LoginButtonText}"
                             Command="{Binding LoginCommand}"
                             CommandParameter="{Binding #VaultPasswordBox}"
                             Classes="Primary"
-                            HorizontalAlignment="Stretch" />
+                            HorizontalAlignment="Stretch"
+                            IsEnabled="{Binding !IsLoading}" />
 
                     <Grid ColumnDefinitions="*,*">
                         <!-- Switch to Delete mode -->
@@ -94,14 +96,16 @@
                                 Command="{Binding InitiateDeleteCommand}"
                                 Background="Transparent"
                                 Foreground="Red"
-                                HorizontalAlignment="Left" />
+                                HorizontalAlignment="Left"
+                                IsEnabled="{Binding !IsLoading}" />
 
                         <!-- Back Button to return to the grid -->
                         <Button Grid.Column="1"
                                 Content="{DynamicResource Locale_Global_Button_Cancel}"
                                 Command="{Binding CancelSelectionCommand}"
                                 Classes="Secondary"
-                                HorizontalAlignment="Right" />
+                                HorizontalAlignment="Right"
+                                IsEnabled="{Binding !IsLoading}" />
                     </Grid>
                 </StackPanel>
 
@@ -129,6 +133,16 @@
                             HorizontalAlignment="Stretch" />
                 </StackPanel>
             </StackPanel>
+
+            <!-- @desc Success Message Display (Shared across all phases) -->
+            <TextBlock Grid.Row="2"
+                       Text="{Binding SuccessMessage}"
+                       Foreground="#10B981"
+                       Margin="0,20,0,0"
+                       TextWrapping="Wrap"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       IsVisible="{Binding SuccessMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
             <!-- @desc Error Message Display (Shared across all phases) -->
             <TextBlock Grid.Row="2"
@@ -160,7 +174,8 @@
                     FontSize="12"
                     Cursor="Hand"
                     Margin="0,40,0,0"
-                    HorizontalAlignment="Center">
+                    HorizontalAlignment="Center"
+                    IsEnabled="{Binding !IsLoading}">
                 <Button.Styles>
                     <Style Selector="Button:pointerover /template/ ContentPresenter">
                         <Setter Property="Background" Value="Transparent"/>

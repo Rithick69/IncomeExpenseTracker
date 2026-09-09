@@ -37,11 +37,13 @@
 
             <!-- System Profile Name -->
             <TextBox Watermark="System Profile Name (e.g. JohnDoe_Main)"
-                     Text="{Binding ProfileName}" />
+                     Text="{Binding ProfileName}"
+                     IsEnabled="{Binding !IsLoading}" />
 
             <!-- Display Nickname -->
             <TextBox Watermark="Display Nickname (e.g. John)"
-                     Text="{Binding Nickname}" />
+                     Text="{Binding Nickname}"
+                     IsEnabled="{Binding !IsLoading}" />
 
             <!-- Base Currency Selection -->
             <StackPanel Spacing="5" Margin="0,5">
@@ -52,7 +54,8 @@
 
                 <ComboBox ItemsSource="{Binding AvailableCurrencies}"
                           SelectedItem="{Binding SelectedCurrency}"
-                          HorizontalAlignment="Stretch" />
+                          HorizontalAlignment="Stretch"
+                          IsEnabled="{Binding !IsLoading}" />
 
                 <TextBlock Text="{DynamicResource Locale_Gatekeeper_Text_CurrencyWarning}"
                            Foreground="{DynamicResource TextSecondary}"
@@ -64,7 +67,8 @@
             <TextBox x:Name="NewPasswordInput"
                      Watermark="Enter Password"
                      PasswordChar="•"
-                     Classes="revealPasswordButton" />
+                     Classes="revealPasswordButton"
+                     IsEnabled="{Binding !IsLoading}" />
 
             <!-- Submit Button -->
             <Button Content="{Binding RegisterButtonText}"
@@ -72,7 +76,16 @@
                     CommandParameter="{Binding #NewPasswordInput}"
                     Classes="Primary"
                     HorizontalAlignment="Stretch"
-                    Margin="0,10,0,0"/>
+                    Margin="0,10,0,0"
+                    IsEnabled="{Binding !IsLoading}" />
+
+            <!-- Success Message Display -->
+            <TextBlock Text="{Binding SuccessMessage}"
+                       Foreground="#10B981"
+                       TextWrapping="Wrap"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       IsVisible="{Binding SuccessMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
             <!-- Error Message Display -->
             <TextBlock Text="{Binding ErrorMessage}"
@@ -90,7 +103,8 @@
                     Foreground="{DynamicResource AccentIndigo}"
                     HorizontalAlignment="Left"
                     Cursor="Hand"
-                    Margin="0,10,0,0" />
+                    Margin="0,10,0,0"
+                    IsEnabled="{Binding !IsLoading}" />
 
         </StackPanel>
     </Border>

@@ -19,6 +19,7 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
 {
     private readonly IDatabaseService _database;
     private readonly ITransactionService _transactionService;
+    private readonly IPayeeService _payeeService;
     // Assuming an interface exists for managing the ImportBatches table
     private readonly IImportBatchService _importBatchService;
     private readonly ITagService _tagService;
@@ -31,6 +32,7 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         ITransactionService transactionService,
         IImportBatchService importBatchService,
         ITagService tagService,
+        IPayeeService payeeService,
         ILogger<TransactionReviewOrchestrator> logger,
         IApplicationBroker broker)
     {
@@ -38,6 +40,7 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         _transactionService = transactionService ?? throw new ArgumentNullException(nameof(transactionService));
         _importBatchService = importBatchService ?? throw new ArgumentNullException(nameof(importBatchService));
         _tagService = tagService ?? throw new ArgumentNullException(nameof(tagService));
+        _payeeService = payeeService ?? throw new ArgumentNullException(nameof(payeeService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _broker = broker ?? throw new ArgumentNullException(nameof(broker));
     }
@@ -77,10 +80,27 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         if (corrections == null || !corrections.Any()) return;
         try
         {
-            // 1. Execute the Batch Update Atomically
+            // 1. Execute the Batch Update & Retroactive Sweep Atomically
             await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx) =>
             {
+                // A. Update the specific rows the user manually edited
                 await _transactionService.UpdateTransactionsBulkAsync(corrections, conn, tx);
+
+                // B. Delegate the Retroactive Sweeps
+                foreach (var correction in corrections)
+                {
+                    if (string.IsNullOrWhiteSpace(correction.Source)) continue;
+
+                    if (correction.PayeeId.HasValue)
+                    {
+                        await _payeeService.ExecuteRetroactiveSweepAsync(correction.Source, correction.PayeeId.Value, conn, tx);
+                    }
+
+                    if (correction.TargetTagId.HasValue)
+                    {
+                        await _transactionService.ExecuteRetroactiveSweepAsync(correction.Source, correction.TargetTagId.Value, conn, tx);
+                    }
+                }
             });
 
             _logger.LogInformation("Successfully applied {Count} bulk transaction corrections.", corrections.Count);

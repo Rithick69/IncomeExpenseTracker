@@ -44,7 +44,7 @@ namespace IncomeExpenditureTracker.Services.Entities;
 // 1  | ...  | AMAZON      | 500   | 1
 // 2  | ...  | SWIGGY      | 300   | 1
 // ------------------------------------------------------------
-public class ImportBatchService : IImportBatchService
+public class ImportBatchService : IImportBatchService, IDisposable
 {
     private readonly IDatabaseService _database;
     private readonly ILogger<ImportBatchService> _logger;
@@ -56,7 +56,7 @@ public class ImportBatchService : IImportBatchService
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _broker = broker;
+        _broker = broker ?? throw new ArgumentNullException(nameof(broker));
 
         // -------------------------------------------------------------------------
         // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
@@ -247,5 +247,11 @@ public class ImportBatchService : IImportBatchService
 
         // Execute as a standalone, retry-protected UI operation[cite: 1]
         return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+    }
+
+    public void Dispose()
+    {
+        _broker.UnregisterAll(this);
+        GC.SuppressFinalize(this);
     }
 }

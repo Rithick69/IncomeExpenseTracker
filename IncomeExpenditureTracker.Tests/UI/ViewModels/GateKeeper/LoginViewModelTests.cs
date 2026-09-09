@@ -112,6 +112,62 @@ public class LoginViewModelTests
     // =========================================================================
 
     [Fact]
+    public async Task LoginAsync_5MinuteLockout_CatchesExceptionAndDisplaysMessage()
+    {
+        // Arrange: Simulate the ProfileLoginService triggering the 5-minute rate limit constraint
+        _mockLoginService.Setup(s => s.AuthenticateAndLoadProfileAsync(It.IsAny<string>(), It.IsAny<SecureString>()))
+                         .ThrowsAsync(new InvalidOperationException("Profile is locked for 5 minutes due to multiple failed attempts."));
+
+        var viewModel = CreateViewModel();
+        viewModel.SelectProfileCommand.Execute(new ProfileDto { ProfileName = "admin", Nickname = "Admin" });
+        var passwordBox = new TextBox { Text = "try6" };
+
+        // Act
+        await viewModel.LoginCommand.ExecuteAsync(passwordBox);
+
+        // Assert: The ViewModel must catch the infrastructure exception and map it to the UI ErrorMessage
+        Assert.Contains("locked for 5 minutes", viewModel.ErrorMessage);
+
+        // Assert: Ensure the loading state wound down and no navigation was permitted
+        Assert.False(viewModel.IsLoading);
+        _mockBroker.Verify(b => b.Send(It.Is<NavigationMessage>(m => m.Destination == "Dashboard")), Times.Never);
+
+        // Assert: Zero-Leak enforcement - password must still be wiped even on a lockout exception
+        Assert.Equal(string.Empty, passwordBox.Text);
+    }
+
+    [Fact]
+    public async Task ProfileSwapping_SequentialSelection_WipesStateAndNavigatesCleanly()
+    {
+        // Arrange: Setup successful auth for Profile B
+        _mockLoginService.Setup(s => s.AuthenticateAndLoadProfileAsync("ProfileB", It.IsAny<SecureString>()))
+                         .ReturnsAsync(true);
+
+        var viewModel = CreateViewModel();
+        var profileA = new ProfileDto { ProfileName = "ProfileA", Nickname = "Profile A" };
+        var profileB = new ProfileDto { ProfileName = "ProfileB", Nickname = "Profile B" };
+
+        // Act 1: User selects Profile A, but changes their mind and cancels
+        viewModel.SelectProfileCommand.Execute(profileA);
+        Assert.Equal("ProfileA", viewModel.Username);
+        viewModel.CancelSelectionCommand.Execute(null);
+
+        // Act 2: User swaps to Profile B and attempts login
+        viewModel.SelectProfileCommand.Execute(profileB);
+        var passwordBox = new TextBox { Text = "secret" };
+        await viewModel.LoginCommand.ExecuteAsync(passwordBox);
+
+        // Assert: The Username state must accurately reflect Profile B with no stale data from Profile A
+        Assert.Equal("ProfileB", viewModel.Username);
+
+        // Assert: Zero-Leak memory wiping is executed for the transient password pointer
+        Assert.Equal(string.Empty, passwordBox.Text);
+
+        // Assert: Validates the UI router dispatches to the Dashboard after the Airlock successfully swaps the database
+        _mockBroker.Verify(b => b.Send(It.Is<NavigationMessage>(m => m.Destination == "Dashboard")), Times.Once);
+    }
+
+    [Fact]
     public async Task LoginAsync_MissingInputs_UpdatesErrorAndAborts()
     {
         var viewModel = CreateViewModel();
@@ -132,7 +188,7 @@ public class LoginViewModelTests
                          .ReturnsAsync(true);
 
         var viewModel = CreateViewModel();
-        viewModel.SelectProfileCommand.Execute(new ProfileDto { ProfileName = "admin" });
+        viewModel.SelectProfileCommand.Execute(new ProfileDto { ProfileName = "admin", Nickname = "Admin" });
         var passwordBox = new TextBox { Text = "supersecret123" };
 
         await viewModel.LoginCommand.ExecuteAsync(passwordBox);
@@ -151,7 +207,7 @@ public class LoginViewModelTests
                          .ReturnsAsync(false); // Simulate failed auth
 
         var viewModel = CreateViewModel();
-        viewModel.SelectProfileCommand.Execute(new ProfileDto { ProfileName = "admin" });
+        viewModel.SelectProfileCommand.Execute(new ProfileDto { ProfileName = "admin", Nickname = "Admin" });
         var passwordBox = new TextBox { Text = "wrongpass" };
 
         await viewModel.LoginCommand.ExecuteAsync(passwordBox);
@@ -169,7 +225,7 @@ public class LoginViewModelTests
                          .Returns(tcs.Task); // Freezes the service mid-execution
 
         var viewModel = CreateViewModel();
-        viewModel.SelectProfileCommand.Execute(new ProfileDto { ProfileName = "admin" });
+        viewModel.SelectProfileCommand.Execute(new ProfileDto { ProfileName = "admin", Nickname = "Admin" });
         var passwordBox = new TextBox { Text = "secret" };
 
         // Act: Start the task without awaiting it yet

@@ -22,7 +22,7 @@ namespace IncomeExpenditureTracker.Services.Entities;
 // • Income
 // • Expenses
 //-------------------------------------------------------------
-public class CategoryService : ICategoryService
+public class CategoryService : ICategoryService, IDisposable
 {
     private readonly IDatabaseService _database;
     private readonly ILogger<CategoryService> _logger;
@@ -37,7 +37,7 @@ public class CategoryService : ICategoryService
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _broker = broker;
+        _broker = broker ?? throw new ArgumentNullException(nameof(broker));
 
         // -------------------------------------------------------------------------
         // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
@@ -282,5 +282,11 @@ public class CategoryService : ICategoryService
         _categoryIdCache.Clear();
         _categoryListCache.Clear();
         _logger.LogInformation("Evicted CategoryService RAM cache due to data mutation.");
+    }
+
+    public void Dispose()
+    {
+        _broker.UnregisterAll(this);
+        GC.SuppressFinalize(this);
     }
 }
