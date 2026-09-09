@@ -115,9 +115,8 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         public bool IsValid { get; set; }
 
         // UI Metadata
-        public bool NeedsReview { get; set; }
+        public ReviewFlags ReviewStatus { get; set; }
         public string RawAmountText { get; set; } = string.Empty;
-        public string? ParseErrorMessage { get; set; }
     }
 
     // Common keywords that indicate a balance or total row, which should be ignored during transaction extraction.
@@ -235,19 +234,19 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
     //-------------------------------------------------------------
     public List<Transaction> ExtractTransactions(IXLWorksheet worksheet, int headerRow, Dictionary<string, DetectedField> previewFields)
     {
+        if (worksheet == null)
+        {
+            _logger.LogError("[ExtractTransactions] Full extraction rejected: worksheet was null.");
+            throw new ArgumentNullException(nameof(worksheet));
+        }
+
+        if (previewFields == null)
+        {
+            _logger.LogError("[ExtractTransactions] Full extraction rejected: preview field map was null for worksheet '{WorksheetName}'.", worksheet.Name);
+            throw new ArgumentNullException(nameof(previewFields));
+        }
         try
         {
-            if (worksheet == null)
-            {
-                _logger.LogError("[ExtractTransactions] Full extraction rejected: worksheet was null.");
-                throw new ArgumentNullException(nameof(worksheet));
-            }
-
-            if (previewFields == null)
-            {
-                _logger.LogError("[ExtractTransactions] Full extraction rejected: preview field map was null for worksheet '{WorksheetName}'.", worksheet.Name);
-                throw new ArgumentNullException(nameof(previewFields));
-            }
 
             // Resolve O(1) integers once before the loop
             var coords = TransactionColumnCoordinates.FromDictionary(previewFields);
@@ -299,8 +298,7 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                     Credit = parsedRow.Credit,
                     CreatedDate = DateTime.UtcNow,
                     RawAmountText = parsedRow.RawAmountText,
-                    NeedsReview = parsedRow.NeedsReview,
-                    ParseErrorMessage = parsedRow.ParseErrorMessage
+                    ReviewStatus = parsedRow.ReviewStatus
                 };
 
                 results.Add(transaction);
@@ -318,7 +316,6 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             _logger.LogError(ex, "[ExtractTransactions] Error extracting transactions for worksheet '{WorksheetName}' at header row {HeaderRow}.",
                 worksheet?.Name ?? "Unknown",
                 headerRow);
-            Console.WriteLine($"Error extracting transactions: {ex.Message}");
             return new List<Transaction>();
         }
     }
@@ -390,6 +387,12 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             bool hasValidDate = TryGetDate(dateCell, out var parsedDate);
             result.Date = parsedDate; // Assigns default(DateTime) if false
 
+            // Stack the InvalidDate flag if parsing failed
+            if (!hasValidDate)
+            {
+                result.ReviewStatus |= ReviewFlags.InvalidDate;
+            }
+
             // -----------------------------
             //  STEP 3: DESCRIPTION
             // -----------------------------
@@ -402,6 +405,11 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             // Route through the new sanitization helper
             var descCheck = SanitizeDescription(rawDescription);
             result.Description = descCheck.CleanedDescription;
+
+            if (!descCheck.IsValid)
+            {
+                result.ReviewStatus |= ReviewFlags.InvalidDescription;
+            }
 
             // -----------------------------
             // STEP 4: PARSE AMOUNTS (Single vs. Dual Column Logic)
@@ -425,20 +433,21 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 decimal amount = parseResult.Value; // Defaults to 0m if parsing failed
 
                 // Flag for review if the parser failed OR if the value is literally 0m
-                if (!parseResult.NeedsReview || amount == 0m)
+                if (!parseResult.IsClean || amount == 0m)
                 {
-                    result.NeedsReview = true;
-                    result.ParseErrorMessage = !parseResult.NeedsReview
-                        ? TruncateForDb(parseResult.ErrorReason ?? string.Empty, 250)
-                        : "Zero-value transaction requires verification.";
+                    result.ReviewStatus |= parseResult.ReviewStatus;
+
+                    // Explicitly flag if the value is 0 (since a successful 0.00 parse wouldn't have flags)
+                    if (amount == 0m)
+                    {
+                        result.ReviewStatus |= ReviewFlags.InvalidAmount;
+                    }
 
                     result.Debit = 0m;
                     result.Credit = 0m;
                 }
                 else
                 {
-                    result.NeedsReview = false;
-                    result.ParseErrorMessage = null;
                     if (amount < 0)
                     {
                         result.Debit = Math.Abs(amount);
@@ -467,8 +476,8 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                     : null;
 
                 // Check if either column failed strict validation (ignoring empty/blank cells)
-                bool debitFailed = debitResult != null && !debitResult.NeedsReview && !string.IsNullOrWhiteSpace(debitResult.RawText);
-                bool creditFailed = creditResult != null && !creditResult.NeedsReview && !string.IsNullOrWhiteSpace(creditResult.RawText);
+                bool debitFailed = debitResult != null && !debitResult.IsClean && !string.IsNullOrWhiteSpace(debitResult.RawText);
+                bool creditFailed = creditResult != null && !creditResult.IsClean && !string.IsNullOrWhiteSpace(creditResult.RawText);
 
                 decimal debitVal = debitResult != null ? Math.Abs(debitResult.Value) : 0m;
                 decimal creditVal = creditResult != null ? Math.Abs(creditResult.Value) : 0m;
@@ -476,55 +485,24 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 // Flag if parsing failed, OR if both columns ended up as 0m, OR if both contain money (contradiction)
                 if (debitFailed || creditFailed || (debitVal == 0m && creditVal == 0m) || (debitVal > 0 && creditVal > 0))
                 {
-                    // 1. Flag for UI review
-                    result.NeedsReview = true;
+                    result.ReviewStatus |= ReviewFlags.InvalidAmount;
                     result.RawAmountText = TruncateForDb($"Dr: [{debitResult?.RawText}] | Cr: [{creditResult?.RawText}]", 100) ?? string.Empty;
 
-                    // 2. Dump to zero during ambiguity
+                    // Dump to zero during ambiguity
                     result.Debit = 0m;
                     result.Credit = 0m;
 
-                    if (debitFailed || creditFailed)
-                        result.ParseErrorMessage = TruncateForDb(debitFailed ? debitResult!.ErrorReason : creditResult!.ErrorReason, 250);
-                    else if (debitVal > 0 && creditVal > 0)
-                        result.ParseErrorMessage = "Ambiguous row: Contains both Debit and Credit values simultaneously.";
-                    else
-                        result.ParseErrorMessage = "Zero-value transaction requires verification.";
+                    if (debitFailed) result.ReviewStatus |= debitResult!.ReviewStatus;
+                    if (creditFailed) result.ReviewStatus |= creditResult!.ReviewStatus;
                 }
                 else
                 {
 
                     // Clean, valid transaction
-                    result.NeedsReview = false;
-                    result.ParseErrorMessage = null;
                     result.Debit = debitVal;
                     result.Credit = creditVal;
 
                 }
-            }
-
-            // -----------------------------
-            // STEP 5: UNIFIED GUARDRAILS (Tier 1 Error strategy)
-            // -----------------------------
-            // If the Date or Description failed validation, we explicitly flag the row regardless of amount success.
-            if (!hasValidDate || !descCheck.IsValid)
-            {
-                result.NeedsReview = true;
-
-                var errorList = new List<string>();
-
-                // Keep any existing amount parsing errors
-                if (!string.IsNullOrWhiteSpace(result.ParseErrorMessage))
-                    errorList.Add(result.ParseErrorMessage);
-
-                // Append structural errors
-                if (!hasValidDate)
-                    errorList.Add("Invalid or missing Date.");
-
-                if (!descCheck.IsValid)
-                    errorList.Add(descCheck.ErrorMessage);
-
-                result.ParseErrorMessage = string.Join(" | ", errorList);
             }
 
             // -----------------------------
@@ -624,7 +602,7 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         // or ambiguous amounts), it IS a valid extraction target.
         // We MUST keep it so the user can see the error flags!
         // =========================================================================
-        if (t.NeedsReview)
+        if (t.ReviewStatus != ReviewFlags.None)
             return true;
 
         // =========================================================================
@@ -641,7 +619,7 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         // =========================================================================
         // We NO LONGER drop zero-value rows here.
         // Garbage text, contradictions, and literal zeroes are mapped to 0m
-        // so they can be safely routed to the UI with NeedsReview = true.
+        // so they can be safely routed to the UI with error flags.
         // =========================================================================
 
         return true;

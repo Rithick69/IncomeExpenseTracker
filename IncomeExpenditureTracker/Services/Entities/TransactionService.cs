@@ -29,7 +29,7 @@ namespace IncomeExpenditureTracker.Services.Entities;
 // • Query transactions
 // • Delete transactions by import batch
 // ------------------------------------------------------------
-public class TransactionService : ITransactionService
+public class TransactionService : ITransactionService, IDisposable
 {
     private readonly IDatabaseService _database;
 
@@ -45,7 +45,7 @@ public class TransactionService : ITransactionService
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _broker = broker;
+        _broker = broker ?? throw new ArgumentNullException(nameof(broker));
 
         // -------------------------------------------------------------------------
         // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
@@ -99,13 +99,15 @@ public class TransactionService : ITransactionService
                 (
                     Date, AccountId, Description, Source,
                     Credit, Debit, TransactionType, ImportBatchId,
-                    TagId, TransactionHash, CreatedDate
+                    TagId, PayeeId, TransactionHash, CreatedDate,
+                    ReviewStatus, RawAmountText
                 )
                 VALUES
                 (
                     @Date, @AccountId, @Description, @Source,
                     @Credit, @Debit, @TransactionType, @ImportBatchId,
-                    @TagId, @TransactionHash, @CreatedDate
+                    @TagId, @PayeeId, @TransactionHash, @CreatedDate,
+                    @ReviewStatus, @RawAmountText
                 );";
 
             if (conn != null && tx != null)
@@ -268,16 +270,15 @@ public class TransactionService : ITransactionService
         try
         {
             // Dapper automatically iterates over the IEnumerable when passed to ExecuteAsync.
-            // We clear NeedsReview and ParseErrorMessage because the user manually intervened.
             const string sql = @"
                 UPDATE Transactions
                 SET TagId = @TargetTagId,
+                    PayeeId = @PayeeId,
                     Date = @Date,
                     Source = @Source,
                     Debit = @Debit,
                     Credit = @Credit,
-                    NeedsReview = 0,
-                    ParseErrorMessage = NULL
+                    ReviewStatus = @ReviewStatus
                 WHERE Id = @TransactionId;";
 
             await ExecuteDbActionAsync(async (connection, transaction) =>
@@ -325,6 +326,41 @@ public class TransactionService : ITransactionService
         }
     }
 
+    public async Task ExecuteRetroactiveSweepAsync(string source, int tagId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+            throw new ArgumentException("Source cannot be empty.", nameof(source));
+
+        const string sql = @"
+        UPDATE Transactions
+        SET TagId = @TagId,
+            ReviewStatus = (ReviewStatus & ~8)
+        WHERE Source = @Source AND TagId IS NULL;";
+
+        try
+        {
+            _logger.LogDebug("Executing retroactive sweep for Source '{Source}' to TagId {TagId}.", source, tagId);
+            if (conn != null && tx != null)
+            {
+                await conn.ExecuteAsync(sql, new { Source = source, TagId = tagId }, transaction: tx);
+            }
+            else
+            {
+                await _database.ExecuteWithRetryAsync(async (c) =>
+                {
+                    await c.ExecuteAsync(sql, new { Source = source, TagId = tagId });
+                });
+            }
+
+            InvalidateCache();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute retroactive sweep for Source '{Source}' to TagId {TagId}.", source, tagId);
+            throw;
+        }
+    }
+
     private async Task<T> ExecuteDbActionAsync<T>(Func<IDbConnection, IDbTransaction?, Task<T>> action, IDbConnection? existingConn, IDbTransaction? existingTx)
     {
         if (existingConn != null)
@@ -335,10 +371,12 @@ public class TransactionService : ITransactionService
         return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
     }
 
+
     private static string GetCacheKey(TransactionFilterArgs args)
     {
-        return $"FILTER:{args.BatchId}_{args.AccountId}_{args.Source}_{args.SearchText}_{args.Limit}_{args.Offset}";
+        return $"FILTER:{args.BatchId}_{args.AccountId}_{args.Source}_{args.SearchText}_{args.IsTriageMode}_{(int?)args.SpecificError}_{args.Limit}_{args.Offset}";
     }
+
 
     private void InvalidateCache()
     {
@@ -375,6 +413,23 @@ public class TransactionService : ITransactionService
         {
             conditions.Add("Description LIKE @SearchText");
             parameters.Add("@SearchText", $"%{args.SearchText}%");
+        }
+
+        // 1. Specific Error Filter (e.g., UI dropdown selects "Missing Payee")
+        if (args.SpecificError.HasValue && args.SpecificError.Value != ReviewFlags.None)
+        {
+            // We use a bitwise AND (&) operation instead of standard equality (ReviewStatus = @ErrorFlag).
+            // Because errors are stacked using [Flags], a row might hold multiple errors simultaneously
+            // (e.g., InvalidAmount [1] + MissingPayee [4] = ReviewStatus of 5).
+            // The bitwise AND evaluates if the specific error bit is flipped ON inside the compound integer
+            // (e.g., 5 & 4 = 4), ensuring we find the row regardless of what other errors are stacked on it.
+            conditions.Add("(ReviewStatus & @ErrorFlag) = @ErrorFlag");
+            parameters.Add("@ErrorFlag", (int)args.SpecificError.Value);
+        }
+        // 2. General Triage Mode (UI toggle "Show All Errors")
+        else if (args.IsTriageMode.HasValue && args.IsTriageMode.Value)
+        {
+            conditions.Add("ReviewStatus > 0");
         }
 
         return (conditions, parameters);
@@ -424,5 +479,11 @@ public class TransactionService : ITransactionService
 
         var transactions = await connection.QueryAsync<Transaction>(sql, parameters, transaction: transaction);
         return transactions.ToList();
+    }
+
+    public void Dispose()
+    {
+        _broker.Unregister<ProfileSwappedMessage>(this);
+        GC.SuppressFinalize(this);
     }
 }

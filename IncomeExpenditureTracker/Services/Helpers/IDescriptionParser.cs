@@ -9,5 +9,6 @@ namespace IncomeExpenditureTracker.Services.Helpers
     public interface IDescriptionParser
     {
         List<string> ExtractTokens(string description);
+        string SanitizeMerchantString(string rawDescription);
     }
 }

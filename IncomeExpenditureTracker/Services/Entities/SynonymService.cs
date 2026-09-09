@@ -55,7 +55,7 @@ namespace IncomeExpenditureTracker.Services.Entities;
 /// Implements Immutable Snapshot Swapping, Async Lazy stampede defense, event-driven eviction,
 /// and atomic transactional self-learning to eliminate redundant SQLite I/O during concurrent staging .
 /// </summary>
-public class SynonymService : ISynonymService
+public class SynonymService : ISynonymService, IDisposable
 {
     private readonly IDatabaseService _database;
     private readonly ILogger<SynonymService> _logger;
@@ -76,7 +76,7 @@ public class SynonymService : ISynonymService
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _broker = broker;
+        _broker = broker ?? throw new ArgumentNullException(nameof(broker));
 
         // -------------------------------------------------------------------------
         // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
@@ -436,5 +436,11 @@ public class SynonymService : ISynonymService
             .Replace("_", " ")
             .Replace("-", " ")
             .Trim();
+    }
+
+    public void Dispose()
+    {
+        _broker.UnregisterAll(this);
+        GC.SuppressFinalize(this);
     }
 }

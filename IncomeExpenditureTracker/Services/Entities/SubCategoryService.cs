@@ -20,7 +20,7 @@ namespace IncomeExpenditureTracker.Services.Entities;
 //
 // SubCategories represent specific financial classifications within a Category.
 //-------------------------------------------------------------
-public class SubCategoryService : ISubCategoryService
+public class SubCategoryService : ISubCategoryService, IDisposable
 {
     private readonly IDatabaseService _database;
     private readonly ILogger<SubCategoryService> _logger;
@@ -37,7 +37,7 @@ public class SubCategoryService : ISubCategoryService
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _broker = broker;
+        _broker = broker ?? throw new ArgumentNullException(nameof(broker));
 
         // -------------------------------------------------------------------------
         // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
@@ -358,5 +358,11 @@ public class SubCategoryService : ISubCategoryService
         _subCategoryListCache.Clear();
         _subCategoriesByCategoryIdCache.Clear();
         _logger.LogInformation("Evicted SubCategoryService RAM cache due to data mutation.");
+    }
+
+    public void Dispose()
+    {
+        _broker.UnregisterAll(this);
+        GC.SuppressFinalize(this);
     }
 }

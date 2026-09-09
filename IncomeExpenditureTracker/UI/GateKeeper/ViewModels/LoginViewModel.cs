@@ -38,6 +38,9 @@ public partial class LoginViewModel : ViewModelBase
     [ObservableProperty]
     private string _errorMessage = string.Empty;
 
+    [ObservableProperty]
+    private string _successMessage = string.Empty;
+
     // Add the attribute here so Avalonia knows to re-render ButtonText when IsLoading changes
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LoginButtonText))]
@@ -80,7 +83,7 @@ public partial class LoginViewModel : ViewModelBase
         catch (Exception ex)
         {
             // RunOnUIThread(() => ErrorMessage = "Failed to load profiles.");
-            RunOnUIThread(() => ErrorMessage = $"DB Error: {ex.Message}");
+            RunOnUIThread(() => SetError($"DB Error: {ex.Message}"));
             Broker.Send(new ToastNotificationMessage($"Error loading profiles: {ex.Message}", NotificationType.Error));
         }
     }
@@ -92,6 +95,7 @@ public partial class LoginViewModel : ViewModelBase
         SelectedProfile = profile;
         Username = profile.ProfileName;
         ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
         IsPasswordPromptVisible = true; // Flips the UI state to show the password box
     }
 
@@ -99,10 +103,16 @@ public partial class LoginViewModel : ViewModelBase
     [RelayCommand]
     public void CancelSelection()
     {
+        // GUARD: Prevent state wiping if the Database Airlock or Auth is actively running
+        if (IsLoading)
+        {
+            return;
+        }
         SelectedProfile = null;
         // WIPE THE USERNAME
         Username = string.Empty;
         ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
         IsPasswordPromptVisible = false; // Flips the UI state back to the grid
         IsDeletePromptVisible = false;
     }
@@ -111,8 +121,21 @@ public partial class LoginViewModel : ViewModelBase
         SelectedProfile = null;
         Username = string.Empty;
         ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
         IsPasswordPromptVisible = false;
         IsDeletePromptVisible = false;
+    }
+
+    public void SetError(string message)
+    {
+        SuccessMessage = string.Empty;
+        ErrorMessage = message;
+    }
+
+    public void SetSuccess(string message)
+    {
+        ErrorMessage = string.Empty;
+        SuccessMessage = message;
     }
 
     // @desc    Executes the secure login flow using the Avalonia TextBox directly
@@ -120,13 +143,19 @@ public partial class LoginViewModel : ViewModelBase
     [RelayCommand]
     public async Task LoginAsync(TextBox passwordBox)
     {
+        // GUARD: Prevent state wiping if the Database Airlock or Auth is actively running
+        if (IsLoading)
+        {
+            return;
+        }
         ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
 
         var selectedProfile = SelectedProfile;
 
         if (string.IsNullOrWhiteSpace(Username) || selectedProfile == null || passwordBox == null || string.IsNullOrEmpty(passwordBox.Text))
         {
-            ErrorMessage = "Please enter both username and password.";
+            SetError("Please enter both username and password.");
             return;
         }
 
@@ -149,27 +178,31 @@ public partial class LoginViewModel : ViewModelBase
             // and SQLCipher PRAGMA key injection
             bool success = await _loginService.AuthenticateAndLoadProfileAsync(selectedProfile.ProfileName, securePassword);
 
-
-            if (success)
+            // 1. Guard Clause: Handle failure immediately and exit
+            if (!success)
             {
-                RunOnUIThread(() => ErrorMessage = "Login Successful! Loading workspace...");
+                RunOnUIThread(() => SetError("Invalid credentials. Please try again."));
+                return;
+            }
 
-                // Dispatch the route change (React equivalent: navigate('/dashboard'))
-                Broker.Send(new NavigationMessage("Dashboard"));
-            }
-            else
-            {
-                RunOnUIThread(() => ErrorMessage = "Invalid credentials or account locked. Please try again.");
-            }
+            // 2. Happy Path: Executes only if success is true, no 'else' block needed
+            RunOnUIThread(() => SetSuccess("Login Successful! Loading workspace..."));
+            Broker.Send(new NavigationMessage("Dashboard"));
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             RunOnUIThread(() =>
             {
-
-                ErrorMessage = "Failed to Login. Please try again.";
-                Broker.Send(new ToastNotificationMessage("An unexpected error occurred during login.", NotificationType.Error));
-
+                // 3. Exception Routing: Explicitly handles the lockout constraint
+                if (ex is InvalidOperationException)
+                {
+                    SetError($"Failed to Login. {ex.Message}"); // E.g., "locked for 5 minutes..."
+                }
+                else
+                {
+                    SetError("Failed to Login. Please try again.");
+                    Broker.Send(new ToastNotificationMessage("An unexpected error occurred during login.", NotificationType.Error));
+                }
             });
         }
         finally
@@ -190,26 +223,38 @@ public partial class LoginViewModel : ViewModelBase
     [RelayCommand]
     public void InitiateDelete()
     {
+        // GUARD: Prevent state wiping if the Database Airlock or Auth is actively running
+        if (IsLoading)
+        {
+            return;
+        }
         // Flips the UI from the standard Login prompt to the Delete prompt
-        ErrorMessage = "WARNING: This will permanently delete the encrypted vault.";
+        SetError("WARNING: This will permanently delete the encrypted vault.");
         IsDeletePromptVisible = true;
     }
 
     [RelayCommand]
     public void CancelDelete()
     {
+        // GUARD: Prevent state wiping if the Database Airlock or Auth is actively running
+        if (IsLoading)
+        {
+            return;
+        }
         IsDeletePromptVisible = false;
         ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
     }
 
     [RelayCommand]
     public async Task ConfirmDeleteAsync(TextBox authBox)
     {
         ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
 
         if (SelectedProfile == null || authBox == null || string.IsNullOrWhiteSpace(authBox.Text))
         {
-            ErrorMessage = "Authorization code required to delete profile.";
+            SetError("Authorization code required to delete profile.");
             return;
         }
 
@@ -235,7 +280,7 @@ public partial class LoginViewModel : ViewModelBase
 
             if (!isAuthorized)
             {
-                RunOnUIThread(() => ErrorMessage = "Invalid Password or Master Key. Deletion blocked.");
+                RunOnUIThread(() => SetError("Invalid Password or Master Key. Deletion blocked."));
                 return;
             }
 
@@ -263,7 +308,7 @@ public partial class LoginViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            RunOnUIThread(() => ErrorMessage = "Failed to delete profile.");
+            RunOnUIThread(() => SetError("Failed to delete profile."));
             Broker.Send(new ToastNotificationMessage($"Deletion error: {ex.Message}", NotificationType.Error));
         }
         finally
@@ -276,6 +321,11 @@ public partial class LoginViewModel : ViewModelBase
     [RelayCommand]
     public async Task FactoryResetAsync()
     {
+        // GUARD: Prevent state wiping if the Database Airlock or Auth is actively running
+        if (IsLoading)
+        {
+            return;
+        }
         // 1. Double-check with the user using your global dialog router
         var tcs = new TaskCompletionSource<bool>();
         Broker.Send(new ShowConfirmationMessage(
@@ -326,7 +376,7 @@ public partial class LoginViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            RunOnUIThread(() => ErrorMessage = $"Failed to reset: {ex.Message}");
+            RunOnUIThread(() => SetError($"Failed to reset: {ex.Message}"));
         }
         finally
         {

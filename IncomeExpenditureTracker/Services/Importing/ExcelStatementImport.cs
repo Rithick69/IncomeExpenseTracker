@@ -28,6 +28,7 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
     private readonly ITagEngine _tagEngine;
     private readonly IImportBatchService _batchService;
     private readonly ITransactionService _transactionService;
+    private readonly IPayeeService _payeeService;
     private readonly ILogger<ExcelStatementImport> _logger;
 
     private const int BatchSize = 250;
@@ -41,6 +42,7 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
         ITagEngine tagEngine,
         IImportBatchService batchService,
         ITransactionService transactionService,
+        IPayeeService payeeService,
         ILogger<ExcelStatementImport> logger)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
@@ -51,6 +53,7 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
         _tagEngine = tagEngine ?? throw new ArgumentNullException(nameof(tagEngine));
         _batchService = batchService ?? throw new ArgumentNullException(nameof(batchService));
         _transactionService = transactionService ?? throw new ArgumentNullException(nameof(transactionService));
+        _payeeService = payeeService ?? throw new ArgumentNullException(nameof(payeeService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -101,11 +104,32 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
             // -------------------------------------------------------------------------
 
             var tokenRows = new List<List<string>>(transactions.Count);
+            var payeeMappings = _payeeService.GetMappingsCache();
 
             foreach (var txn in transactions)
             {
                 var tokens = _descriptionParser.ExtractTokens(txn.Description);
                 tokenRows.Add(tokens);
+
+                // A. Sanitize and store in the Source property
+                txn.Source = _descriptionParser.SanitizeMerchantString(txn.Description);
+
+                // B. Check if it is a Credit
+                bool isCredit = txn.Credit > 0;
+
+                // C.Perform O(1) Exact - Match Lookup
+                if (isCredit)
+                {
+                    if (!string.IsNullOrWhiteSpace(txn.Source) && payeeMappings.TryGetValue(txn.Source, out long payeeId))
+                    {
+                        txn.PayeeId = payeeId;
+                    }
+                    else
+                    {
+                        // Flag for review ONLY if it is a credit and missing a mapping
+                        txn.ReviewStatus |= ReviewFlags.MissingPayee;
+                    }
+                }
             }
 
             await _tagEngine.ProcessTransactions(transactions, tokenRows);

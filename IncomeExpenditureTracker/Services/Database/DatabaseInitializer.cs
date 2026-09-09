@@ -220,17 +220,39 @@ public class DatabaseInitializer : IDatabaseInitializer
                     TransactionType TEXT,
                     ImportBatchId INTEGER,
                     TagId INTEGER,
+                    PayeeId INTEGER,
                     TransactionHash TEXT,
                     CreatedDate DATETIME DEFAULT (datetime('now')),
-                    NeedsReview BOOLEAN,
+                    ReviewStatus INTEGER DEFAULT 0,
                     RawAmountText TEXT,
-                    ParseErrorMessage TEXT,
                     FOREIGN KEY(TagId) REFERENCES Tags(Id),
-                    FOREIGN KEY(AccountId) REFERENCES Accounts(Id)
+                    FOREIGN KEY(AccountId) REFERENCES Accounts(Id),
+                    FOREIGN KEY(PayeeId) REFERENCES Payees(Id)
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_transactions_accountid ON Transactions(AccountId);
                 CREATE INDEX IF NOT EXISTS idx_transactions_source ON Transactions(Source);
+
+                ------------------------------------------------------------
+                -- PAYEES
+                ------------------------------------------------------------
+                -- Stores the user-facing merchant names.
+                -- Used for mapping transactions to a canonical name for reporting.
+                ------------------------------------------------------------
+                -- 1. The Payees Table (The core taxonomy entities)
+                CREATE TABLE IF NOT EXISTS Payees (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL UNIQUE,
+                    IsDefaultIncomeSource BOOLEAN NOT NULL DEFAULT 0,
+                    CreatedDate DATETIME DEFAULT (datetime('now'))
+                );
+
+                -- 2. The Flat Mapping Table (For O(1) Zero-Lock lookups)
+                CREATE TABLE IF NOT EXISTS PayeeMappings (
+                    CleanedDescription TEXT PRIMARY KEY,
+                    PayeeId INTEGER NOT NULL,
+                    FOREIGN KEY(PayeeId) REFERENCES Payees(Id) ON DELETE CASCADE
+                );
 
                 ------------------------------------------------------------
                 -- IMPORT BATCHES

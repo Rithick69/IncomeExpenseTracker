@@ -12,6 +12,7 @@ using Moq;
 using Xunit;
 using Castle.Core.Logging;
 using IncomeExpenditureTracker.Services.Messaging;
+using IncomeExpenditureTracker.Services.Settings;
 
 namespace IncomeExpenditureTracker.Tests.Integration
 {
@@ -27,6 +28,9 @@ namespace IncomeExpenditureTracker.Tests.Integration
         private readonly Mock<IImportBatchService> _importBatchMock = new();
         private readonly Mock<ISynonymService> _synonymMock = new();
 
+        private readonly Mock<IUserSettingsService> _userSettingMock = new();
+        private readonly Mock<IPayeeService> _payeeMock = new();
+
         private readonly Mock<ILogger<MasterDataOrchestrator>> _loggerMock = new();
         private readonly Mock<IApplicationBroker> _brokerMock = new();
 
@@ -36,17 +40,41 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 _dbMock.Object, _categoryMock.Object, _subCategoryMock.Object,
                 _tagMock.Object, _entityMock.Object, _accountMock.Object,
                 _transactionMock.Object, _importBatchMock.Object,
-                _synonymMock.Object, _brokerMock.Object, _loggerMock.Object);
+                _synonymMock.Object, _payeeMock.Object, _userSettingMock.Object,
+                _brokerMock.Object, _loggerMock.Object);
         }
 
         private void SetupDatabaseTransactionMock()
         {
+            var dbConnMock = new Mock<IDbConnection>();
+            var dbTransMock = new Mock<IDbTransaction>();
             // Boilerplate setup to intercept the transaction wrapper and execute the inner closure synchronously
             _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()))
                    .Returns<Func<IDbConnection, IDbTransaction, Task>>(async action =>
                    {
-                       await action.Invoke(null!, null!); // Utilizing null! to satisfy the compiler
+                       await action.Invoke(dbConnMock.Object, dbTransMock.Object);
                    });
+        }
+
+        // =========================================================================
+        // CATEGORY & SUBCATEGORY TESTS
+        // =========================================================================
+
+        [Fact]
+        public async Task DeleteCategorySafeAsync_FloatsTagsAndSubCategories_AndDeletesCategory()
+        {
+            // Arrange
+            var orchestrator = CreateOrchestrator();
+            SetupDatabaseTransactionMock();
+            int catId = 10;
+
+            // Act
+            await orchestrator.DeleteCategorySafeAsync(catId);
+
+            // Assert
+            _tagMock.Verify(x => x.FloatTagsByCategoryAsync(catId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _subCategoryMock.Verify(x => x.DeleteByCategoryId(catId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _categoryMock.Verify(x => x.DeleteCategory(catId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
         }
 
         /// <summary>
@@ -132,6 +160,35 @@ namespace IncomeExpenditureTracker.Tests.Integration
             _accountMock.Verify(x => x.DeleteAccount(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Never);
         }
 
+        [Fact]
+        public async Task DeleteAccountAsync_AccountHasNoTransactions_SuccessfullyDeletesAccount()
+        {
+            // Arrange
+            var orchestrator = CreateOrchestrator();
+            int accountId = 1;
+
+            _accountMock.Setup(x => x.HasTransactionsAsync(accountId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>())).ReturnsAsync(false);
+
+            // Act
+            await orchestrator.DeleteAccountAsync(accountId);
+
+            // Assert
+            _accountMock.Verify(x => x.DeleteAccount(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteEntityAsync_EntityHasChildAccounts_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var orchestrator = CreateOrchestrator();
+            int entityId = 55;
+
+            // Act
+            await orchestrator.DeleteEntityAsync(entityId);
+
+            _entityMock.Verify(x => x.DeleteEntity(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+        }
+
         /// <summary>
         /// Objective: Validate Duplicate Entity Resolution. Merging an entity must shift all child
         /// accounts safely and then delete the source entity under a unified transaction.
@@ -168,6 +225,62 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 await orchestrator.MergeEntitiesAsync(entityId, entityId));
 
             Assert.Contains("Source and target entities cannot be the same", ex.Message);
+        }
+
+        // =========================================================================
+        // PAYEE MERGE TESTS (Edge Cases)
+        // =========================================================================
+
+        [Fact]
+        public async Task MergePayeesAsync_TargetIncludedInSourceList_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var orchestrator = CreateOrchestrator();
+            long targetPayeeId = 15;
+            var sourcePayeeIds = new List<long> { 12, 13, 15, 18 }; // 15 is duplicated here
+
+            // Act & Assert
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await orchestrator.MergePayeesAsync(targetPayeeId, sourcePayeeIds));
+
+            Assert.Contains("Target payee cannot be present in the source payees list", ex.Message);
+        }
+
+        [Fact]
+        public async Task MergePayeesAsync_EmptySourceList_ReturnsWithoutExecutingDatabaseLogic()
+        {
+            // Arrange
+            var orchestrator = CreateOrchestrator();
+            long targetPayeeId = 15;
+            var sourcePayeeIds = new List<long>(); // Empty
+
+            // Act
+            await orchestrator.MergePayeesAsync(targetPayeeId, sourcePayeeIds);
+
+            // Assert
+            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()), Times.Never);
+        }
+
+        // =========================================================================
+        // CANCELLATION TOKEN TESTS
+        // =========================================================================
+
+        [Fact]
+        public async Task DeleteTagSafeAsync_CancellationRequested_ThrowsOperationCanceledException()
+        {
+            // Arrange
+            var orchestrator = CreateOrchestrator();
+            var cts = new CancellationTokenSource();
+
+            // Cancel the token before execution
+            cts.Cancel();
+
+            // Act & Assert
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await orchestrator.DeleteTagSafeAsync(10, cts.Token));
+
+            // Verify database was never touched
+            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()), Times.Never);
         }
     }
 }

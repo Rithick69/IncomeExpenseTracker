@@ -27,7 +27,7 @@ namespace IncomeExpenditureTracker.Services.Entities;
 // • Delete account
 // • Retrieve accounts for dashboard views
 // ------------------------------------------------------------
-public class AccountService : IAccountService
+public class AccountService : IAccountService, IDisposable
 {
     private readonly IDatabaseService _database;
     private readonly ILogger<AccountService> _logger;
@@ -44,7 +44,7 @@ public class AccountService : IAccountService
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _broker = broker;
+        _broker = broker ?? throw new ArgumentNullException(nameof(broker));
 
         // -------------------------------------------------------------------------
         // ARCHITECTURAL GUARDRAIL: CACHE ANNIHILATION
@@ -449,5 +449,11 @@ public class AccountService : IAccountService
         var acc = account.AccountNumber?.Trim().ToUpperInvariant() ?? string.Empty;
         var card = account.CardNumber?.Trim().ToUpperInvariant() ?? string.Empty;
         return $"ACC:{acc}|CARD:{card}";
+    }
+
+    public void Dispose()
+    {
+        _broker.UnregisterAll(this);
+        GC.SuppressFinalize(this);
     }
 }
