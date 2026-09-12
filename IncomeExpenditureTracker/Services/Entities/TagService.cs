@@ -27,7 +27,7 @@ public class TagService : ITagService, IDisposable
 
     private readonly ConcurrentDictionary<string, Lazy<Task<List<Tag>>>> _allTagscache = new(StringComparer.OrdinalIgnoreCase);
 
-    private readonly ConcurrentDictionary<string, int> _tagIdByNameCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _tagIdByNameCache = new(StringComparer.OrdinalIgnoreCase);
     private const string RULE_CACHE_KEY = "MasterRuleBookSnapshot";
 
     private const string RULES_SQL = "SELECT Keyword, TagId, Priority FROM TagRules ORDER BY Priority DESC, Id DESC;";
@@ -59,46 +59,68 @@ public class TagService : ITagService, IDisposable
 
     #region Tag Management
 
-    public async Task<int> GetOrCreateTagAsync(string name, int? subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<int> GetOrCreateTagAsync(string name, int? subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Tag name cannot be empty.", nameof(name));
 
-        // 1. Check cache first (bypass if inside a transaction)
-        if (conn == null && _tagIdByNameCache.TryGetValue(name, out var cachedId))
-        {
-            return cachedId;
-        }
+        var cacheKey = name.Trim();
 
-        const string sql = @"
-            INSERT OR IGNORE INTO Tags (Name, SubCategoryId) VALUES (@Name, @SubCategoryId);
-            SELECT Id FROM Tags WHERE Name = @Name LIMIT 1;";
+        // const string sql = @"
+        //     INSERT OR IGNORE INTO Tags (Name, SubCategoryId) VALUES (@Name, @SubCategoryId);
+        //     SELECT Id FROM Tags WHERE Name = @Name LIMIT 1;";
 
         try
         {
-            int tagId;
-
             // If inside a master import transaction, execute directly on the transactional connection
             if (conn != null && tx != null)
             {
-                _logger.LogDebug("Executing transactional GetOrCreateTagAsync for tag: {TagName}", name);
-                tagId = await conn.ExecuteScalarAsync<int>(sql, new { Name = name, SubCategoryId = subCategoryId }, tx);
-                return tagId;
+                // Safe read from cache if it already exists and isn't faulted/cancelled
+                if (_tagIdByNameCache.TryGetValue(cacheKey, out var existingLazy) && !existingLazy.Value.IsFaulted && !existingLazy.Value.IsCanceled)
+                {
+                    return await existingLazy.Value;
+                }
+
+                _logger.LogDebug("Executing transactional GetOrCreateTagAsync for tag: {TagName}", cacheKey);
+
+                // Execute directly, do NOT cache the result (to protect against rollbacks)
+                return await ExecuteUpsertInternalAsync(cacheKey, subCategoryId, conn, tx, ct);
             }
 
-            _logger.LogDebug("Executing standalone GetOrCreateTagAsync for tag: {TagName}", name);
+            // -------------------------------------------------------------------------
+            // STANDALONE PATH (Cache Stampede Protected)
+            // -------------------------------------------------------------------------
+            var lazyTagId = _tagIdByNameCache.GetOrAdd(cacheKey, _ => new Lazy<Task<int>>(async () =>
+            {
+                try
+                {
+                    _logger.LogDebug("Executing standalone GetOrCreateTagAsync for tag: {TagName}", cacheKey);
 
+                    // Execute cleanly using the retry policy wrapper
+                    var tagId = await _databaseService.ExecuteWithRetryAsync(async (retryConn, cancelToken) =>
+                        await ExecuteUpsertInternalAsync(cacheKey, subCategoryId, retryConn, null, cancelToken), ct);
 
-            tagId = await _databaseService.ExecuteWithRetryAsync(c =>
-                c.ExecuteScalarAsync<int>(sql, new { Name = name, SubCategoryId = subCategoryId }));
+                    // Invalidate the "All Tags" list cache since we potentially inserted a new tag
+                    _allTagscache.Clear();
 
-            // 4. Update the name -> ID cache
-            _tagIdByNameCache.TryAdd(name, tagId);
+                    return tagId;
+                }
+                catch
+                {
+                    // Fault Eviction: If DB crashes or is cancelled, remove the poisoned task
+                    _tagIdByNameCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
 
-            _allTagscache.Clear();
+            return await lazyTagId.Value;
 
-            return tagId;
-
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Bubble up silently for the UI router
         }
         catch (Exception ex)
         {
@@ -107,44 +129,61 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task<int> GetTagIdByName(string name)
+    public async Task<int> GetTagIdByName(string name, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Tag name cannot be empty.", nameof(name));
 
-        // 1. Check cache first (No more connection check needed)
-        if (_tagIdByNameCache.TryGetValue(name, out var cachedId))
-        {
-            return cachedId;
-        }
-
-        const string sql = "SELECT Id FROM Tags WHERE Name = @Name LIMIT 1;";
+        var cacheKey = name.Trim();
 
         try
         {
-            _logger.LogDebug("Executing standalone GetTagIdByName for tag: {TagName}", name);
-
-            // Execute cleanly using the retry policy
-            var tagId = await _databaseService.ExecuteWithRetryAsync(c =>
-                c.ExecuteScalarAsync<int>(sql, new { Name = name }));
-
-            // Update the cache if a valid ID was returned
-            if (tagId > 0)
+            // GetOrAdd guarantees that the Lazy factory executes exactly once per unique tag name,
+            // even if 50 threads hit this line concurrently.
+            var lazyTagId = _tagIdByNameCache.GetOrAdd(cacheKey, _ => new Lazy<Task<int>>(async () =>
             {
-                _tagIdByNameCache.TryAdd(name, tagId);
-            }
+                try
+                {
+                    _logger.LogDebug("Cache miss. Executing SQLite read for tag: {TagName}", cacheKey);
 
-            return tagId;
+                    return await _databaseService.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        const string sql = "SELECT Id FROM Tags WHERE Name = @Name LIMIT 1;";
+
+                        // Use CommandDefinition to pass the cancellation token
+                        var cmd = new CommandDefinition(sql, new { Name = cacheKey }, cancellationToken: cancelToken);
+                        var id = await c.ExecuteScalarAsync<int?>(cmd); // Use int? in case it doesn't exist
+
+                        return id ?? 0; // Return 0 if not found
+                    }, ct);
+                }
+                catch
+                {
+                    // Fault Eviction: If the DB read fails or is cancelled, remove it so it can be retried later
+                    _tagIdByNameCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            return await lazyTagId.Value;
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Bubble up silently
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to GetTagIdByName for tag '{TagName}'.", name);
+            _logger.LogError(ex, "Failed to GetTagIdByName for tag '{TagName}'.", cacheKey);
             throw;
         }
     }
 
-    public async Task<List<Tag>> GetAllTags()
+    public async Task<List<Tag>> GetAllTags(CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         const string ALL_TAGS_KEY = "ALL_TAGS";
         const string sql = "SELECT * FROM Tags;";
 
@@ -156,7 +195,14 @@ public class TagService : ITagService, IDisposable
                 try
                 {
                     _logger.LogInformation("Cache miss. Executing standalone GetAllTags from database.");
-                    var result = await _databaseService.ExecuteWithRetryAsync(c => c.QueryAsync<Tag>(sql));
+                    var result = await _databaseService.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        var cmd = new CommandDefinition(
+                            sql,
+                            cancellationToken: cancelToken
+                        );
+                        return await c.QueryAsync<Tag>(cmd);
+                    }, ct);
                     return result.ToList();
                 }
                 catch (Exception ex)
@@ -170,6 +216,10 @@ public class TagService : ITagService, IDisposable
 
             return await cachedLazy.Value;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to execute GetAllTags");
@@ -177,8 +227,10 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task UpdateTagAsync(int tagId, string name, int? subCategoryId = null)
+    public async Task UpdateTagAsync(int tagId, string name, int? subCategoryId = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Tag name cannot be empty.", nameof(name));
 
@@ -188,10 +240,27 @@ public class TagService : ITagService, IDisposable
         {
             _logger.LogDebug("Updating TagId {TagId}: New Name='{Name}', SubCategoryId={SubCatId}", tagId, name, subCategoryId);
 
-            await _databaseService.ExecuteWithRetryAsync(conn =>
-                conn.ExecuteAsync(sql, new { Id = tagId, Name = name, SubCategoryId = subCategoryId }));
+            await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
+            {
+                var cmd = new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        Id = tagId,
+                        Name = name,
+                        SubCategoryId = subCategoryId
+                    },
+                    cancellationToken: cancelToken
+                );
+                await conn.ExecuteAsync(cmd);
+            }, ct);
+
 
             InvalidateTagCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -200,8 +269,9 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task DeleteTagAsync(int tagId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task DeleteTagAsync(int tagId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         try
         {
             _logger.LogInformation("Attempting deletion for TagId {TagId}.", tagId);
@@ -209,22 +279,50 @@ public class TagService : ITagService, IDisposable
             if (conn != null && tx != null)
             {
                 _logger.LogDebug("Executing transactional DeleteTagAsync for TagId {TagId}.", tagId);
-                await conn.ExecuteAsync("DELETE FROM TagRules WHERE TagId = @Id;", new { Id = tagId }, tx);
-                await conn.ExecuteAsync("DELETE FROM Tags WHERE Id = @Id;", new { Id = tagId }, tx);
+                var tagrulecmd = new CommandDefinition(
+                    "DELETE FROM TagRules WHERE TagId = @Id;",
+                    new { Id = tagId },
+                    transaction: tx,
+                    cancellationToken: ct
+                );
+
+                var tagcmd = new CommandDefinition(
+                    "DELETE FROM Tags WHERE Id = @Id;",
+                    new { Id = tagId },
+                    transaction: tx,
+                    cancellationToken: ct
+                );
+                await conn.ExecuteAsync(tagrulecmd);
+                await conn.ExecuteAsync(tagcmd);
             }
             else
             {
                 _logger.LogDebug("Executing standalone DeleteTagAsync for TagId {TagId}.", tagId);
-                await _databaseService.ExecuteWithRetryAsync(async c =>
+                await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
                 {
-                    await c.ExecuteAsync("DELETE FROM TagRules WHERE TagId = @Id;", new { Id = tagId });
-                    await c.ExecuteAsync("DELETE FROM Tags WHERE Id = @Id;", new { Id = tagId });
-                });
+                    var tagrulecmd = new CommandDefinition(
+                    "DELETE FROM TagRules WHERE TagId = @Id;",
+                    new { Id = tagId },
+                    cancellationToken: cancelToken
+                );
+
+                    var tagcmd = new CommandDefinition(
+                        "DELETE FROM Tags WHERE Id = @Id;",
+                        new { Id = tagId },
+                        cancellationToken: cancelToken
+                    );
+                    await conn.ExecuteAsync(tagrulecmd);
+                    await conn.ExecuteAsync(tagcmd);
+                }, ct);
             }
 
             InvalidateTagCache();
             InvalidateCache();
             _logger.LogInformation("Successfully deleted TagId {TagId} and its associated rules.", tagId);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -233,18 +331,41 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task FloatTagsBySubCategoryAsync(int subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task FloatTagsBySubCategoryAsync(int subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         try
         {
             const string sql = "UPDATE Tags SET SubCategoryId = NULL WHERE SubCategoryId = @SubCategoryId;";
 
             if (conn != null && tx != null)
-                await conn.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }, tx);
+            {
+                var cmd = new CommandDefinition(
+                    sql,
+                    new { SubCategoryId = subCategoryId },
+                    transaction: tx,
+                    cancellationToken: ct
+                );
+                await conn.ExecuteAsync(cmd);
+            }
             else
-                await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { SubCategoryId = subCategoryId }));
+            {
+                await _databaseService.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                {
+                    var cmd = new CommandDefinition(
+                        sql,
+                        new { SubCategoryId = subCategoryId },
+                        cancellationToken: cancelToken
+                    );
+                    await c.ExecuteAsync(cmd);
+                }, ct);
+            }
 
             InvalidateTagCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -253,8 +374,10 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task FloatTagsByCategoryAsync(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task FloatTagsByCategoryAsync(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
             const string sql = @"
@@ -263,17 +386,58 @@ public class TagService : ITagService, IDisposable
                 WHERE SubCategoryId IN (SELECT Id FROM SubCategories WHERE CategoryId = @CategoryId);";
 
             if (conn != null && tx != null)
-                await conn.ExecuteAsync(sql, new { CategoryId = categoryId }, tx);
+            {
+                var cmd = new CommandDefinition(
+                    sql,
+                    new { CategoryId = categoryId },
+                    transaction: tx,
+                    cancellationToken: ct
+                );
+                await conn.ExecuteAsync(cmd);
+            }
             else
-                await _databaseService.ExecuteWithRetryAsync(async (c) => await c.ExecuteAsync(sql, new { CategoryId = categoryId }));
+            {
+                await _databaseService.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                {
+                    var cmd = new CommandDefinition(
+                        sql,
+                        new { CategoryId = categoryId },
+                        cancellationToken: cancelToken
+                    );
+                    await c.ExecuteAsync(cmd);
+                }, ct);
+            }
 
             InvalidateTagCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to float tags for CategoryId {CategoryId}.", categoryId);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Extracted helper to keep Dapper CommandDefinition and SQL execution DRY.
+    /// </summary>
+    private async Task<int> ExecuteUpsertInternalAsync(string name, int? subCategoryId, IDbConnection conn, IDbTransaction? tx, CancellationToken ct)
+    {
+        const string sql = @"
+            INSERT OR IGNORE INTO Tags (Name, SubCategoryId) VALUES (@Name, @SubCategoryId);
+            SELECT Id FROM Tags WHERE Name = @Name LIMIT 1;";
+
+        var cmd = new CommandDefinition(
+            sql,
+            new { Name = name, SubCategoryId = subCategoryId },
+            transaction: tx,
+            cancellationToken: ct
+        );
+
+        return await conn.ExecuteScalarAsync<int>(cmd);
     }
 
     #endregion
@@ -284,20 +448,31 @@ public class TagService : ITagService, IDisposable
 
     #region Tag Rule Management
 
-    public Task<RuleBookSnapshot> GetRuleBookSnapshotAsync()
+    public Task<RuleBookSnapshot> GetRuleBookSnapshotAsync(CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         _logger.LogDebug("Requesting RuleBookSnapshot from cache or database.");
 
         return _ruleCache.GetOrAdd(RULE_CACHE_KEY, _ => new Lazy<Task<RuleBookSnapshot>>(async () =>
         {
             try
             {
-                return await _databaseService.ExecuteWithRetryAsync(async conn =>
+                return await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
                 {
                     _logger.LogInformation("Cache miss. Executing SQLite read to build RuleBookSnapshot.");
 
-                    var miscId = await conn.ExecuteScalarAsync<int?>(MISC_SQL) ?? 0;
-                    var rawRules = await conn.QueryAsync<TagRuleDTO>(RULES_SQL);
+                    var misccmd = new CommandDefinition(
+                        MISC_SQL,
+                        cancellationToken: cancelToken
+                    );
+
+                    var rawRulecmd = new CommandDefinition(
+                        RULES_SQL,
+                        cancellationToken: cancelToken
+                    );
+
+                    var miscId = await conn.ExecuteScalarAsync<int?>(misccmd) ?? 0;
+                    var rawRules = await conn.QueryAsync<TagRuleDTO>(rawRulecmd);
 
                     // Group rules by uppercase keyword into memory-efficient arrays
                     var ruleIndex = rawRules
@@ -312,7 +487,12 @@ public class TagService : ITagService, IDisposable
                         ruleIndex.Count, miscId);
 
                     return new RuleBookSnapshot(ruleIndex, miscId);
-                });
+                }, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                _ruleCache.TryRemove(RULE_CACHE_KEY, out var _);
+                throw;
             }
             catch (Exception ex)
             {
@@ -321,11 +501,13 @@ public class TagService : ITagService, IDisposable
                 _ruleCache.TryRemove(RULE_CACHE_KEY, out var _);
                 throw;
             }
-        })).Value;
+        }, LazyThreadSafetyMode.ExecutionAndPublication)).Value;
     }
 
-    public async Task<int> AddRuleAsync(string keyword, int tagId, int priority = 10)
+    public async Task<int> AddRuleAsync(string keyword, int tagId, int priority = 10, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(keyword))
             throw new ArgumentException("Rule keyword cannot be empty.", nameof(keyword));
 
@@ -335,11 +517,27 @@ public class TagService : ITagService, IDisposable
         {
             _logger.LogDebug("Adding new TagRule: Keyword='{Keyword}', TagId={TagId}, Priority={Priority}", keyword, tagId, priority);
 
-            var id = await _databaseService.ExecuteWithRetryAsync(conn =>
-                conn.ExecuteScalarAsync<int>(sql, new { Keyword = keyword.ToUpperInvariant(), TagId = tagId, Priority = priority }));
+            var id = await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
+            {
+                var cmd = new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        Keyword = keyword.ToUpperInvariant(),
+                        TagId = tagId,
+                        Priority = priority
+                    },
+                    cancellationToken: cancelToken
+                );
+                return await conn.ExecuteScalarAsync<int>(cmd);
+            }, ct);
 
             InvalidateCache(); // Drop RAM pointer so subsequent reads load the new rule
             return id;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -348,8 +546,10 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task UpdateRuleAsync(int ruleId, string keyword, int tagId, int priority)
+    public async Task UpdateRuleAsync(int ruleId, string keyword, int tagId, int priority, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(keyword))
             throw new ArgumentException("Rule keyword cannot be empty.", nameof(keyword));
 
@@ -359,10 +559,27 @@ public class TagService : ITagService, IDisposable
         {
             _logger.LogDebug("Updating RuleId {RuleId}: Keyword='{Keyword}', TagId={TagId}, Priority={Priority}", ruleId, keyword, tagId, priority);
 
-            await _databaseService.ExecuteWithRetryAsync(conn =>
-                conn.ExecuteAsync(sql, new { Id = ruleId, Keyword = keyword.ToUpperInvariant(), TagId = tagId, Priority = priority }));
+            await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
+            {
+                var cmd = new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        Id = ruleId,
+                        Keyword = keyword.ToUpperInvariant(),
+                        TagId = tagId,
+                        Priority = priority
+                    },
+                    cancellationToken: cancelToken
+                );
+                await conn.ExecuteAsync(cmd);
+            }, ct);
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -371,8 +588,9 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task DeleteRuleKeywordsAsync(IEnumerable<string> keywords, int tagId)
+    public async Task DeleteRuleKeywordsAsync(IEnumerable<string> keywords, int tagId, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         if (keywords == null || !keywords.Any())
             return;
 
@@ -382,10 +600,17 @@ public class TagService : ITagService, IDisposable
         {
             _logger.LogDebug("Deleting keywords from TagRules where TagId={TagId}", tagId);
 
-            await _databaseService.ExecuteWithRetryAsync(conn =>
-                conn.ExecuteAsync(sql, new { Keywords = keywords, TagId = tagId }));
+            await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
+            {
+                var cmd = new CommandDefinition(sql, new { Keywords = keywords, TagId = tagId }, cancellationToken: cancelToken);
+                await conn.ExecuteAsync(cmd);
+            }, ct);
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -394,8 +619,9 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task DeleteRulesByTagId(int tagId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task DeleteRulesByTagId(int tagId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         const string sql = "DELETE FROM TagRules WHERE TagId = @TagId;";
 
         try
@@ -404,15 +630,23 @@ public class TagService : ITagService, IDisposable
 
             if (conn != null && tx != null)
             {
-                await conn.ExecuteAsync(sql, new { TagId = tagId }, tx);
+                var cmd = new CommandDefinition(sql, new { TagId = tagId }, transaction: tx, cancellationToken: ct);
+                await conn.ExecuteAsync(cmd);
             }
             else
             {
-                await _databaseService.ExecuteWithRetryAsync(c =>
-                    c.ExecuteAsync(sql, new { TagId = tagId }));
+                await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
+                {
+                    var cmd = new CommandDefinition(sql, new { TagId = tagId }, cancellationToken: cancelToken);
+                    await conn.ExecuteAsync(cmd);
+                }, ct);
             }
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -421,18 +655,27 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task DeleteRuleAsync(int ruleId)
+    public async Task DeleteRuleAsync(int ruleId, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         const string sql = "DELETE FROM TagRules WHERE Id = @Id;";
 
         try
         {
             _logger.LogDebug("Deleting RuleId {RuleId}.", ruleId);
 
-            await _databaseService.ExecuteWithRetryAsync(conn =>
-                conn.ExecuteAsync(sql, new { Id = ruleId }));
+            await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
+            {
+                var cmd = new CommandDefinition(sql, new { Id = ruleId }, cancellationToken: cancelToken);
+                await conn.ExecuteAsync(cmd);
+            }, ct);
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -441,8 +684,10 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task LearnRuleFromOverrideAsync(string rawDescription, int targetTagId)
+    public async Task LearnRuleFromOverrideAsync(string rawDescription, int targetTagId, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(rawDescription))
         {
             _logger.LogWarning("LearnRuleFromOverrideAsync called with empty description. Aborting learning sequence.");
@@ -469,19 +714,37 @@ public class TagService : ITagService, IDisposable
             const string maxPriSql = "SELECT COALESCE(MAX(Priority), 10) FROM TagRules WHERE TagId = @TagId;";
             const string insertSql = "INSERT INTO TagRules (Keyword, TagId, Priority) VALUES (@Keyword, @TagId, @Priority);";
 
-            await _databaseService.ExecuteWithRetryAsync(async conn =>
+            await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
             {
                 // Execute priority math inside an isolated retry wrapper
-                var maxPriority = await conn.ExecuteScalarAsync<int>(maxPriSql, new { TagId = targetTagId });
+                var maxcmd = new CommandDefinition(
+                    maxPriSql,
+                    new
+                    {
+                        TagId = targetTagId
+                    },
+                    cancellationToken: cancelToken
+                );
+                var maxPriority = await conn.ExecuteScalarAsync<int>(maxcmd);
                 int newPriority = maxPriority + 1;
 
                 _logger.LogDebug("Learned best keyword '{Keyword}' for TagId {TagId}. Assigning Priority {Priority}", bestKeyword, targetTagId, newPriority);
 
-                await conn.ExecuteAsync(insertSql, new { Keyword = bestKeyword, TagId = targetTagId, Priority = newPriority });
-            });
+                var insertcmd = new CommandDefinition(
+                    insertSql,
+                    new { Keyword = bestKeyword, TagId = targetTagId, Priority = newPriority },
+                    cancellationToken: cancelToken
+                );
+
+                await conn.ExecuteAsync(insertcmd);
+            }, ct);
 
             InvalidateCache(); // Ensure next statement import utilizes this newly learned rule
             _logger.LogInformation("Successfully completed self-learning sequence for TagId {TagId}.", targetTagId);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Data;
 using IncomeExpenditureTracker.Models;
+using System.Threading;
 namespace IncomeExpenditureTracker.Services.Entities;
 
 // Interface for managing entities (e.g., banks, financial institutions) in the system.
@@ -10,13 +11,13 @@ namespace IncomeExpenditureTracker.Services.Entities;
 
 public interface IEntityService
 {
-    Task<int> GetOrCreateEntity(string name, IDbConnection? conn = null, IDbTransaction? tx = null);
-    Task<List<Entity>> GetAllEntities();
-    Task UpdateEntity(Entity entity, IDbConnection? conn = null, IDbTransaction? tx = null);
-    Task DeleteEntity(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task<int> GetOrCreateEntity(string name, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
+    Task<List<Entity>> GetAllEntities(CancellationToken ct = default);
+    Task UpdateEntity(Entity entity, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
+    Task DeleteEntity(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 
     /// <summary>
     /// Evaluates if the Entity has any linked Accounts to enforce structural hard blocks.
     /// </summary>
-    Task<bool> HasChildAccountsAsync(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task<bool> HasChildAccountsAsync(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 }

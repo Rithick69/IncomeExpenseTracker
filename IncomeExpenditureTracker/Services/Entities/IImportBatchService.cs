@@ -6,6 +6,7 @@ using System.Data;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using IncomeExpenditureTracker.Models;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -16,9 +17,10 @@ public interface IImportBatchService
         string source,
         int? accountId = null,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null);
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
 
-    Task DeleteBatchAsync(int batchId, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task DeleteBatchAsync(int batchId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 
-    Task<List<ImportBatch>> GetAllImportBatches();
+    Task<List<ImportBatch>> GetAllImportBatches(CancellationToken ct = default);
 }

@@ -37,13 +37,13 @@ namespace IncomeExpenditureTracker.Services.Settings
             _broker.Register<ProfileSwappedMessage>(this, (message) => InvalidateCache());
         }
 
-        public async Task SetSettingAsync(string key, string value)
+        public async Task SetSettingAsync(string key, string value, CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
+
             try
             {
-                // We use the retry wrapper to ensure this doesn't fail if a background
-                // process is currently reading the database.
-                await _databaseService.ExecuteWithRetryAsync(async connection =>
+                await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
                 {
                     var sql = @"
                     INSERT INTO UserSettings (SettingKey, SettingValue)
@@ -52,12 +52,22 @@ namespace IncomeExpenditureTracker.Services.Settings
                     SET SettingValue = excluded.SettingValue,
                         UpdatedAt = datetime('now');";
 
-                    await connection.ExecuteAsync(sql, new { Key = key, Value = value });
-                });
+                    var cmd = new CommandDefinition(
+                        sql,
+                        new { Key = key, Value = value },
+                        cancellationToken: cancelToken
+                    );
+
+                    await connection.ExecuteAsync(cmd);
+                }, ct);
 
                 // Invalidate caches to ensure subsequent reads fetch the fresh data
                 _settingsCache.TryRemove(key, out _);
                 _allSettingsCache.Clear();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -66,8 +76,9 @@ namespace IncomeExpenditureTracker.Services.Settings
             }
         }
 
-        public async Task<string?> GetSettingAsync(string key)
+        public async Task<string?> GetSettingAsync(string key, CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
             try
             {
                 // Cache Stampede Protection: GetOrAdd ensures only ONE thread executes the DB query
@@ -75,11 +86,12 @@ namespace IncomeExpenditureTracker.Services.Settings
                 {
                     try
                     {
-                        return await _databaseService.ExecuteWithRetryAsync(async connection =>
+                        return await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
                         {
                             var sql = "SELECT SettingValue FROM UserSettings WHERE SettingKey = @Key";
-                            return await connection.QuerySingleOrDefaultAsync<string?>(sql, new { Key = key });
-                        });
+                            var cmd = new CommandDefinition(sql, new { Key = key }, cancellationToken: cancelToken);
+                            return await connection.QuerySingleOrDefaultAsync<string?>(cmd);
+                        }, ct);
                     }
                     catch
                     {
@@ -93,6 +105,10 @@ namespace IncomeExpenditureTracker.Services.Settings
                 // Await the task. All concurrent requests for this key await the exact same task.
                 return await cachedLazy.Value;
             }
+            catch (OperationCanceledException)
+            {
+                throw; // Bubble up silently
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to fetch setting {Key}.", key);
@@ -100,8 +116,9 @@ namespace IncomeExpenditureTracker.Services.Settings
             }
         }
 
-        public async Task<List<UserSetting>> GetAllSettingsAsync()
+        public async Task<List<UserSetting>> GetAllSettingsAsync(CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
             const string cacheKey = "ALL_SETTINGS";
             try
             {
@@ -109,12 +126,13 @@ namespace IncomeExpenditureTracker.Services.Settings
                 {
                     try
                     {
-                        return await _databaseService.ExecuteWithRetryAsync(async connection =>
+                        return await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
                         {
                             var sql = "SELECT SettingKey, SettingValue FROM UserSettings";
-                            var result = await connection.QueryAsync<UserSetting>(sql);
+                            var cmd = new CommandDefinition(sql, cancellationToken: cancelToken);
+                            var result = await connection.QueryAsync<UserSetting>(cmd);
                             return result.ToList();
-                        });
+                        }, ct);
                     }
                     catch
                     {
@@ -124,6 +142,10 @@ namespace IncomeExpenditureTracker.Services.Settings
                 }, LazyThreadSafetyMode.ExecutionAndPublication));
 
                 return await cachedLazy.Value;
+            }
+            catch (OperationCanceledException)
+            {
+                throw; // Bubble up silently
             }
             catch (Exception ex)
             {

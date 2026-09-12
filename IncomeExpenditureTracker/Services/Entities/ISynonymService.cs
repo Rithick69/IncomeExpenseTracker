@@ -1,6 +1,7 @@
 using IncomeExpenditureTracker.Models;
 using System.Collections.Generic;
 using System.Data;
+using System.Threading;
 using System.Threading.Tasks;
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -17,19 +18,19 @@ public interface ISynonymService
 
     // IEnumerable<Synonyms> is used to allow for deferred execution and efficient memory usage, especially when dealing with large datasets.
     // Read only access is provided to ensure that the collection cannot be modified, maintaining data integrity.
-    Task<IEnumerable<Synonyms>> GetAllSynonyms();
+    Task<IEnumerable<Synonyms>> GetAllSynonyms(CancellationToken ct = default);
 
     // Called when the user maps an unknown column in the preview UI
-    Task LearnFromCorrectionAsync(string rawSynonym, string fieldType, string category);
+    Task LearnFromCorrectionAsync(string rawSynonym, string fieldType, string category, CancellationToken ct = default);
 
     // CRUD operations for the dedicated manual management UI
-    Task AddSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task AddSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 
     // Method for the management UI to fix mistakes
-    Task UpdateSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task UpdateSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 
     // Deletion now targets the primary key for precision in the UI
-    Task DeleteSynonymAsync(int id, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task DeleteSynonymAsync(int id, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 
     /// <summary>
     /// Ensures that all standard domain concepts exist in the database.
@@ -37,5 +38,5 @@ public interface ISynonymService
     /// </summary>
     Task SeedDefaultFieldTypesAsync(IEnumerable<string> standardFieldTypes, string category, IDbConnection? conn = null, IDbTransaction? tx = null);
 
-    Task<IReadOnlyDictionary<string, Synonyms>> GetSynonymsByCategory(string category);
+    Task<IReadOnlyDictionary<string, Synonyms>> GetSynonymsByCategory(string category, CancellationToken ct = default);
 }

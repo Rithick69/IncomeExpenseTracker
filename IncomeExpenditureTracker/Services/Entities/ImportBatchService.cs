@@ -85,13 +85,16 @@ public class ImportBatchService : IImportBatchService, IDisposable
         string source,
         int? accountId = null,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(fileName))
             throw new ArgumentException("File name cannot be empty.", nameof(fileName));
         try
         {
-            return await ExecuteDbActionAsync(async (connection, transaction) =>
+            return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
                 // SQL query inserts a new batch record and returns the generated ID[cite: 2].
                 // Included AccountId to match the DatabaseInitializer relational schema[cite: 2].
@@ -101,20 +104,31 @@ public class ImportBatchService : IImportBatchService, IDisposable
 
                     SELECT last_insert_rowid();";
 
+                var cmd = new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        FileName = fileName,
+                        Source = source,
+                        ImportDate = DateTime.UtcNow,
+                        AccountId = accountId
+                    },
+                    transaction: transaction,
+                    cancellationToken: ct
+                );
+
                 // Executed as <long> to prevent Dapper InvalidCastExceptions with SQLite 64-bit rowids
-                var batchId = await connection.ExecuteScalarAsync<long>(sql, new
-                {
-                    FileName = fileName,
-                    Source = source,
-                    ImportDate = DateTime.UtcNow,
-                    AccountId = accountId
-                }, transaction: transaction);
+                var batchId = await connection.ExecuteScalarAsync<long>(cmd);
 
                 _logger.LogInformation("Created new ImportBatch ID {BatchId} for file '{FileName}' (Source: '{Source}').", batchId, fileName, source);
 
                 InvalidateCache();
                 return (int)batchId;
-            }, conn, tx);
+            }, conn, tx, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -135,14 +149,22 @@ public class ImportBatchService : IImportBatchService, IDisposable
     /// <summary>
     /// Deletes an import batch record by its ID. This method is intended for use in scenarios where
     /// an import batch needs to be removed, such as when rolling back an import operation.
-    public async Task DeleteBatchAsync(int batchId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task DeleteBatchAsync(int batchId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
                 const string sql = "DELETE FROM ImportBatches WHERE Id = @BatchId;";
-                int rowsAffected = await connection.ExecuteAsync(sql, new { BatchId = batchId }, transaction: transaction);
+                var cmd = new CommandDefinition(
+                    sql,
+                    new { BatchId = batchId },
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+                int rowsAffected = await connection.ExecuteAsync(cmd);
 
                 if (rowsAffected == 0)
                 {
@@ -152,9 +174,13 @@ public class ImportBatchService : IImportBatchService, IDisposable
                 {
                     _logger.LogInformation("Deleted ImportBatch with ID {BatchId}.", batchId);
                 }
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -163,8 +189,10 @@ public class ImportBatchService : IImportBatchService, IDisposable
         }
     }
 
-    public async Task<List<ImportBatch>> GetAllImportBatches()
+    public async Task<List<ImportBatch>> GetAllImportBatches(CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         var cacheKey = "GET_ALL_IMPORT_BATCHES";
         try
         {
@@ -173,12 +201,16 @@ public class ImportBatchService : IImportBatchService, IDisposable
                 try
                 {
                     // Execute using the standard retry wrapper (no external conn/tx needed)
-                    return await _database.ExecuteWithRetryAsync(async c =>
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                     {
                         const string sql = "SELECT * FROM ImportBatches";
-                        var entities = await c.QueryAsync<ImportBatch>(sql);
+                        var cmd = new CommandDefinition(
+                            sql,
+                            cancellationToken: cancelToken
+                        );
+                        var entities = await c.QueryAsync<ImportBatch>(cmd);
                         return entities.ToList();
-                    });
+                    }, ct);
                 }
                 catch
                 {
@@ -189,6 +221,10 @@ public class ImportBatchService : IImportBatchService, IDisposable
             }, LazyThreadSafetyMode.ExecutionAndPublication));
 
             return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -214,19 +250,20 @@ public class ImportBatchService : IImportBatchService, IDisposable
     /// connection and transaction are passed from a parent orchestrator.
     /// </summary>
     private async Task ExecuteDbActionAsync(
-        Func<IDbConnection, IDbTransaction?, Task> action,
+        Func<IDbConnection, IDbTransaction?, CancellationToken, Task> action,
         IDbConnection? existingConn,
-        IDbTransaction? existingTx)
+        IDbTransaction? existingTx,
+        CancellationToken ct)
     {
         if (existingConn != null)
         {
             // Execute directly within the parent transaction boundary
-            await action(existingConn, existingTx);
+            await action(existingConn, existingTx, ct);
             return;
         }
 
         // Execute as a standalone, retry-protected UI operation
-        await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+        await _database.ExecuteWithRetryAsync(async (connection, cancelToken) => await action(connection, null, cancelToken), ct);
     }
 
     /// <summary>
@@ -235,18 +272,19 @@ public class ImportBatchService : IImportBatchService, IDisposable
     /// connection and transaction are passed from a parent orchestrator.
     /// </summary>
     private async Task<T> ExecuteDbActionAsync<T>(
-        Func<IDbConnection, IDbTransaction?, Task<T>> action,
+        Func<IDbConnection, IDbTransaction?, CancellationToken, Task<T>> action,
         IDbConnection? existingConn,
-        IDbTransaction? existingTx)
+        IDbTransaction? existingTx,
+        CancellationToken ct)
     {
         if (existingConn != null)
         {
             // Execute directly within the parent transaction boundary (e.g., StatementImportService)[cite: 1]
-            return await action(existingConn, existingTx);
+            return await action(existingConn, existingTx, ct);
         }
 
         // Execute as a standalone, retry-protected UI operation[cite: 1]
-        return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+        return await _database.ExecuteWithRetryAsync(async (connection, cancelToken) => await action(connection, null, cancelToken), ct);
     }
 
     public void Dispose()

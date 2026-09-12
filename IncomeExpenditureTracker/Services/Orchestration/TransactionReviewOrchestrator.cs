@@ -54,19 +54,25 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
             var items = await _transactionService.GetFilteredTransactionsAsync(
                 args,
                 conn: null,
-                tx: null);
+                tx: null,
+                ct);
 
             // A separate fast count query for the UI pagination controls
             int totalCount = await _transactionService.GetFilteredTransactionCountAsync(
                 args,
                 conn: null,
-                tx: null);
+                tx: null,
+                ct);
 
             return new PagedResult<Transaction>
             {
                 Items = items,
                 TotalCount = totalCount
             };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -81,10 +87,10 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         try
         {
             // 1. Execute the Batch Update & Retroactive Sweep Atomically
-            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx) =>
+            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx, ct) =>
             {
                 // A. Update the specific rows the user manually edited
-                await _transactionService.UpdateTransactionsBulkAsync(corrections, conn, tx);
+                await _transactionService.UpdateTransactionsBulkAsync(corrections, conn, tx, ct);
 
                 // B. Delegate the Retroactive Sweeps
                 foreach (var correction in corrections)
@@ -93,15 +99,15 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
 
                     if (correction.PayeeId.HasValue)
                     {
-                        await _payeeService.ExecuteRetroactiveSweepAsync(correction.Source, correction.PayeeId.Value, conn, tx);
+                        await _payeeService.ExecuteRetroactiveSweepAsync(correction.Source, correction.PayeeId.Value, conn, tx, ct);
                     }
 
                     if (correction.TargetTagId.HasValue)
                     {
-                        await _transactionService.ExecuteRetroactiveSweepAsync(correction.Source, correction.TargetTagId.Value, conn, tx);
+                        await _transactionService.ExecuteRetroactiveSweepAsync(correction.Source, correction.TargetTagId.Value, conn, tx, ct);
                     }
                 }
-            });
+            }, ct);
 
             _logger.LogInformation("Successfully applied {Count} bulk transaction corrections.", corrections.Count);
             _broker.Send(new BatchUpdateCompletedMessage(corrections.Count));
@@ -120,7 +126,7 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
                     {
                         try
                         {
-                            await _tagService.LearnRuleFromOverrideAsync(correction.RawDescription, correction.TargetTagId.Value);
+                            await _tagService.LearnRuleFromOverrideAsync(correction.RawDescription, correction.TargetTagId.Value, ct);
                         }
                         catch (Exception ex)
                         {
@@ -129,6 +135,10 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
                     }
                 }
             }, CancellationToken.None); // Use CancellationToken.None so learning completes even if the UI cancels the request
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -144,16 +154,20 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         {
             // 100% All-or-Nothing Revert
             // If the transaction wipe succeeds but the batch record wipe fails, it all rolls back.
-            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx) =>
+            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx, ct) =>
             {
                 // First, delete all child transactions tied to this batch
-                await _transactionService.DeleteByBatchIdAsync(batchId, conn, tx);
+                await _transactionService.DeleteByBatchIdAsync(batchId, conn, tx, ct);
 
                 // Second, delete the master batch record
-                await _importBatchService.DeleteBatchAsync(batchId, conn, tx);
-            });
+                await _importBatchService.DeleteBatchAsync(batchId, conn, tx, ct);
+            }, ct);
             _logger.LogInformation("Successfully reverted and deleted Import Batch ID {BatchId}.", batchId);
             _broker.Send(new EntityDeletedMessage("Import Batch", $"Batch #{batchId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

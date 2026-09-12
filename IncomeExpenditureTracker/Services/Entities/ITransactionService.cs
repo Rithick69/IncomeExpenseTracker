@@ -2,6 +2,7 @@ using System.Data;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using IncomeExpenditureTracker.Models;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -17,12 +18,14 @@ public interface ITransactionService
     Task InsertTransactionsAsync(
         List<Transaction> transactions,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null);
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
 
     Task DeleteByBatchIdAsync(
         int batchId,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null);
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
 
     // =========================================================================
     // BATCH UPDATES & ORCHESTRATION SUPPORT
@@ -35,7 +38,8 @@ public interface ITransactionService
     Task UpdateTransactionsBulkAsync(
         IEnumerable<TransactionCorrectionDTO> corrections,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null);
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Re-parents all transactions associated with a deleted Tag to a fallback Tag.
@@ -44,7 +48,8 @@ public interface ITransactionService
         int oldTagId,
         int fallbackTagId,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null);
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Retrieves transactions based on optional filters: BatchId, AccountId, and SearchText.
@@ -54,7 +59,8 @@ public interface ITransactionService
     Task<List<Transaction>> GetFilteredTransactionsAsync(
         TransactionFilterArgs args,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null);
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Retrieves the count of transactions based on optional filters: BatchId, AccountId, and SearchText.
@@ -63,7 +69,8 @@ public interface ITransactionService
     Task<int> GetFilteredTransactionCountAsync(
         TransactionFilterArgs args,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null);
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Executes a retroactive sweep to re-tag all transactions from a specific source to a new target tag. This is useful for bulk corrections when a payee or source mapping changes.
@@ -72,5 +79,6 @@ public interface ITransactionService
         string source,
         int targetTagId,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null);
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
 }

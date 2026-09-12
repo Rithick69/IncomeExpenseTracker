@@ -160,6 +160,67 @@
         </Grid>
 
         <!-- ========================================== -->
+        <!-- Z-INDEX 150: GLOBAL LOADING CURTAIN        -->
+        <!-- ========================================== -->
+        <!-- Absorbs all mouse clicks and dims the background for heavy CPU tasks -->
+        <Grid Background="#B3000000"
+              IsVisible="{Binding IsLoadingOverlayVisible}"
+              ZIndex="150">
+
+            <Border Classes="Card"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Padding="32,24"
+                    MinWidth="300">
+                <StackPanel Spacing="16" HorizontalAlignment="Center">
+
+                    <!-- Circular Spinner replacing the ProgressBar -->
+                    <Grid Width="40" Height="40" HorizontalAlignment="Center">
+
+                        <!-- Background track: A faint full circle using your subtle border token -->
+                        <Border BorderBrush="{DynamicResource BorderSubtle}"
+                                BorderThickness="4"
+                                CornerRadius="20" />
+
+                        <!-- Rotating highlight: Only visible on the top and left edges (4,4,0,0) -->
+                        <Border BorderBrush="{DynamicResource AccentIndigo}"
+                                BorderThickness="4,4,0,0"
+                                CornerRadius="20">
+                            <!-- The transform target that the animation will interact with -->
+                            <Border.RenderTransform>
+                                <RotateTransform />
+                            </Border.RenderTransform>
+
+                            <!-- Pure XAML Animation engine (No C# needed) -->
+                            <Border.Styles>
+                                <Style Selector="Border">
+                                    <Style.Animations>
+                                        <!-- Rotates 360 degrees every 1 second, infinitely -->
+                                        <Animation Duration="0:0:1" IterationCount="Infinite">
+                                            <KeyFrame Cue="0%">
+                                                <Setter Property="RotateTransform.Angle" Value="0" />
+                                            </KeyFrame>
+                                            <KeyFrame Cue="100%">
+                                                <Setter Property="RotateTransform.Angle" Value="360" />
+                                            </KeyFrame>
+                                        </Animation>
+                                    </Style.Animations>
+                                </Style>
+                            </Border.Styles>
+                        </Border>
+                    </Grid>
+
+                    <TextBlock Text="{Binding LoadingOverlayMessage}"
+                               Foreground="{DynamicResource TextPrimary}"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"/>
+
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ========================================== -->
         <!-- Z-INDEX 200: TOAST NOTIFICATION STACK      -->
         <!-- ========================================== -->
         <ItemsControl ItemsSource="{Binding Toasts}"

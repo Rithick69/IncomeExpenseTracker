@@ -20,4 +20,9 @@
     <system:String x:Key="Locale_Gatekeeper_Button_Register">Generate Encrypted Vault</system:String>
     <system:String x:Key="Locale_Gatekeeper_Text_CurrencyWarning">This profile operates strictly in the selected currency. Imported foreign amounts will be recorded at a 1:1 face value without conversion.</system:String>
 
+    <!-- Dashboard Module -->
+    <system:String x:Key="Locale_Dashboard_Title">Dashboard</system:String>
+    <system:String x:Key="Locale_Dashboard_WelcomeMessage">Welcome to your financial command center.</system:String>
+    <system:String x:Key="Locale_Dashboard_Placeholder_NetWorth">Net Worth Tracker (Coming Soon)</system:String>
+    <system:String x:Key="Locale_Dashboard_Placeholder_CashFlow">Cash Flow (Coming Soon)</system:String>
 </ResourceDictionary>

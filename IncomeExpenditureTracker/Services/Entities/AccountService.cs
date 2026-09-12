@@ -62,8 +62,9 @@ public class AccountService : IAccountService, IDisposable
     // If the account exists, return its Id.
     // Otherwise create a new record.
     // ------------------------------------------------------------
-    public async Task<int> GetOrCreateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<int> GetOrCreateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
 
         if (account == null)
             throw new ArgumentNullException(nameof(account));
@@ -80,14 +81,14 @@ public class AccountService : IAccountService, IDisposable
             if (conn != null && tx != null)
             {
                 // Read from cache if it exists (safe reference data reuse)
-                if (_accountIdCache.TryGetValue(cacheKey, out var existingLazy) && !existingLazy.Value.IsFaulted)
+                if (_accountIdCache.TryGetValue(cacheKey, out var existingLazy) && !existingLazy.Value.IsFaulted && !existingLazy.Value.IsCanceled)
                 {
                     return await existingLazy.Value;
                 }
 
                 // Cache MISS inside a transaction: Execute directly, DO NOT cache the result.
                 // Bypass the retry wrapper entirely, as transactions cannot be retried mid-flight.
-                return await ExecuteUpsertInternalAsync(account, conn, tx);
+                return await ExecuteUpsertInternalAsync(account, conn, tx, ct);
             }
 
             // -------------------------------------------------------------------------
@@ -98,8 +99,8 @@ public class AccountService : IAccountService, IDisposable
                 try
                 {
                     // Execute using the retry policy wrapper
-                    var id = await _database.ExecuteWithRetryAsync(retryConn =>
-                        ExecuteUpsertInternalAsync(account, retryConn, null));
+                    var id = await _database.ExecuteWithRetryAsync((retryConn, cancelToken) =>
+                        ExecuteUpsertInternalAsync(account, retryConn, null, cancelToken), ct);
 
                     // ONLY clear the list caches on a cache miss when we actually hit the database
                     _accountListCache.Clear();
@@ -118,6 +119,10 @@ public class AccountService : IAccountService, IDisposable
             // Await the task (concurrent requests will await this same task)
             return await lazyId.Value;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             // Fault Eviction: Remove poisoned keys so subsequent requests can retry cleanly
@@ -133,8 +138,10 @@ public class AccountService : IAccountService, IDisposable
     // Used by dashboard and account selection UI.
     // ------------------------------------------------------------
 
-    public async Task<List<Account>> GetAllAccounts()
+    public async Task<List<Account>> GetAllAccounts(CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         const string cacheKey = "ALL_ACCOUNTS";
         try
         {
@@ -144,12 +151,13 @@ public class AccountService : IAccountService, IDisposable
                 try
                 {
                     // Execute using the standard retry wrapper (no external conn/tx needed)
-                    return await _database.ExecuteWithRetryAsync(async c =>
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                     {
                         const string sql = "SELECT * FROM Accounts ORDER BY EntityName ASC, AccountNumber ASC";
-                        var entities = await c.QueryAsync<Account>(sql);
+                        var cmd = new CommandDefinition(sql, cancellationToken: cancelToken);
+                        var entities = await c.QueryAsync<Account>(cmd);
                         return entities.ToList();
-                    });
+                    }, ct);
                 }
                 catch
                 {
@@ -162,6 +170,10 @@ public class AccountService : IAccountService, IDisposable
             // Await the Lazy task. All concurrent threads will await this same exact task instance.
             return await cachedLazy.Value;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError($"[AccountService] Failed to fetch account details: {ex.Message}");
@@ -169,8 +181,10 @@ public class AccountService : IAccountService, IDisposable
         }
     }
 
-    public async Task<List<Account>> GetAccountsByEntityId(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<List<Account>> GetAccountsByEntityId(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         var cacheKey = $"ENTITY_ACCOUNTS_{entityId}";
 
         try
@@ -179,12 +193,13 @@ public class AccountService : IAccountService, IDisposable
             // We do not want to read stale cached data, nor do we want to cache uncommitted data.
             if (conn != null && tx != null)
             {
-                return await ExecuteDbActionAsync(async (connection, transaction) =>
+                return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
                 {
                     const string sql = "SELECT * FROM Accounts WHERE EntityId = @EntityId ORDER BY AccountNumber ASC;";
-                    var accounts = await connection.QueryAsync<Account>(sql, new { EntityId = entityId }, transaction: transaction);
+                    var cmd = new CommandDefinition(sql, new { EntityId = entityId }, transaction: transaction, cancellationToken: cancelToken);
+                    var accounts = await connection.QueryAsync<Account>(cmd);
                     return accounts.ToList();
-                }, conn, tx);
+                }, conn, tx, ct);
             }
 
             // 2. Cache Stampede Protection: GetOrAdd ensures only ONE thread executes the factory method
@@ -193,12 +208,13 @@ public class AccountService : IAccountService, IDisposable
                 try
                 {
                     // Only one thread will ever run this block per cache miss for this specific EntityId
-                    return await ExecuteDbActionAsync(async (connection, transaction) =>
+                    return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
                     {
                         const string sql = "SELECT * FROM Accounts WHERE EntityId = @EntityId ORDER BY AccountNumber ASC;";
-                        var accounts = await connection.QueryAsync<Account>(sql, new { EntityId = entityId }, transaction: transaction);
+                        var cmd = new CommandDefinition(sql, new { EntityId = entityId }, transaction: transaction, cancellationToken: cancelToken);
+                        var accounts = await connection.QueryAsync<Account>(cmd);
                         return accounts.ToList();
-                    }, null, null);
+                    }, null, null, ct);
                 }
                 catch
                 {
@@ -210,6 +226,10 @@ public class AccountService : IAccountService, IDisposable
 
             // Await the Lazy task. All concurrent threads asking for this EntityId will await this same task.
             return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -223,8 +243,10 @@ public class AccountService : IAccountService, IDisposable
     // ------------------------------------------------------------
     // Updates account metadata such as name or bank.
     // ------------------------------------------------------------
-    public async Task UpdateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task UpdateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (account == null || account.Id <= 0)
             throw new ArgumentException("Valid account instance with a primary key is required for update.");
         try
@@ -262,13 +284,18 @@ public class AccountService : IAccountService, IDisposable
                 WHERE Id = @Id
             ";
 
-            await ExecuteDbActionAsync(async (connection, transaction) =>
-             {
-                 await connection.ExecuteAsync(sql, account, transaction: transaction);
-                 return true;
-             }, conn, tx);
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+            {
+                var cmd = new CommandDefinition(sql, account, transaction: transaction, cancellationToken: cancelToken);
+                await connection.ExecuteAsync(cmd);
+                return true;
+            }, conn, tx, ct);
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -286,11 +313,13 @@ public class AccountService : IAccountService, IDisposable
     // Should only be allowed if no transactions reference it.
     // Otherwise the deletion may violate foreign key constraints.
     // ------------------------------------------------------------
-    public async Task DeleteAccount(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task DeleteAccount(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
                 // Checked BOTH ImportBatches and Transactions to prevent foreign key violations
                 const string checkSql = @"
@@ -298,19 +327,37 @@ public class AccountService : IAccountService, IDisposable
                         (SELECT COUNT(*) FROM ImportBatches WHERE AccountId = @AccountId) +
                         (SELECT COUNT(*) FROM Transactions WHERE AccountId = @AccountId);";
 
-                var usageCount = await connection.ExecuteScalarAsync<int>(checkSql, new { AccountId = accountId }, transaction: transaction);
+                var checkCmd = new CommandDefinition(
+                    checkSql,
+                    new { AccountId = accountId },
+                    transaction: transaction,
+                    cancellationToken: cancelToken);
+
+                var usageCount = await connection.ExecuteScalarAsync<int>(checkCmd);
 
                 if (usageCount > 0)
                 {
                     throw new InvalidOperationException("Cannot delete account because existing imports or transactions reference it.");
                 }
 
-                const string deleteSql = "DELETE FROM Accounts WHERE Id = @AccountId;";
-                await connection.ExecuteAsync(deleteSql, new { AccountId = accountId }, transaction: transaction);
+                // const string deleteSql = "DELETE FROM Accounts WHERE Id = @AccountId;";
+                // await connection.ExecuteAsync(deleteSql, new { AccountId = accountId }, transaction: transaction);
+
+                var deleteCmd = new CommandDefinition(
+                    @"DELETE FROM Accounts WHERE Id = @AccountId;",
+                    new { AccountId = accountId },
+                    transaction: transaction,
+                    cancellationToken: cancelToken);
+
+                await connection.ExecuteAsync(deleteCmd);
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -319,8 +366,10 @@ public class AccountService : IAccountService, IDisposable
         }
     }
 
-    public async Task<bool> HasTransactionsAsync(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<bool> HasTransactionsAsync(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
             // High-speed lookup relying on idx_transactions_accountid
@@ -328,13 +377,28 @@ public class AccountService : IAccountService, IDisposable
 
             if (conn != null)
             {
-                return await conn.ExecuteScalarAsync<bool>(sql, new { AccountId = accountId }, transaction: tx);
+                var checkcmd = new CommandDefinition(
+                    sql,
+                    new { AccountId = accountId },
+                    transaction: tx,
+                    cancellationToken: ct
+                );
+                return await conn.ExecuteScalarAsync<bool>(checkcmd);
             }
 
-            return await _database.ExecuteWithRetryAsync(async (c) =>
+            return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
             {
-                return await c.ExecuteScalarAsync<bool>(sql, new { AccountId = accountId });
-            });
+                var checkcmd = new CommandDefinition(
+                    sql,
+                    new { AccountId = accountId },
+                    cancellationToken: cancelToken
+                );
+                return await c.ExecuteScalarAsync<bool>(checkcmd);
+            }, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -343,8 +407,10 @@ public class AccountService : IAccountService, IDisposable
         }
     }
 
-    public async Task ReassignAccountsAsync(int oldEntityId, int targetEntityId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task ReassignAccountsAsync(int oldEntityId, int targetEntityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
             const string sql = @"
@@ -354,16 +420,31 @@ public class AccountService : IAccountService, IDisposable
 
             if (conn != null)
             {
-                await conn.ExecuteAsync(sql, new { OldEntityId = oldEntityId, targetEntityId }, transaction: tx);
+                var cmd = new CommandDefinition(
+                    sql,
+                    new { OldEntityId = oldEntityId, targetEntityId },
+                    transaction: tx,
+                    cancellationToken: ct
+                );
+                await conn.ExecuteAsync(cmd);
             }
             else
             {
-                await _database.ExecuteWithRetryAsync(async (c) =>
+                await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                 {
-                    await c.ExecuteAsync(sql, new { OldEntityId = oldEntityId, targetEntityId });
-                });
+                    var cmd = new CommandDefinition(
+                    sql,
+                    new { OldEntityId = oldEntityId, targetEntityId },
+                    cancellationToken: cancelToken
+                );
+                    await c.ExecuteAsync(cmd);
+                }, ct);
             }
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -376,9 +457,9 @@ public class AccountService : IAccountService, IDisposable
     /// Executes an atomic SQLite upsert. Eliminates read-then-write race conditions by attempting
     /// an INSERT OR IGNORE and immediately querying the canonical Id in a single execution block.
     /// </summary>
-    private async Task<int> ExecuteUpsertInternalAsync(Account account, IDbConnection? conn, IDbTransaction? tx)
+    private async Task<int> ExecuteUpsertInternalAsync(Account account, IDbConnection? conn, IDbTransaction? tx, CancellationToken ct)
     {
-        return await ExecuteDbActionAsync(async (connection, transaction) =>
+        return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
         {
             // -------------------------------------------------------------------------
             // ATOMIC UPSERT SQL (CORRECTED FROM ENTITIES COPY-PASTE)
@@ -408,10 +489,12 @@ public class AccountService : IAccountService, IDisposable
                 account.CreatedDate = DateTime.UtcNow;
             }
 
-            var id = await connection.ExecuteScalarAsync<long>(sql, account, transaction: transaction);
+            var cmd = new CommandDefinition(sql, account, transaction: transaction, cancellationToken: cancelToken);
+
+            var id = await connection.ExecuteScalarAsync<long>(cmd);
             _logger.LogDebug("Resolved Account '{CacheKey}' to ID {Id}.", GetCacheKey(account), id);
             return (int)id;
-        }, conn, tx);
+        }, conn, tx, ct);
     }
 
     /// <summary>
@@ -419,18 +502,19 @@ public class AccountService : IAccountService, IDisposable
     /// unless an active connection and transaction are passed from a parent orchestrator.
     /// </summary>
     private async Task<T> ExecuteDbActionAsync<T>(
-        Func<IDbConnection, IDbTransaction?, Task<T>> action,
+        Func<IDbConnection, IDbTransaction?, CancellationToken, Task<T>> action,
         IDbConnection? existingConn,
-        IDbTransaction? existingTx)
+        IDbTransaction? existingTx,
+        CancellationToken ct)
     {
         if (existingConn != null)
         {
             // Execute directly within the parent transaction boundary (e.g., StatementImportService)
-            return await action(existingConn, existingTx);
+            return await action(existingConn, existingTx, ct);
         }
 
         // Execute as a standalone, retry-protected UI operation
-        return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+        return await _database.ExecuteWithRetryAsync(async (connection, cancelToken) => await action(connection, null, cancelToken), ct);
     }
 
     private void InvalidateCache()

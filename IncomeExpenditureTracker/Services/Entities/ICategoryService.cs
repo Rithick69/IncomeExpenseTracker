@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Data;
+using System;
 using IncomeExpenditureTracker.Models;
+using System.Threading;
 namespace IncomeExpenditureTracker.Services.Entities;
 
 // Interface for managing categories in the system.
@@ -10,8 +12,8 @@ namespace IncomeExpenditureTracker.Services.Entities;
 
 public interface ICategoryService
 {
-    Task<int> GetOrCreateCategory(string name, IDbConnection? conn = null, IDbTransaction? tx = null);
-    Task<List<Category>> GetAllCategories();
-    Task UpdateCategory(Category category, IDbConnection? conn = null, IDbTransaction? tx = null);
-    Task DeleteCategory(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null);
+    Task<int> GetOrCreateCategory(string name, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
+    Task<List<Category>> GetAllCategories(CancellationToken ct = default);
+    Task UpdateCategory(Category category, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
+    Task DeleteCategory(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 }
