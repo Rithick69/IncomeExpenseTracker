@@ -13,6 +13,7 @@ using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Settings;
 using IncomeExpenditureTracker.UI.Shared;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.UI.Gatekeeper;
 
@@ -83,6 +84,7 @@ public partial class RegisterViewModel : ViewModelBase
             // Prevent multiple concurrent registrations
             return;
         }
+
         ErrorMessage = string.Empty;
         SuccessMessage = string.Empty;
 
@@ -112,6 +114,8 @@ public partial class RegisterViewModel : ViewModelBase
             SetError("Nickname can only contain letters, numbers, hyphens, and underscores.");
             return;
         }
+
+        _broker.Send(new ShowLoadingOverlayMessage("Generating Vault ..."));
 
         IsLoading = true;
 
@@ -173,28 +177,37 @@ public partial class RegisterViewModel : ViewModelBase
             }
 
             // 7. Inject Base Currency into the newly encrypted vault
-            await _userSettingsService.SetSettingAsync("BaseCurrency", SelectedCurrency);
+            await _userSettingsService.SetSettingAsync("BaseCurrency", SelectedCurrency, CancellationToken.None);
 
-            RunOnUIThread(async () =>
+            _broker.Send(new HideLoadingOverlayMessage());
+
+            // TaskCreationOptions.RunContinuationsAsynchronously is MANDATORY.
+            // It prevents the UI thread from deadlocking when the MainWindowViewModel calls TrySetResult().
+            var modalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            // Send the message purely. The Broker and MainWindowViewModel will handle the thread marshaling.
+            _broker.Send(new ShowHelperMessage(
+                Title: "SAVE YOUR MASTER KEY",
+                 Body: $"Your vault is encrypted. If you lose your password, this is the only way to delete the vault. Please copy this safely:\n\n{masterKey}",
+                IsCritical: true,
+                CompletionSource: modalTcs,
+                ShowCopyButton: true
+            ));
+
+            // Use RunOnUIThread STRICTLY for localized property mutations (like your success text).
+            RunOnUIThread(() =>
             {
-                // 8. Show Master Key Modal and pause execution until they click Confirm
-                var modalTcs = new TaskCompletionSource<bool>();
-                _broker.Send(new ShowHelperMessage(
-                    Title: "SAVE YOUR MASTER KEY",
-                    Body: $"Your vault is encrypted. If you lose your password, this is the only way to delete the vault. Please copy this safely:\n\n{masterKey}",
-                    IsCritical: true,
-                    CompletionSource: modalTcs,
-                    ShowCopyButton: true
-                ));
-
                 SetSuccess("Vault generated successfully! Loading Workspace...");
-
-                // Execution safely pauses right here on the UI thread
-                await modalTcs.Task;
-
-                // 9. Route to Main Dashboard
-                _broker.Send(new NavigationMessage("MainDashboard"));
             });
+
+            // Safely await the user's click outside of the UI thread lock.
+            await modalTcs.Task;
+
+            _broker.Send(new ShowLoadingOverlayMessage("Logging In..."));
+
+            // Route to Dashboard. The Broker handles this safely.
+            _broker.Send(new NavigationMessage("Dashboard"));
+
         }
         catch (Exception ex)
         {
@@ -215,6 +228,7 @@ public partial class RegisterViewModel : ViewModelBase
         finally
         {
             RunOnUIThread(() => IsLoading = false);
+            _broker.Send(new HideLoadingOverlayMessage());
         }
     }
 

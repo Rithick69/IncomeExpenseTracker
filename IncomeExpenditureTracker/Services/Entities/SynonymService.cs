@@ -95,11 +95,17 @@ public class SynonymService : ISynonymService, IDisposable
     {
         var normalizedCategory = category.ToUpperInvariant();
 
-        await ExecuteDbActionAsync(async (connection, transaction) =>
+        await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
         {
             // 1. Get all distinct field types currently in the DB
             var existingTypesQuery = "SELECT DISTINCT FieldType FROM Synonyms WHERE Category = @Category;";
-            var existingTypes = (await connection.QueryAsync<string>(existingTypesQuery, new { Category = normalizedCategory }))
+            var selectCmd = new CommandDefinition(
+                existingTypesQuery,
+                new { Category = normalizedCategory },
+                transaction: transaction,
+                cancellationToken: cancelToken);
+
+            var existingTypes = (await connection.QueryAsync<string>(selectCmd))
                                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             // 2. Find which standard types are missing from the DB
@@ -113,19 +119,25 @@ public class SynonymService : ISynonymService, IDisposable
 
             foreach (var fieldType in missingTypes)
             {
-                await connection.ExecuteAsync(insertQuery, new
-                {
-                    FieldType = fieldType.ToUpperInvariant(),
-                    Synonym = fieldType, // Self-referencing default (e.g., "Date" -> "Date")
-                    Priority = 1,        // Baseline priority
-                    Category = normalizedCategory
-                });
+                var insertCmd = new CommandDefinition(
+                    insertQuery,
+                    new
+                    {
+                        FieldType = fieldType.ToUpperInvariant(),
+                        Synonym = fieldType, // Self-referencing default
+                        Priority = 1,        // Baseline priority
+                        Category = normalizedCategory
+                    },
+                    transaction: transaction,
+                    cancellationToken: cancelToken);
+
+                await connection.ExecuteAsync(insertCmd);
             }
 
             // Evict cached snapshot to ensure subsequent extraction tasks see the new baseline seeds
             InvalidateCache(normalizedCategory);
             return true;
-        }, conn, tx);
+        }, conn, tx, CancellationToken.None);
     }
 
     // ------------------------------------------------------------
@@ -144,8 +156,10 @@ public class SynonymService : ISynonymService, IDisposable
     // Returns:
     // List<Synonyms>
     // ------------------------------------------------------------
-    public async Task<IEnumerable<Synonyms>> GetAllSynonyms()
+    public async Task<IEnumerable<Synonyms>> GetAllSynonyms(CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         const string cacheKey = "ALL_SYNONYMS";
 
         try
@@ -154,11 +168,15 @@ public class SynonymService : ISynonymService, IDisposable
             {
                 try
                 {
-                    return await _database.ExecuteWithRetryAsync(async connection =>
+                    return await _database.ExecuteWithRetryAsync(async (connection, cancelToken) =>
                     {
-                        var synonyms = await connection.QueryAsync<Synonyms>("SELECT * FROM Synonyms");
+                        var cmd = new CommandDefinition(
+                            "SELECT * FROM Synonyms",
+                            cancellationToken: cancelToken
+                        );
+                        var synonyms = await connection.QueryAsync<Synonyms>(cmd);
                         return synonyms.ToList();
-                    });
+                    }, ct);
                 }
                 catch
                 {
@@ -169,6 +187,10 @@ public class SynonymService : ISynonymService, IDisposable
             }, LazyThreadSafetyMode.ExecutionAndPublication));
 
             return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -182,8 +204,10 @@ public class SynonymService : ISynonymService, IDisposable
     /// Eliminates SQLite disk I/O during high-volume parsing and concurrent workbook staging .
     /// Here Category stands for TRANSACTION/META categorisation of header fields.
     /// </summary>
-    public async Task<IReadOnlyDictionary<string, Synonyms>> GetSynonymsByCategory(string category)
+    public async Task<IReadOnlyDictionary<string, Synonyms>> GetSynonymsByCategory(string category, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         var normalizedCategory = category.ToUpperInvariant();
 
         try
@@ -192,7 +216,7 @@ public class SynonymService : ISynonymService, IDisposable
             {
                 try
                 {
-                    return await LoadSynonymsFromDbAsync(normalizedCategory);
+                    return await LoadSynonymsFromDbAsync(normalizedCategory, ct);
                 }
                 catch
                 {
@@ -204,6 +228,10 @@ public class SynonymService : ISynonymService, IDisposable
 
             return await lazySnapshot.Value;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve synonym snapshot for category '{Category}'.", normalizedCategory);
@@ -214,11 +242,11 @@ public class SynonymService : ISynonymService, IDisposable
     /// <summary>
     /// Internal factory method that queries SQLite and builds the deduplicated O(1) lookup dictionary .
     /// </summary>
-    private async Task<IReadOnlyDictionary<string, Synonyms>> LoadSynonymsFromDbAsync(string normalizedCategory)
+    private async Task<IReadOnlyDictionary<string, Synonyms>> LoadSynonymsFromDbAsync(string normalizedCategory, CancellationToken ct)
     {
         _logger.LogInformation("Cache miss for category '{Category}'. Querying SQLite to build RAM snapshot...", normalizedCategory);
 
-        return await _database.ExecuteWithRetryAsync(async connection =>
+        return await _database.ExecuteWithRetryAsync(async (connection, cancelToken) =>
         {
             // Ordering by Priority DESC is the mathematical foundation for automatic duplicate conflict resolution
             const string sql = @"
@@ -227,7 +255,13 @@ public class SynonymService : ISynonymService, IDisposable
                 WHERE Category = @Category
                 ORDER BY Priority DESC;";
 
-            var rows = await connection.QueryAsync<Synonyms>(sql, new { Category = normalizedCategory });
+            var cmd = new CommandDefinition(
+                sql,
+                new { Category = normalizedCategory },
+                cancellationToken: cancelToken
+            );
+
+            var rows = await connection.QueryAsync<Synonyms>(cmd);
 
             // Build an O(1) case-insensitive dictionary mapping Normalized Synonym -> Full Entity.
             // GroupBy + First() automatically resolves conflicts by claiming the highest Priority.
@@ -238,7 +272,7 @@ public class SynonymService : ISynonymService, IDisposable
 
             _logger.LogDebug("Successfully built in-memory snapshot for '{Category}' containing {Count} mappings.", normalizedCategory, synonymMap.Count);
             return synonymMap.AsReadOnly();
-        });
+        }, ct);
     }
 
     /// <summary>
@@ -247,8 +281,10 @@ public class SynonymService : ISynonymService, IDisposable
     /// Wrapped in an explicit SQLite transaction to guarantee atomicity and prevent race conditions .
     /// Dispatched onto background threads by StatementManager after user edit confirmation .
     /// </summary>
-    public async Task LearnFromCorrectionAsync(string rawSynonym, string fieldType, string category)
+    public async Task LearnFromCorrectionAsync(string rawSynonym, string fieldType, string category, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         var normalizedCategory = category.ToUpperInvariant();
         try
         {
@@ -262,7 +298,7 @@ public class SynonymService : ISynonymService, IDisposable
             // to guarantee two concurrent learning tasks cannot calculate the same Priority number .
             // -------------------------------------------------------------------------
 
-            await _database.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+            await _database.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
             {
                 const string maxPrioritySql = "SELECT MAX(Priority) FROM Synonyms WHERE Synonym = @Synonym AND Category = @Category;";
 
@@ -274,10 +310,18 @@ public class SynonymService : ISynonymService, IDisposable
                  *    historical record of previous mistakes and corrections.
                  */
 
-                var currentMaxPriority = await connection.QuerySingleOrDefaultAsync<int?>(
+                var prioritycmd = new CommandDefinition(
                     maxPrioritySql,
-                    new { Synonym = rawSynonym, Category = normalizedCategory },
-                    transaction: transaction);
+                    new
+                    {
+                        Synonym = rawSynonym,
+                        Category = normalizedCategory
+                    },
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+
+                var currentMaxPriority = await connection.QuerySingleOrDefaultAsync<int?>(prioritycmd);
 
                 int newPriority = (currentMaxPriority ?? 0) + 1;
 
@@ -293,13 +337,24 @@ public class SynonymService : ISynonymService, IDisposable
                     INSERT INTO Synonyms (FieldType, Synonym, Priority, Category)
                     VALUES (@FieldType, @Synonym, @Priority, @Category);";
 
-                await connection.ExecuteAsync(insertSql, newSynonym, transaction: transaction);
-            });
+                var insertcmd = new CommandDefinition(
+                    insertSql,
+                    newSynonym,
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+
+                await connection.ExecuteAsync(insertcmd);
+            }, ct);
 
             _logger.LogInformation("Learned new mapping for category '{Category}': '{RawSynonym}' -> '{FieldType}'.", normalizedCategory, rawSynonym, rawFieldType);
 
             // Evict the RAM snapshot for this category so the next extraction task sees the new mapping
             InvalidateCache(normalizedCategory);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -312,21 +367,33 @@ public class SynonymService : ISynonymService, IDisposable
     // ------------------------------------------------------------
     // ADD SYNONYM
     // ------------------------------------------------------------
-    public async Task AddSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task AddSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
             const string sql = @"
             INSERT INTO Synonyms (FieldType, Synonym, Priority, Category)
             VALUES (@FieldType, @Synonym, @Priority, @Category);";
 
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
-                await connection.ExecuteAsync(sql, synonym, transaction: transaction);
+                var cmd = new CommandDefinition(
+                    sql,
+                    synonym,
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+                await connection.ExecuteAsync(cmd);
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache(synonym.Category);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -338,8 +405,10 @@ public class SynonymService : ISynonymService, IDisposable
     // ------------------------------------------------------------
     // UPDATE SYNONYM
     // ------------------------------------------------------------
-    public async Task UpdateSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task UpdateSynonymAsync(Synonyms synonym, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
             const string sql = @"
@@ -350,13 +419,23 @@ public class SynonymService : ISynonymService, IDisposable
                 Category = @Category
             WHERE Id = @Id;";
 
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
-                await connection.ExecuteAsync(sql, synonym, transaction: transaction);
+                var cmd = new CommandDefinition(
+                    sql,
+                    synonym,
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+                await connection.ExecuteAsync(cmd);
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache(synonym.Category);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -368,19 +447,31 @@ public class SynonymService : ISynonymService, IDisposable
     // ------------------------------------------------------------
     // DELETE SYNONYM
     // ------------------------------------------------------------
-    public async Task DeleteSynonymAsync(int id, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task DeleteSynonymAsync(int id, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
             const string sql = "DELETE FROM Synonyms WHERE Id = @Id;";
 
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
-                await connection.ExecuteAsync(sql, new { Id = id }, transaction: transaction);
+                var cmd = new CommandDefinition(
+                    sql,
+                    new { Id = id },
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+                await connection.ExecuteAsync(cmd);
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache(null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -394,16 +485,17 @@ public class SynonymService : ISynonymService, IDisposable
     // HELPERS
     // ------------------------------------------------------------
     private async Task<T> ExecuteDbActionAsync<T>(
-        Func<IDbConnection, IDbTransaction?, Task<T>> action,
+        Func<IDbConnection, IDbTransaction?, CancellationToken, Task<T>> action,
         IDbConnection? existingConn,
-        IDbTransaction? existingTx)
+        IDbTransaction? existingTx,
+        CancellationToken ct)
     {
         if (existingConn != null)
         {
-            return await action(existingConn, existingTx);
+            return await action(existingConn, existingTx, ct);
         }
 
-        return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+        return await _database.ExecuteWithRetryAsync(async (connection, cancelToken) => await action(connection, null, cancelToken), ct);
     }
 
     /// <summary>

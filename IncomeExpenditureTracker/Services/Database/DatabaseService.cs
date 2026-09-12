@@ -113,14 +113,14 @@ public class DatabaseService : IDatabaseService
     /// Creates a new SqliteConnection, opens it asynchronously, and strictly applies
     /// required SQLite PRAGMAs before yielding it to the caller.
     /// </summary>
-    public async Task<IDbConnection> GetOpenConnectionAsync()
+    public async Task<IDbConnection> GetOpenConnectionAsync(CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(_connectionString))
         {
             throw new InvalidOperationException("Attempted to connect to the database before a profile was loaded.");
         }
         var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(ct);
 
         // -------------------------------------------------------------------------
         // SECURE SQLCIPHER UNLOCK & ZERO-LEAK MEMORY ANNIHILATION
@@ -177,42 +177,43 @@ public class DatabaseService : IDatabaseService
         //    our compound uniqueness constraints and relational bindings are ignored.
         // 2. journal_mode = WAL: Ensures non-blocking concurrent reads while writes occur.
         // -------------------------------------------------------------------------
-        await connection.ExecuteAsync("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+        var pragmaCmd = new CommandDefinition("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;", cancellationToken: ct);
+        await connection.ExecuteAsync(pragmaCmd);
 
         return connection;
     }
 
-    public async Task ExecuteWithRetryAsync(Func<IDbConnection, Task> action)
+    public async Task ExecuteWithRetryAsync(Func<IDbConnection, CancellationToken, Task> action, CancellationToken ct = default)
     {
         await ExecuteWithRetryInternalAsync(async () =>
         {
-            using var connection = await GetOpenConnectionAsync();
-            await action(connection);
-            return true; // Dummy return to satisfy generic helper
-        });
+            using var connection = await GetOpenConnectionAsync(ct);
+            await action(connection, ct);
+            return true; // Dummy return
+        }, ct);
     }
 
-    public async Task<T> ExecuteWithRetryAsync<T>(Func<IDbConnection, Task<T>> action)
+    public async Task<T> ExecuteWithRetryAsync<T>(Func<IDbConnection, CancellationToken, Task<T>> action, CancellationToken ct = default)
     {
         return await ExecuteWithRetryInternalAsync(async () =>
         {
-            using var connection = await GetOpenConnectionAsync();
-            return await action(connection);
-        });
+            using var connection = await GetOpenConnectionAsync(ct);
+            return await action(connection, ct);
+        }, ct);
     }
 
-    public async Task ExecuteInTransactionWithRetryAsync(Func<IDbConnection, IDbTransaction, Task> action)
+    public async Task ExecuteInTransactionWithRetryAsync(Func<IDbConnection, IDbTransaction, CancellationToken, Task> action, CancellationToken ct = default)
     {
         await ExecuteWithRetryInternalAsync(async () =>
         {
-            using var connection = await GetOpenConnectionAsync();
+            using var connection = await GetOpenConnectionAsync(ct);
 
             // Initiate the explicit transaction boundary
             using var transaction = connection.BeginTransaction();
             try
             {
                 // Pass connection and active transaction to caller's repository methods
-                await action(connection, transaction);
+                await action(connection, transaction, ct);
 
                 // If delegate succeeds without throwing, commit atomically to disk
                 transaction.Commit();
@@ -226,30 +227,23 @@ public class DatabaseService : IDatabaseService
                 // If any foreign key violation, formatting error, or constraint failure occurs,
                 // we instantly revert all changes made during this session.
                 // -------------------------------------------------------------------------
+                // Note: This will catch OperationCanceledException, executing a rollback before bubbling up.
                 _logger.LogWarning(ex, "Exception occurred inside explicit database transaction. Rolling back changes.");
-                try
-                {
-                    transaction.Rollback();
-                }
-                catch (Exception rollbackEx)
-                {
-                    _logger.LogError(rollbackEx, "Failed to execute transaction rollback.");
-                }
-
-                throw; // Rethrow original exception so the calling service knows it failed
+                try { transaction.Rollback(); } catch { }
+                throw;
             }
-        });
+        }, ct);
     }
 
-    public async Task<T> ExecuteInTransactionWithRetryAsync<T>(Func<IDbConnection, IDbTransaction, Task<T>> action)
+    public async Task<T> ExecuteInTransactionWithRetryAsync<T>(Func<IDbConnection, IDbTransaction, CancellationToken, Task<T>> action, CancellationToken ct = default)
     {
         return await ExecuteWithRetryInternalAsync(async () =>
         {
-            using var connection = await GetOpenConnectionAsync();
+            using var connection = await GetOpenConnectionAsync(ct);
             using var transaction = connection.BeginTransaction();
             try
             {
-                var result = await action(connection, transaction);
+                var result = await action(connection, transaction, ct);
                 transaction.Commit();
                 return result;
             }
@@ -259,15 +253,16 @@ public class DatabaseService : IDatabaseService
                 try { transaction.Rollback(); } catch { /* Ignore cascade rollback failures */ }
                 throw;
             }
-        });
+        }, ct);
     }
 
     /// <summary>
     /// Core retry engine. Intercepts transient SQLite lock errors (SQLITE_BUSY / SQLITE_LOCKED)
     /// and applies exponential backoff with random jitter.
     /// </summary>
-    private async Task<T> ExecuteWithRetryInternalAsync<T>(Func<Task<T>> operation)
+    private async Task<T> ExecuteWithRetryInternalAsync<T>(Func<Task<T>> operation, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
 
         // 1. Capture the passport BEFORE waiting. This is the database this query was meant for.
         Guid expectedSessionId = _currentProfileSessionId;
@@ -278,7 +273,7 @@ public class DatabaseService : IDatabaseService
             // Wait if a swap is already actively happening
             while (_isSwapping)
             {
-                await Task.Delay(10);
+                await Task.Delay(10, ct);
             }
 
             // Step onto the scale: register this query as active
@@ -303,7 +298,7 @@ public class DatabaseService : IDatabaseService
 
             // A swap started! We must step back out, decrement the counter, and wait.
             Interlocked.Decrement(ref _activeQueries);
-            await Task.Delay(10);
+            await Task.Delay(10, ct);
         }
 
         try
@@ -313,6 +308,7 @@ public class DatabaseService : IDatabaseService
 
             while (true)
             {
+                ct.ThrowIfCancellationRequested();
                 try
                 {
                     attempt++;
@@ -342,12 +338,15 @@ public class DatabaseService : IDatabaseService
                     _logger.LogWarning("SQLite lock contention detected (Error Code: {ErrorCode}). Retrying attempt {Attempt}/{MaxAttempts} in {Delay}ms...",
                         ex.SqliteErrorCode, attempt, MaxRetryAttempts, totalDelay);
 
-                    await Task.Delay(totalDelay);
+                    await Task.Delay(totalDelay, ct);
                 }
                 catch (Exception ex)
                 {
-                    // Non-transient exceptions (syntax errors, null refs, schema bugs) fail immediately
-                    _logger.LogDebug(ex, "Non-transient database exception encountered. Failing immediately without retry.");
+                    // Ignore logging OperationCanceledException as a non-transient error
+                    if (ex is not OperationCanceledException)
+                    {
+                        _logger.LogDebug(ex, "Non-transient database exception encountered. Failing immediately without retry.");
+                    }
                     throw;
                 }
             }

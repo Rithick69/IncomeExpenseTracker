@@ -56,8 +56,10 @@ public class SubCategoryService : ISubCategoryService, IDisposable
     /// Resolves an existing SubCategory ID or atomically creates a new one in O(1) memory or a single SQL execution.
     /// Accepts optional transaction boundaries for all-or-nothing batch imports.
     /// </summary>
-    public async Task<int> GetOrCreateSubCategory(string name, int? categoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<int> GetOrCreateSubCategory(string name, int? categoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("SubCategory name cannot be empty.", nameof(name));
 
@@ -77,14 +79,14 @@ public class SubCategoryService : ISubCategoryService, IDisposable
             if (conn != null && tx != null)
             {
                 // Read from cache if it exists (safe reference data reuse)
-                if (_subCategoryIdCache.TryGetValue(cacheKey, out var existingLazy) && !existingLazy.Value.IsFaulted)
+                if (_subCategoryIdCache.TryGetValue(cacheKey, out var existingLazy) && !existingLazy.Value.IsFaulted && !existingLazy.Value.IsCanceled)
                 {
                     return await existingLazy.Value;
                 }
 
                 // Cache MISS inside a transaction: Execute directly, DO NOT cache the result.
                 // Bypass the retry wrapper entirely, as transactions cannot be retried mid-flight.
-                return await ExecuteUpsertInternalAsync(name, categoryId, conn, tx);
+                return await ExecuteUpsertInternalAsync(name, categoryId, conn, tx, ct);
             }
 
             // -------------------------------------------------------------------------
@@ -95,8 +97,8 @@ public class SubCategoryService : ISubCategoryService, IDisposable
                 try
                 {
                     // Execute using the retry policy wrapper
-                    var id = await _database.ExecuteWithRetryAsync(retryConn =>
-                        ExecuteUpsertInternalAsync(name, categoryId, retryConn, null));
+                    var id = await _database.ExecuteWithRetryAsync((retryConn, cancelToken) =>
+                        ExecuteUpsertInternalAsync(name, categoryId, retryConn, null, cancelToken), ct);
 
                     // ONLY clear the list caches on a cache miss when we actually hit the database
                     _subCategoryListCache.Clear();
@@ -116,6 +118,10 @@ public class SubCategoryService : ISubCategoryService, IDisposable
             return await lazyId.Value;
 
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             // Fallback catch just in case something throws outside the Lazy block
@@ -127,8 +133,10 @@ public class SubCategoryService : ISubCategoryService, IDisposable
     // ------------------------------------------------------------
     // GET ALL SUBCATEGORIES
     // ------------------------------------------------------------
-    public async Task<List<SubCategory>> GetAllSubCategories()
+    public async Task<List<SubCategory>> GetAllSubCategories(CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         const string cacheKey = "ALL_SUBCATEGORIES";
         try
         {
@@ -138,12 +146,13 @@ public class SubCategoryService : ISubCategoryService, IDisposable
                 try
                 {
                     // Execute using the standard retry wrapper (no external conn/tx needed)
-                    return await _database.ExecuteWithRetryAsync(async c =>
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                     {
                         const string sql = "SELECT Id, Name, CategoryId FROM SubCategories ORDER BY Name ASC;";
-                        var entities = await c.QueryAsync<SubCategory>(sql);
+                        var cmd = new CommandDefinition(sql, cancellationToken: cancelToken);
+                        var entities = await c.QueryAsync<SubCategory>(cmd);
                         return entities.ToList();
-                    });
+                    }, ct);
                 }
                 catch
                 {
@@ -156,6 +165,10 @@ public class SubCategoryService : ISubCategoryService, IDisposable
             // Await the Lazy task. All concurrent threads will await this same exact task instance.
             return await cachedLazy.Value;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch subcategories.");
@@ -166,8 +179,10 @@ public class SubCategoryService : ISubCategoryService, IDisposable
     // ------------------------------------------------------------
     // GET SUBCATEGORIES BY CATEGORY ID
     // ------------------------------------------------------------
-    public async Task<List<SubCategory>> GetSubCategoriesByCategoryId(int categoryId)
+    public async Task<List<SubCategory>> GetSubCategoriesByCategoryId(int categoryId, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         var cacheKey = $"CATEGORY_{categoryId}";
         try
         {
@@ -176,12 +191,13 @@ public class SubCategoryService : ISubCategoryService, IDisposable
             {
                 try
                 {
-                    return await _database.ExecuteWithRetryAsync(async c =>
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                     {
                         const string sql = "SELECT Id, Name, CategoryId FROM SubCategories WHERE CategoryId = @CategoryId ORDER BY Name ASC;";
-                        var subCategories = await c.QueryAsync<SubCategory>(sql, new { CategoryId = categoryId });
+                        var cmd = new CommandDefinition(sql, new { CategoryId = categoryId }, cancellationToken: cancelToken);
+                        var subCategories = await c.QueryAsync<SubCategory>(cmd);
                         return subCategories.ToList();
-                    });
+                    }, ct);
                 }
                 catch
                 {
@@ -193,6 +209,10 @@ public class SubCategoryService : ISubCategoryService, IDisposable
 
             return await cachedLazy.Value;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch subcategories for category ID {CategoryId}.", categoryId);
@@ -203,8 +223,9 @@ public class SubCategoryService : ISubCategoryService, IDisposable
     // ------------------------------------------------------------
     // UPDATE SUBCATEGORY
     // ------------------------------------------------------------
-    public async Task UpdateSubCategory(SubCategory subCategory, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task UpdateSubCategory(SubCategory subCategory, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         try
         {
             var updates = new List<string>();
@@ -224,13 +245,18 @@ public class SubCategoryService : ISubCategoryService, IDisposable
                 WHERE Id = @Id
             ";
 
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
-                await connection.ExecuteAsync(sql, subCategory, transaction: transaction);
+                var cmd = new CommandDefinition(sql, subCategory, transaction: transaction, cancellationToken: cancelToken);
+                await connection.ExecuteAsync(cmd);
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -242,30 +268,42 @@ public class SubCategoryService : ISubCategoryService, IDisposable
     // ------------------------------------------------------------
     // DELETE SUBCATEGORY
     // ------------------------------------------------------------
-    public async Task DeleteSubCategory(int subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task DeleteSubCategory(int subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
                 // Check if subcategory is used by tags
-                var usageCount = await connection.ExecuteScalarAsync<int>(
-                    @"SELECT COUNT(*)
-                      FROM Tag
-                      WHERE SubCategoryId = @SubCategoryId",
-                    new { SubCategoryId = subCategoryId }, transaction: transaction);
+                var checkCmd = new CommandDefinition(
+                    @"SELECT COUNT(*) FROM Tag WHERE SubCategoryId = @SubCategoryId",
+                     new { SubCategoryId = subCategoryId },
+                    transaction: transaction,
+                    cancellationToken: cancelToken);
+
+                var usageCount = await connection.ExecuteScalarAsync<int>(checkCmd);
 
                 if (usageCount > 0)
                     throw new InvalidOperationException("Cannot delete subcategory because it is referenced by other entities.");
 
-                await connection.ExecuteAsync(
+                var deleteCmd = new CommandDefinition(
                     @"DELETE FROM SubCategories WHERE Id = @SubCategoryId",
-                    new { SubCategoryId = subCategoryId }, transaction: transaction);
+                    new { SubCategoryId = subCategoryId },
+                    transaction: transaction,
+                    cancellationToken: cancelToken);
+
+                await connection.ExecuteAsync(deleteCmd);
 
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -277,21 +315,31 @@ public class SubCategoryService : ISubCategoryService, IDisposable
     // ------------------------------------------------------------
     // DELETE SUBCATEGORIES BY CATEGORY ID
     // ------------------------------------------------------------
-    public async Task DeleteByCategoryId(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task DeleteByCategoryId(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
                 // Delete all subcategories associated with the specified category ID
-                await connection.ExecuteAsync(
+                var deleteCmd = new CommandDefinition(
                     @"DELETE FROM SubCategories WHERE CategoryId = @CategoryId",
-                    new { CategoryId = categoryId }, transaction: transaction);
+                    new { CategoryId = categoryId },
+                    transaction: transaction,
+                    cancellationToken: cancelToken);
+
+                await connection.ExecuteAsync(deleteCmd);
 
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -304,9 +352,9 @@ public class SubCategoryService : ISubCategoryService, IDisposable
     /// Executes an atomic SQLite upsert. Eliminates read-then-write race conditions by attempting
     /// an INSERT OR IGNORE and immediately querying the canonical Id in a single execution block.
     /// </summary>
-    private async Task<int> ExecuteUpsertInternalAsync(string name, int? categoryId, IDbConnection? conn, IDbTransaction? tx)
+    private async Task<int> ExecuteUpsertInternalAsync(string name, int? categoryId, IDbConnection? conn, IDbTransaction? tx, CancellationToken ct)
     {
-        return await ExecuteDbActionAsync(async (connection, transaction) =>
+        return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
         {
             // -------------------------------------------------------------------------
             // ATOMIC UPSERT SQL
@@ -321,16 +369,18 @@ public class SubCategoryService : ISubCategoryService, IDisposable
 
                 SELECT Id FROM SubCategories WHERE Name = @Name;";
 
-            var id = await connection.ExecuteScalarAsync<long>(sql, new
+            var cmd = new CommandDefinition(sql, new
             {
                 Name = name.Trim(),
                 CategoryId = categoryId,
-                CreatedDate = DateTime.UtcNow.ToString("o")
-            }, transaction: transaction);
+                CreatedDate = DateTime.UtcNow
+            }, transaction: transaction, cancellationToken: cancelToken);
+
+            var id = await connection.ExecuteScalarAsync<long>(cmd);
 
             _logger.LogDebug("Resolved SubCategory '{SubCategoryName}' to ID {Id}.", name, id);
             return (int)id;
-        }, conn, tx);
+        }, conn, tx, ct);
     }
 
     /// <summary>
@@ -338,18 +388,19 @@ public class SubCategoryService : ISubCategoryService, IDisposable
     /// unless an active connection and transaction are passed from a parent orchestrator.
     /// </summary>
     private async Task<T> ExecuteDbActionAsync<T>(
-        Func<IDbConnection, IDbTransaction?, Task<T>> action,
+        Func<IDbConnection, IDbTransaction?, CancellationToken, Task<T>> action,
         IDbConnection? existingConn,
-        IDbTransaction? existingTx)
+        IDbTransaction? existingTx,
+        CancellationToken ct)
     {
         if (existingConn != null)
         {
             // Execute directly within the parent transaction boundary (e.g., StatementImportService)
-            return await action(existingConn, existingTx);
+            return await action(existingConn, existingTx, ct);
         }
 
         // Execute as a standalone, retry-protected UI operation
-        return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+        return await _database.ExecuteWithRetryAsync(async (connection, cancelToken) => await action(connection, null, ct), ct);
     }
 
     private void InvalidateCache()

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Database;
+using DocumentFormat.OpenXml.Office.CustomUI;
 
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -77,8 +78,10 @@ public class TransactionService : ITransactionService, IDisposable
     public async Task InsertTransactionsAsync(
         List<Transaction> transactions,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         if (transactions == null || transactions.Count == 0)
             return;
 
@@ -112,18 +115,32 @@ public class TransactionService : ITransactionService, IDisposable
 
             if (conn != null && tx != null)
             {
-                await conn.ExecuteAsync(sql, transactions, transaction: tx);
+                var cmd = new CommandDefinition(
+                    sql,
+                    transaction: tx,
+                    cancellationToken: ct
+                );
+                await conn.ExecuteAsync(cmd);
                 _logger.LogDebug("Bulk inserted {Count} transactions within parent transaction boundary.", transactions.Count);
             }
             else
             {
-                await _database.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+                await _database.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
                 {
-                    await connection.ExecuteAsync(sql, transactions, transaction: transaction);
-                });
+                    var cmd = new CommandDefinition(
+                        sql,
+                        transaction: tx,
+                        cancellationToken: cancelToken
+                    );
+                    await connection.ExecuteAsync(cmd);
+                }, ct);
                 _logger.LogInformation("Successfully completed standalone bulk insert of {Count} transactions.", transactions.Count);
             }
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -140,8 +157,11 @@ public class TransactionService : ITransactionService, IDisposable
     public async Task<List<Transaction>> GetFilteredTransactionsAsync(
         TransactionFilterArgs args,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         ArgumentNullException.ThrowIfNull(args);
         var cacheKey = GetCacheKey(args);
 
@@ -150,8 +170,8 @@ public class TransactionService : ITransactionService, IDisposable
             // 1. Transaction Safety: Bypass cache completely
             if (conn != null && tx != null)
             {
-                return await ExecuteDbActionAsync(async (connection, transaction) =>
-                    await BuildAndExecuteFilterQueryAsync(connection, transaction, args), conn, tx);
+                return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+                    await BuildAndExecuteFilterQueryAsync(connection, transaction, args, cancelToken), conn, tx, ct);
             }
 
             // 2. Cache Stampede Protection
@@ -159,8 +179,8 @@ public class TransactionService : ITransactionService, IDisposable
             {
                 try
                 {
-                    return await ExecuteDbActionAsync(async (connection, transaction) =>
-                        await BuildAndExecuteFilterQueryAsync(connection, transaction, args), null, null);
+                    return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+                        await BuildAndExecuteFilterQueryAsync(connection, transaction, args, cancelToken), null, null, ct);
                 }
                 catch
                 {
@@ -172,6 +192,10 @@ public class TransactionService : ITransactionService, IDisposable
 
             return await cachedLazy.Value;
 
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -187,8 +211,10 @@ public class TransactionService : ITransactionService, IDisposable
     public async Task<int> GetFilteredTransactionCountAsync(
         TransactionFilterArgs args,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(args);
 
         var cacheKey = GetCacheKey(args) + "_COUNT";
@@ -198,8 +224,8 @@ public class TransactionService : ITransactionService, IDisposable
             // 1. Transaction Safety: Bypass cache completely
             if (conn != null && tx != null)
             {
-                return await ExecuteDbActionAsync(async (connection, transaction) =>
-                    await BuildAndExecuteFilterCountQueryAsync(connection, transaction, args), conn, tx);
+                return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+                    await BuildAndExecuteFilterCountQueryAsync(connection, transaction, args, cancelToken), conn, tx, ct);
             }
 
             // 2. Cache Stampede Protection
@@ -207,8 +233,8 @@ public class TransactionService : ITransactionService, IDisposable
             {
                 try
                 {
-                    return await ExecuteDbActionAsync(async (connection, transaction) =>
-                        await BuildAndExecuteFilterCountQueryAsync(connection, transaction, args), null, null);
+                    return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+                        await BuildAndExecuteFilterCountQueryAsync(connection, transaction, args, cancelToken), null, null, ct);
                 }
                 catch
                 {
@@ -220,6 +246,10 @@ public class TransactionService : ITransactionService, IDisposable
 
             return await cachedLazy.Value;
 
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -240,19 +270,31 @@ public class TransactionService : ITransactionService, IDisposable
     public async Task DeleteByBatchIdAsync(
         int batchId,
         IDbConnection? conn = null,
-        IDbTransaction? tx = null)
+        IDbTransaction? tx = null,
+        CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         try
         {
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
                 const string sql = "DELETE FROM Transactions WHERE ImportBatchId = @BatchId;";
-                await connection.ExecuteAsync(sql, new { BatchId = batchId }, transaction: transaction);
+                var cmd = new CommandDefinition(
+                    sql,
+                    new { BatchId = batchId },
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+                await connection.ExecuteAsync(cmd);
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache();
             _logger.LogInformation("Deleted all transaction records for Batch ID {BatchId}.", batchId);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -265,8 +307,13 @@ public class TransactionService : ITransactionService, IDisposable
     // DASHBOARD RETRIEVAL IMPLEMENTATIONS
     // -------------------------------------------------------------------------
 
-    public async Task UpdateTransactionsBulkAsync(IEnumerable<TransactionCorrectionDTO> corrections, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task UpdateTransactionsBulkAsync(
+        IEnumerable<TransactionCorrectionDTO> corrections,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null,
+        CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         try
         {
             // Dapper automatically iterates over the IEnumerable when passed to ExecuteAsync.
@@ -281,13 +328,23 @@ public class TransactionService : ITransactionService, IDisposable
                     ReviewStatus = @ReviewStatus
                 WHERE Id = @TransactionId;";
 
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
-                await connection.ExecuteAsync(sql, corrections, transaction: transaction);
+                var cmd = new CommandDefinition(
+                    sql,
+                    corrections,
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+                await connection.ExecuteAsync(cmd);
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -296,7 +353,12 @@ public class TransactionService : ITransactionService, IDisposable
         }
     }
 
-    public async Task ReassignTransactionsToFallbackTagAsync(int oldTagId, int fallbackTagId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task ReassignTransactionsToFallbackTagAsync(
+        int oldTagId,
+        int fallbackTagId,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null,
+        CancellationToken ct = default)
     {
         try
         {
@@ -307,17 +369,40 @@ public class TransactionService : ITransactionService, IDisposable
 
             if (conn != null)
             {
-                await conn.ExecuteAsync(sql, new { OldTagId = oldTagId, FallbackTagId = fallbackTagId }, transaction: tx);
+                var cmd = new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        OldTagId = oldTagId,
+                        FallbackTagId = fallbackTagId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct
+                );
+                await conn.ExecuteAsync(cmd);
             }
             else
             {
-                await _database.ExecuteWithRetryAsync(async (c) =>
+                await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                 {
-                    await c.ExecuteAsync(sql, new { OldTagId = oldTagId, FallbackTagId = fallbackTagId });
-                });
+                    var cmd = new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        OldTagId = oldTagId,
+                        FallbackTagId = fallbackTagId
+                    },
+                    cancellationToken: cancelToken
+                );
+                    await c.ExecuteAsync(cmd);
+                }, ct);
             }
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -326,8 +411,9 @@ public class TransactionService : ITransactionService, IDisposable
         }
     }
 
-    public async Task ExecuteRetroactiveSweepAsync(string source, int tagId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task ExecuteRetroactiveSweepAsync(string source, int tagId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(source))
             throw new ArgumentException("Source cannot be empty.", nameof(source));
 
@@ -342,17 +428,40 @@ public class TransactionService : ITransactionService, IDisposable
             _logger.LogDebug("Executing retroactive sweep for Source '{Source}' to TagId {TagId}.", source, tagId);
             if (conn != null && tx != null)
             {
-                await conn.ExecuteAsync(sql, new { Source = source, TagId = tagId }, transaction: tx);
+                var cmd = new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        Source = source,
+                        TagId = tagId
+                    },
+                    transaction: tx,
+                    cancellationToken: ct
+                );
+                await conn.ExecuteAsync(cmd);
             }
             else
             {
-                await _database.ExecuteWithRetryAsync(async (c) =>
+                await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                 {
-                    await c.ExecuteAsync(sql, new { Source = source, TagId = tagId });
-                });
+                    var cmd = new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        Source = source,
+                        TagId = tagId
+                    },
+                    cancellationToken: cancelToken
+                );
+                    await c.ExecuteAsync(cmd);
+                }, ct);
             }
 
             InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -361,14 +470,18 @@ public class TransactionService : ITransactionService, IDisposable
         }
     }
 
-    private async Task<T> ExecuteDbActionAsync<T>(Func<IDbConnection, IDbTransaction?, Task<T>> action, IDbConnection? existingConn, IDbTransaction? existingTx)
+    private async Task<T> ExecuteDbActionAsync<T>(
+        Func<IDbConnection, IDbTransaction?, CancellationToken, Task<T>> action,
+        IDbConnection? existingConn,
+        IDbTransaction? existingTx,
+        CancellationToken ct)
     {
         if (existingConn != null)
         {
-            return await action(existingConn, existingTx);
+            return await action(existingConn, existingTx, ct);
         }
 
-        return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+        return await _database.ExecuteWithRetryAsync(async (connection, cancelToken) => await action(connection, null, cancelToken), ct);
     }
 
 
@@ -436,7 +549,7 @@ public class TransactionService : ITransactionService, IDisposable
     }
 
     // Helper method to keep the DB logic clean and reusable
-    private async Task<int> BuildAndExecuteFilterCountQueryAsync(IDbConnection connection, IDbTransaction? transaction, TransactionFilterArgs args)
+    private async Task<int> BuildAndExecuteFilterCountQueryAsync(IDbConnection connection, IDbTransaction? transaction, TransactionFilterArgs args, CancellationToken ct)
     {
         var (conditions, parameters) = generateFilterParameters(args);
 
@@ -446,14 +559,18 @@ public class TransactionService : ITransactionService, IDisposable
             sql += " WHERE " + string.Join(" AND ", conditions);
         }
 
-        return await connection.ExecuteScalarAsync<int>(
+        var cmd = new CommandDefinition(
             sql,
             parameters,
-            transaction: transaction);
+            transaction: transaction,
+            cancellationToken: ct
+        );
+
+        return await connection.ExecuteScalarAsync<int>(cmd);
     }
 
     // Helper method to keep the DB logic clean and reusable
-    private async Task<List<Transaction>> BuildAndExecuteFilterQueryAsync(IDbConnection connection, IDbTransaction? transaction, TransactionFilterArgs args)
+    private async Task<List<Transaction>> BuildAndExecuteFilterQueryAsync(IDbConnection connection, IDbTransaction? transaction, TransactionFilterArgs args, CancellationToken ct)
     {
         var (conditions, parameters) = generateFilterParameters(args);
 
@@ -477,7 +594,14 @@ public class TransactionService : ITransactionService, IDisposable
             }
         }
 
-        var transactions = await connection.QueryAsync<Transaction>(sql, parameters, transaction: transaction);
+        var cmd = new CommandDefinition(
+            sql,
+            parameters,
+            transaction: transaction,
+            cancellationToken: ct
+        );
+
+        var transactions = await connection.QueryAsync<Transaction>(cmd);
         return transactions.ToList();
     }
 

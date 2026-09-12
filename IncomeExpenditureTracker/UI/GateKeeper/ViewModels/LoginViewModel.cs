@@ -162,6 +162,8 @@ public partial class LoginViewModel : ViewModelBase
         IsLoading = true;
         using var securePassword = new SecureString();
 
+        Broker.Send(new ShowLoadingOverlayMessage("Decrypting Vault..."));
+
         try
         {
             // Transfer chars one-by-one to unmanaged secure memory
@@ -208,6 +210,7 @@ public partial class LoginViewModel : ViewModelBase
         finally
         {
             RunOnUIThread(() => IsLoading = false);
+            Broker.Send(new HideLoadingOverlayMessage());
         }
     }
 

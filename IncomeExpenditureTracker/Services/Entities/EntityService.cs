@@ -57,8 +57,10 @@ public class EntityService : IEntityService, IDisposable
     /// Resolves an existing Entity ID or atomically creates a new one in O(1) memory or a single SQL execution.
     /// Accepts optional transaction boundaries for all-or-nothing batch imports.
     /// </summary>
-    public async Task<int> GetOrCreateEntity(string name, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<int> GetOrCreateEntity(string name, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Entity name cannot be empty.", nameof(name));
 
@@ -72,14 +74,14 @@ public class EntityService : IEntityService, IDisposable
             if (conn != null && tx != null)
             {
                 // Read from cache if it exists (safe reference data reuse)
-                if (_entityIdCache.TryGetValue(cacheKey, out var existingLazy) && !existingLazy.Value.IsFaulted)
+                if (_entityIdCache.TryGetValue(cacheKey, out var existingLazy) && !existingLazy.Value.IsFaulted && !existingLazy.Value.IsCanceled)
                 {
                     return await existingLazy.Value;
                 }
 
                 // Cache MISS inside a transaction: Execute directly, DO NOT cache the result.
                 // Bypass the retry wrapper entirely, as transactions cannot be retried mid-flight.
-                return await ExecuteUpsertInternalAsync(name, conn, tx);
+                return await ExecuteUpsertInternalAsync(name, conn, tx, ct);
             }
 
             // -------------------------------------------------------------------------
@@ -90,8 +92,8 @@ public class EntityService : IEntityService, IDisposable
                 try
                 {
                     // Execute using the retry policy wrapper
-                    var id = await _database.ExecuteWithRetryAsync(retryConn =>
-                        ExecuteUpsertInternalAsync(name, retryConn, null));
+                    var id = await _database.ExecuteWithRetryAsync((retryConn, cancelToken) =>
+                        ExecuteUpsertInternalAsync(name, retryConn, null, cancelToken), ct);
 
                     // ONLY clear the list caches on a cache miss when we actually hit the database
                     _entityListCache.Clear();
@@ -110,6 +112,10 @@ public class EntityService : IEntityService, IDisposable
             return await lazyId.Value;
 
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             // Fallback catch just in case something throws outside the Lazy block
@@ -122,8 +128,10 @@ public class EntityService : IEntityService, IDisposable
     // GET ALL ENTITIES
     // ------------------------------------------------------------
 
-    public async Task<List<Entity>> GetAllEntities()
+    public async Task<List<Entity>> GetAllEntities(CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         const string cacheKey = "ALL_ENTITIES";
         try
         {
@@ -133,12 +141,13 @@ public class EntityService : IEntityService, IDisposable
                 try
                 {
                     // Execute using the standard retry wrapper (no external conn/tx needed)
-                    return await _database.ExecuteWithRetryAsync(async c =>
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                     {
                         const string sql = "SELECT Id, Name, Country, CreatedDate FROM Entities ORDER BY Name ASC";
-                        var entities = await c.QueryAsync<Entity>(sql);
+                        var cmd = new CommandDefinition(sql, cancellationToken: cancelToken);
+                        var entities = await c.QueryAsync<Entity>(cmd);
                         return entities.ToList();
-                    });
+                    }, ct);
                 }
                 catch
                 {
@@ -151,6 +160,10 @@ public class EntityService : IEntityService, IDisposable
             // Await the Lazy task. All concurrent threads will await this same exact task instance.
             return await cachedLazy.Value;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch entities.");
@@ -161,8 +174,10 @@ public class EntityService : IEntityService, IDisposable
     // ------------------------------------------------------------
     // UPDATE ENTITY
     // ------------------------------------------------------------
-    public async Task UpdateEntity(Entity entity, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task UpdateEntity(Entity entity, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
             var updates = new List<string>();
@@ -182,13 +197,18 @@ public class EntityService : IEntityService, IDisposable
                 WHERE Id = @Id
             ";
 
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
-                await connection.ExecuteAsync(sql, entity, transaction: transaction);
+                var cmd = new CommandDefinition(sql, entity, transaction: transaction, cancellationToken: cancelToken);
+                await connection.ExecuteAsync(cmd);
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -200,29 +220,40 @@ public class EntityService : IEntityService, IDisposable
     // ------------------------------------------------------------
     // DELETE ENTITY
     // ------------------------------------------------------------
-    public async Task DeleteEntity(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task DeleteEntity(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
-            await ExecuteDbActionAsync(async (connection, transaction) =>
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
                 // Check if entity is used by accounts
-                var usageCount = await HasChildAccountsAsync(entityId, connection, transaction);
+                var usageCount = await HasChildAccountsAsync(entityId, connection, transaction, cancelToken);
 
                 if (usageCount)
                 {
                     const string sql = "UPDATE Accounts SET EntityId = NULL WHERE EntityId = @EntityId;";
-                    await connection.ExecuteScalarAsync(sql, new { EntityId = entityId }, transaction: transaction);
+                    var cmd = new CommandDefinition(sql, new { EntityId = entityId }, transaction: transaction, cancellationToken: cancelToken);
+                    await connection.ExecuteScalarAsync(cmd);
                 }
 
-                await connection.ExecuteAsync(
+                var deletecmd = new CommandDefinition(
                     @"DELETE FROM Entities WHERE Id = @EntityId",
-                    new { EntityId = entityId }, transaction: transaction);
+                    new { EntityId = entityId },
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+                await connection.ExecuteAsync(deletecmd);
 
                 return true;
-            }, conn, tx);
+            }, conn, tx, ct);
 
             InvalidateCache(); // Evict cache after mutation to ensure consistency
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -231,28 +262,39 @@ public class EntityService : IEntityService, IDisposable
         }
     }
 
-    public async Task<bool> HasChildAccountsAsync(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null)
+    public async Task<bool> HasChildAccountsAsync(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
         const string sql = "SELECT 1 FROM Accounts WHERE EntityId = @EntityId LIMIT 1;";
 
         if (conn != null)
         {
-            return await conn.ExecuteScalarAsync<bool>(sql, new { EntityId = entityId }, transaction: tx);
+            var cmd = new CommandDefinition(
+                sql,
+                new { EntityId = entityId },
+                transaction: tx,
+                cancellationToken: ct
+            );
+            return await conn.ExecuteScalarAsync<bool>(cmd);
         }
 
-        return await _database.ExecuteWithRetryAsync(async (c) =>
+        return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
         {
-            return await c.ExecuteScalarAsync<bool>(sql, new { EntityId = entityId });
-        });
+            var cmd = new CommandDefinition(
+                sql,
+                new { EntityId = entityId },
+                cancellationToken: cancelToken
+            );
+            return await c.ExecuteScalarAsync<bool>(cmd);
+        }, ct);
     }
 
     /// <summary>
     /// Executes an atomic SQLite upsert. Eliminates read-then-write race conditions by attempting
     /// an INSERT OR IGNORE and immediately querying the canonical Id in a single execution block.
     /// </summary>
-    private async Task<int> ExecuteUpsertInternalAsync(string name, IDbConnection? conn, IDbTransaction? tx)
+    private async Task<int> ExecuteUpsertInternalAsync(string name, IDbConnection? conn, IDbTransaction? tx, CancellationToken ct)
     {
-        return await ExecuteDbActionAsync(async (connection, transaction) =>
+        return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
         {
             // -------------------------------------------------------------------------
             // ATOMIC UPSERT SQL
@@ -267,16 +309,24 @@ public class EntityService : IEntityService, IDisposable
 
                 SELECT Id FROM Entities WHERE Name = @Name;";
 
-            var id = await connection.ExecuteScalarAsync<long>(sql, new
-            {
-                Name = name.Trim(),
-                Country = string.Empty,
-                CreatedDate = DateTime.UtcNow
-            }, transaction: transaction);
+            var cmd = new CommandDefinition
+            (
+                sql,
+                new
+                {
+                    Name = name.Trim(),
+                    Country = string.Empty,
+                    CreatedDate = DateTime.UtcNow
+                },
+                transaction: transaction,
+                cancellationToken: cancelToken
+            );
+
+            var id = await connection.ExecuteScalarAsync<long>(cmd);
 
             _logger.LogDebug("Resolved Entity '{EntityName}' to ID {Id}.", name, id);
             return (int)id;
-        }, conn, tx);
+        }, conn, tx, ct);
     }
 
     /// <summary>
@@ -284,18 +334,19 @@ public class EntityService : IEntityService, IDisposable
     /// unless an active connection and transaction are passed from a parent orchestrator.
     /// </summary>
     private async Task<T> ExecuteDbActionAsync<T>(
-        Func<IDbConnection, IDbTransaction?, Task<T>> action,
+        Func<IDbConnection, IDbTransaction?, CancellationToken, Task<T>> action,
         IDbConnection? existingConn,
-        IDbTransaction? existingTx)
+        IDbTransaction? existingTx,
+        CancellationToken ct)
     {
         if (existingConn != null)
         {
             // Execute directly within the parent transaction boundary (e.g., StatementImportService)
-            return await action(existingConn, existingTx);
+            return await action(existingConn, existingTx, ct);
         }
 
         // Execute as a standalone, retry-protected UI operation
-        return await _database.ExecuteWithRetryAsync(async connection => await action(connection, null));
+        return await _database.ExecuteWithRetryAsync(async (connection, cancelToken) => await action(connection, null, cancelToken), ct);
     }
 
     private void InvalidateCache()

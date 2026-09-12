@@ -1,6 +1,7 @@
 using System;
 using System.Data;
 using System.Security;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace IncomeExpenditureTracker.Services.Database;
@@ -17,19 +18,19 @@ public interface IDatabaseService
     /// and PRAGMA journal_mode = WAL applied.
     /// Best suited for lock-free, read-only queries (e.g., populating RAM caches or UI grids).
     /// </summary>
-    Task<IDbConnection> GetOpenConnectionAsync();
+    Task<IDbConnection> GetOpenConnectionAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Executes an asynchronous database operation within an exponential backoff retry loop.
     /// Automatically retries if transient SQLite lock contention (SQLITE_BUSY / SQLITE_LOCKED) occurs.
     /// Best suited for single-table atomic writes (e.g., adding a synonym or tag rule).
     /// </summary>
-    Task ExecuteWithRetryAsync(Func<IDbConnection, Task> action);
+    Task ExecuteWithRetryAsync(Func<IDbConnection, CancellationToken, Task> action, CancellationToken ct = default);
 
     /// <summary>
     /// Executes an asynchronous database operation that returns a result within a retry loop.
     /// </summary>
-    Task<T> ExecuteWithRetryAsync<T>(Func<IDbConnection, Task<T>> action);
+    Task<T> ExecuteWithRetryAsync<T>(Func<IDbConnection, CancellationToken, Task<T>> action, CancellationToken ct = default);
 
     /// <summary>
     /// Initiates an explicit SQLite database transaction wrapped in a retry loop.
@@ -37,12 +38,12 @@ public interface IDatabaseService
     /// If any exception occurs, the entire transaction is explicitly rolled back.
     /// Best suited for multi-table batch imports (e.g., StatementImportService).
     /// </summary>
-    Task ExecuteInTransactionWithRetryAsync(Func<IDbConnection, IDbTransaction, Task> action);
+    Task ExecuteInTransactionWithRetryAsync(Func<IDbConnection, IDbTransaction, CancellationToken, Task> action, CancellationToken ct = default);
 
     /// <summary>
     /// Initiates an explicit SQLite database transaction that returns a result, wrapped in a retry loop.
     /// </summary>
-    Task<T> ExecuteInTransactionWithRetryAsync<T>(Func<IDbConnection, IDbTransaction, Task<T>> action);
+    Task<T> ExecuteInTransactionWithRetryAsync<T>(Func<IDbConnection, IDbTransaction, CancellationToken, Task<T>> action, CancellationToken ct = default);
 
     /// <summary>
     /// Safely drains all active queries, swaps the connection string,

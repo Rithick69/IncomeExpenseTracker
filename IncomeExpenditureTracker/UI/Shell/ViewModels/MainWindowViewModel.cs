@@ -57,6 +57,12 @@ namespace IncomeExpenditureTracker.UI.Shell
         [ObservableProperty]
         private bool _isConfirmationDialog;
 
+        [ObservableProperty]
+        private bool _isLoadingOverlayVisible;
+
+        [ObservableProperty]
+        private string _loadingOverlayMessage = "Loading...";
+
         private TaskCompletionSource<bool>? _currentDialogTcs;
 
         // =========================================================================
@@ -106,6 +112,9 @@ namespace IncomeExpenditureTracker.UI.Shell
             Broker.Register<ShowHelperMessage>(this, OnShowHelperRequested);
             Broker.Register<ShowConfirmationMessage>(this, OnShowConfirmationRequested);
 
+            Broker.Register<ShowLoadingOverlayMessage>(this, OnShowLoadingOverlay);
+            Broker.Register<HideLoadingOverlayMessage>(this, OnHideLoadingOverlay);
+
             // 3. Subscribe to Toasts & Progress
             Broker.Register<ToastNotificationMessage>(this, OnToastReceived);
             Broker.Register<StagingProgressMessage>(this, OnProgressReceived);
@@ -149,7 +158,7 @@ namespace IncomeExpenditureTracker.UI.Shell
                 {
                     "Login" => _serviceProvider.GetRequiredService<LoginViewModel>(),
                     "Register" => _serviceProvider.GetRequiredService<RegisterViewModel>(),
-                    // "Dashboard" => _serviceProvider.GetRequiredService<DashboardViewModel>(),
+                    "Dashboard" => _serviceProvider.GetRequiredService<DashboardViewModel>(),
                     _ => throw new ArgumentException($"Unknown route: {destination}")
                 };
             });
@@ -158,6 +167,24 @@ namespace IncomeExpenditureTracker.UI.Shell
         // =========================================================================
         // DIALOG LOGIC
         // =========================================================================
+
+        private void OnShowLoadingOverlay(ShowLoadingOverlayMessage message)
+        {
+            RunOnUIThread(() =>
+            {
+                LoadingOverlayMessage = message.Message;
+                IsLoadingOverlayVisible = true;
+            });
+        }
+
+        private void OnHideLoadingOverlay(HideLoadingOverlayMessage message)
+        {
+            RunOnUIThread(() =>
+            {
+                IsLoadingOverlayVisible = false;
+            });
+        }
+
         private void OnShowHelperRequested(ShowHelperMessage message)
         {
             RunOnUIThread(() =>
@@ -189,7 +216,7 @@ namespace IncomeExpenditureTracker.UI.Shell
         public void ConfirmDialog()
         {
             IsDialogVisible = false;
-            if (IsConfirmationDialog && _currentDialogTcs != null)
+            if (_currentDialogTcs != null)
             {
                 _currentDialogTcs.TrySetResult(true);
                 _currentDialogTcs = null;
@@ -200,7 +227,7 @@ namespace IncomeExpenditureTracker.UI.Shell
         public void CancelDialog()
         {
             IsDialogVisible = false;
-            if (IsConfirmationDialog && _currentDialogTcs != null)
+            if (_currentDialogTcs != null)
             {
                 _currentDialogTcs.TrySetResult(false);
                 _currentDialogTcs = null;

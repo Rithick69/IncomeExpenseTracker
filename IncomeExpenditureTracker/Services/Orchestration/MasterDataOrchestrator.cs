@@ -102,8 +102,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _importBatchService.GetAllImportBatches();
+            var result = await _importBatchService.GetAllImportBatches(ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -124,8 +128,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _categoryService.GetAllCategories();
+            var result = await _categoryService.GetAllCategories(ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -138,13 +146,17 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            int id = await _categoryService.GetOrCreateCategory(name);
+            int id = await _categoryService.GetOrCreateCategory(name, ct: ct);
 
             // Audit History and UI Notification
             _logger.LogInformation("Successfully created/retrieved category '{CategoryName}'.", name);
             _broker.Send(new EntitySavedMessage("Category", name));
 
             return id;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -158,10 +170,14 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _categoryService.UpdateCategory(category);
+            await _categoryService.UpdateCategory(category, ct: ct);
 
             _logger.LogInformation("Successfully updated category ID {CategoryId}.", category.Id);
             _broker.Send(new EntityUpdatedMessage("Category", category.Name));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -175,20 +191,24 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx) =>
+            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx, ct) =>
             {
                 // 1. Float all tags under this category (SubCategoryId = NULL) to protect financial history
-                await _tagService.FloatTagsByCategoryAsync(categoryId, conn, tx);
+                await _tagService.FloatTagsByCategoryAsync(categoryId, conn, tx, ct: ct);
 
                 // 2. Wipe the orphaned SubCategories
-                await _subCategoryService.DeleteByCategoryId(categoryId, conn, tx);
+                await _subCategoryService.DeleteByCategoryId(categoryId, conn, tx, ct: ct);
 
                 // 3. Delete the target Category
-                await _categoryService.DeleteCategory(categoryId, conn, tx);
-            });
+                await _categoryService.DeleteCategory(categoryId, conn, tx, ct: ct);
+            }, ct);
 
             _logger.LogInformation("Successfully executed Safe-Delete for category ID {CategoryId}.", categoryId);
             _broker.Send(new EntityDeletedMessage("Category", $"ID: {categoryId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -210,8 +230,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _subCategoryService.GetAllSubCategories();
+            var result = await _subCategoryService.GetAllSubCategories(ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -225,8 +249,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _subCategoryService.GetSubCategoriesByCategoryId(categoryId);
+            var result = await _subCategoryService.GetSubCategoriesByCategoryId(categoryId, ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -240,13 +268,17 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            int id = await _subCategoryService.GetOrCreateSubCategory(name, categoryId);
+            int id = await _subCategoryService.GetOrCreateSubCategory(name, categoryId, ct: ct);
 
             // Audit History and UI Notification
             _logger.LogInformation("Successfully created/retrieved SubCategory '{SubCategoryName}'.", name);
             _broker.Send(new EntitySavedMessage("SubCategory", name));
 
             return id;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -260,10 +292,14 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _subCategoryService.UpdateSubCategory(subCategory);
+            await _subCategoryService.UpdateSubCategory(subCategory, ct: ct);
 
             _logger.LogInformation("Successfully updated SubCategory ID {SubCategoryId}.", subCategory.Id);
             _broker.Send(new EntityUpdatedMessage("SubCategory", subCategory.Name));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -278,17 +314,21 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx) =>
+            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx, ct) =>
             {
                 // 1. Float all tags under this subcategory (SubCategoryId = NULL)
-                await _tagService.FloatTagsBySubCategoryAsync(subCategoryId, conn, tx);
+                await _tagService.FloatTagsBySubCategoryAsync(subCategoryId, conn, tx, ct: ct);
 
                 // 2. Delete the SubCategory
-                await _subCategoryService.DeleteSubCategory(subCategoryId, conn, tx);
-            });
+                await _subCategoryService.DeleteSubCategory(subCategoryId, conn, tx, ct: ct);
+            }, ct);
 
             _logger.LogInformation("Successfully executed Safe-Delete for subcategory ID {SubCategoryId}.", subCategoryId);
             _broker.Send(new EntityDeletedMessage("SubCategory", $"ID: {subCategoryId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -310,8 +350,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _tagService.GetAllTags();
+            var result = await _tagService.GetAllTags(ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -324,12 +368,16 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            int id = await _tagService.GetOrCreateTagAsync(name, subCategoryId);
+            int id = await _tagService.GetOrCreateTagAsync(name, subCategoryId, ct: ct);
 
             _logger.LogInformation("Successfully created/retrieved tag '{TagName}'.", name);
             _broker.Send(new EntitySavedMessage("Tag", name));
 
             return id;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -343,10 +391,14 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _tagService.UpdateTagAsync(tagId, name, subCategoryId);
+            await _tagService.UpdateTagAsync(tagId, name, subCategoryId, ct: ct);
 
             _logger.LogInformation("Successfully updated tag ID {TagId} to '{TagName}'.", tagId, name);
             _broker.Send(new EntityUpdatedMessage("Tag", name));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -362,7 +414,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         try
         {
             // Prevent deletion of the ultimate system safeguard
-            int? miscTagId = await _tagService.GetTagIdByName(SystemConstants.MiscTag);
+            int? miscTagId = await _tagService.GetTagIdByName(SystemConstants.MiscTag, ct: ct);
 
             if (!miscTagId.HasValue)
             {
@@ -374,19 +426,19 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
                 throw new InvalidOperationException("Cannot delete the System Misc Tag.");
             }
 
-            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx) =>
+            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx, ct) =>
             {
                 // 1. Move financial transactions to the Misc Tag
 
-                await _transactionService.ReassignTransactionsToFallbackTagAsync(tagId, miscTagId.Value, conn, tx);
+                await _transactionService.ReassignTransactionsToFallbackTagAsync(tagId, miscTagId.Value, conn, tx, ct: ct);
 
 
                 // 2. Wipe Tag Rules (Ensures no orphaned keywords if ON DELETE CASCADE isn't enabled)
-                await _tagService.DeleteRulesByTagId(tagId, conn, tx);
+                await _tagService.DeleteRulesByTagId(tagId, conn, tx, ct: ct);
 
                 // 3. Delete the Tag
-                await _tagService.DeleteTagAsync(tagId, conn, tx); // Assuming standard service maps conn/tx
-            });
+                await _tagService.DeleteTagAsync(tagId, conn, tx, ct: ct); // Assuming standard service maps conn/tx
+            }, ct);
             _logger.LogInformation("Successfully safely deleted tag ID {TagId} and reassigned transactions.", tagId);
             _broker.Send(new EntityDeletedMessage("Tag", $"ID: {tagId}"));
         }
@@ -415,8 +467,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _tagService.GetRuleBookSnapshotAsync();
+            var result = await _tagService.GetRuleBookSnapshotAsync(ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -428,12 +484,16 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            int id = await _tagService.AddRuleAsync(keyword, tagId, priority);
+            int id = await _tagService.AddRuleAsync(keyword, tagId, priority, ct: ct);
 
             _logger.LogInformation("Successfully inserted keyword '{keyword}' for tag id '{TagId}'.", keyword, tagId);
             _broker.Send(new EntitySavedMessage("TagRule", keyword));
 
             return id;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -447,10 +507,14 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _tagService.UpdateRuleAsync(ruleId, keyword, tagId, priority);
+            await _tagService.UpdateRuleAsync(ruleId, keyword, tagId, priority, ct: ct);
 
             _logger.LogInformation("Successfully updated ruleId {RuleId}.", ruleId);
             _broker.Send(new EntityUpdatedMessage("TagRule", $"ID: {ruleId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -464,9 +528,13 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _tagService.DeleteRuleAsync(ruleId);
+            await _tagService.DeleteRuleAsync(ruleId, ct: ct);
             _logger.LogInformation("Successfully safely deleted tagRule ID {TagRuleId} and reassigned transactions.", ruleId);
             _broker.Send(new EntityDeletedMessage("TagRule", $"ID: {ruleId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -480,9 +548,13 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _tagService.DeleteRuleKeywordsAsync(keywords, tagId);
+            await _tagService.DeleteRuleKeywordsAsync(keywords, tagId, ct: ct);
             _logger.LogInformation("Successfully safely deleted keywords for tag ID {TagId} and reassigned transactions.", tagId);
             _broker.Send(new EntityDeletedMessage("TagRule", $"Deleted Keywords for TagID: {tagId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -504,8 +576,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _entityService.GetAllEntities();
+            var result = await _entityService.GetAllEntities(ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -518,13 +594,17 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            int id = await _entityService.GetOrCreateEntity(name);
+            int id = await _entityService.GetOrCreateEntity(name, ct: ct);
 
             // Audit History and UI Notification
             _logger.LogInformation("Successfully created/retrieved entity '{EntityName}'.", name);
             _broker.Send(new EntitySavedMessage("Entity", name));
 
             return id;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -538,10 +618,14 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _entityService.UpdateEntity(entity);
+            await _entityService.UpdateEntity(entity, ct: ct);
 
             _logger.LogInformation("Successfully updated Entity ID {EntityId}.", entity.Id);
             _broker.Send(new EntityUpdatedMessage("Entity", entity.Name));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -556,10 +640,14 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _entityService.DeleteEntity(entityId);
+            await _entityService.DeleteEntity(entityId, ct: ct);
 
             _logger.LogInformation("Successfully executed Safe-Delete for entity ID {EntityId}.", entityId);
             _broker.Send(new EntityDeletedMessage("Entity", $"ID: {entityId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -578,17 +666,21 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
                 throw new InvalidOperationException("Source and target entities cannot be the same.");
             }
 
-            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx) =>
+            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx, ct) =>
             {
                 // 1. Reassign all child accounts from source to target
-                await _accountService.ReassignAccountsAsync(sourceEntityId, targetEntityId, conn, tx);
+                await _accountService.ReassignAccountsAsync(sourceEntityId, targetEntityId, conn, tx, ct: ct);
 
                 // 2. Wipe the old duplicate Entity
-                await _entityService.DeleteEntity(sourceEntityId, conn, tx);
-            });
+                await _entityService.DeleteEntity(sourceEntityId, conn, tx, ct: ct);
+            }, ct);
 
             _logger.LogInformation("Successfully executed Safe-Reassign Source Entity ID {sourceEntityId} to Target Entity ID {targetEntityId}.", sourceEntityId, targetEntityId);
             _broker.Send(new EntityUpdatedMessage("Entity", $"SOURCE_ID: {sourceEntityId}, TARGET_ID: {targetEntityId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -610,8 +702,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _accountService.GetAllAccounts();
+            var result = await _accountService.GetAllAccounts(ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -624,8 +720,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _accountService.GetAccountsByEntityId(entityId);
+            var result = await _accountService.GetAccountsByEntityId(entityId, ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -638,13 +738,17 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            int id = await _accountService.GetOrCreateAccount(account);
+            int id = await _accountService.GetOrCreateAccount(account, ct: ct);
 
             // Audit History and UI Notification
             _logger.LogInformation("Successfully created/retrieved Account '{AccountName}'.", account.AccountNumber);
             _broker.Send(new EntitySavedMessage("Account", account.AccountNumber));
 
             return id;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -658,10 +762,14 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _accountService.UpdateAccount(account);
+            await _accountService.UpdateAccount(account, ct: ct);
 
             _logger.LogInformation("Successfully updated Account ID {AccountId}.", account.Id);
             _broker.Send(new EntityUpdatedMessage("Account", account.AccountNumber));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -676,16 +784,20 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            bool hasTransactions = await _accountService.HasTransactionsAsync(accountId);
+            bool hasTransactions = await _accountService.HasTransactionsAsync(accountId, ct: ct);
 
             if (hasTransactions)
             {
                 throw new InvalidOperationException("Hard Block: Cannot delete this Account because it contains historical transactions. Please revert or delete the imported transaction history first.");
             }
-            await _accountService.DeleteAccount(accountId);
+            await _accountService.DeleteAccount(accountId, ct: ct);
 
             _logger.LogInformation("Successfully executed Safe-Delete for Account ID {AccountId}.", accountId);
             _broker.Send(new EntityDeletedMessage("Account", $"ID: {accountId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -708,8 +820,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _synonymService.GetAllSynonyms();
+            var result = await _synonymService.GetAllSynonyms(ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -722,8 +838,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _synonymService.GetSynonymsByCategory(category);
+            var result = await _synonymService.GetSynonymsByCategory(category, ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -736,12 +856,16 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _synonymService.LearnFromCorrectionAsync(rawSynonym, fieldType, category);
+            await _synonymService.LearnFromCorrectionAsync(rawSynonym, fieldType, category, ct: ct);
 
             // Audit History and UI Notification
             _logger.LogInformation("Successfully updated Synonym details '{rawSynonym}' for field type '{fieldType}'.", rawSynonym, fieldType);
             _broker.Send(new EntityUpdatedMessage("Synonym", rawSynonym));
 
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -755,11 +879,15 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _synonymService.AddSynonymAsync(synonym);
+            await _synonymService.AddSynonymAsync(synonym, ct: ct);
 
             // Audit History and UI Notification
             _logger.LogInformation("Successfully inserted Synonym '{Synonym}'.", synonym.Synonym);
             _broker.Send(new EntitySavedMessage("Synonym", synonym.Synonym));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -773,10 +901,14 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _synonymService.UpdateSynonymAsync(synonym);
+            await _synonymService.UpdateSynonymAsync(synonym, ct: ct);
 
             _logger.LogInformation("Successfully updated Synonym ID {SynonymID}.", synonym.Id);
             _broker.Send(new EntityUpdatedMessage("Synonym", synonym.Synonym));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -791,10 +923,14 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _synonymService.DeleteSynonymAsync(id);
+            await _synonymService.DeleteSynonymAsync(id, ct: ct);
 
             _logger.LogInformation("Successfully executed Safe-Delete Synonym ID {SynonymID}.", id);
             _broker.Send(new EntityDeletedMessage("Synonym", $"ID: {id}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -816,8 +952,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _userSettingsService.GetSettingAsync(key);
+            var result = await _userSettingsService.GetSettingAsync(key, ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -830,8 +970,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _userSettingsService.SetSettingAsync(key, value);
+            await _userSettingsService.SetSettingAsync(key, value, ct: ct);
             _broker.Send(new EntityUpdatedMessage("UserSetting", key));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -844,7 +988,11 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            return await _userSettingsService.GetAllSettingsAsync();
+            return await _userSettingsService.GetAllSettingsAsync(ct: ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -863,8 +1011,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _payeeService.GetAllAsync();
+            var result = await _payeeService.GetAllAsync(ct: ct);
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -877,9 +1029,13 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            var result = await _payeeService.CreateAsync(payee);
+            var result = await _payeeService.CreateAsync(payee, ct: ct);
             _broker.Send(new EntitySavedMessage("Payee", payee.Name));
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -892,8 +1048,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _payeeService.UpdateAsync(payee);
+            await _payeeService.UpdateAsync(payee, ct: ct);
             _broker.Send(new EntityUpdatedMessage("Payee", payee.Name));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -906,9 +1066,13 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _payeeService.DeleteAsync(payeeId);
+            await _payeeService.DeleteAsync(payeeId, ct: ct);
 
             _broker.Send(new EntityDeletedMessage("Payee", $"ID: {payeeId}"));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -921,9 +1085,13 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
     {
         try
         {
-            await _payeeService.AddMappingAsync(cleanedDescription, payeeId);
+            await _payeeService.AddMappingAsync(cleanedDescription, payeeId, ct: ct);
 
             _broker.Send(new EntitySavedMessage("PayeeMapping", cleanedDescription));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -947,7 +1115,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
 
         try
         {
-            await _payeeService.MergeEntitiesAsync(targetPayeeId, sourcePayeeIds);
+            await _payeeService.MergeEntitiesAsync(targetPayeeId, sourcePayeeIds, null, null, ct: ct);
 
             _broker.Send(new EntityUpdatedMessage("Payee", $"Merged into Target_ID: {targetPayeeId}"));
         }

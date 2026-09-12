@@ -106,6 +106,7 @@ public static class ServiceRegistration
         services.AddTransient<TransactionReviewViewModel>();
         services.AddTransient<LoginViewModel>();
         services.AddTransient<RegisterViewModel>();
+        services.AddTransient<DashboardViewModel>();
 
         // ---------------------------------------------------------
         // Profiles

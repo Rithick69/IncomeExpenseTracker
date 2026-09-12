@@ -1,0 +1,55 @@
+<UserControl xmlns = "https://github.com/avaloniaui"
+             xmlns:x = "http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d = "http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm = "clr-namespace:IncomeExpenditureTracker.UI.Shell"
+             mc:Ignorable = "d" d:DesignWidth = "1024" d:DesignHeight = "768"
+             x:Class = "IncomeExpenditureTracker.UI.Shell.DashboardView"
+             x:DataType = "vm:DashboardViewModel"
+             Background = "{DynamicResource BackgroundPrimary}" >
+
+    <!--Main Container: Spaced grid to hold dashboard widgets -->
+    <Grid RowDefinitions="Auto, *" Margin="24">
+
+        <!-- Header Section -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,24">
+            <!-- Text strictly bound to Locales; Color bound to TextPrimary -->
+            <TextBlock Text="{DynamicResource Locale_Dashboard_Title}"
+                       FontSize="28"
+                       FontWeight="Bold"
+                       Foreground="{DynamicResource TextPrimary}"/>
+
+            <TextBlock Text="{DynamicResource Locale_Dashboard_WelcomeMessage}"
+                       FontSize="14"
+                       Foreground="{DynamicResource TextSecondary}"
+                       Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- Widget Grid: 2 Columns for future analytics (Sprint 9.2) -->
+        <Grid Grid.Row="1" ColumnDefinitions="*, *" RowDefinitions="*, *" Margin="0,-12,0,0">
+
+            <!-- Widget Placeholder 1: Left Card -->
+            <Border Grid.Column="0" Grid.Row="0" Classes="Card" Margin="12">
+                <Grid>
+                    <!-- Inherits standard TextSecondary from the global tokens -->
+                    <TextBlock Text="{DynamicResource Locale_Dashboard_Placeholder_NetWorth}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondary}"/>
+                </Grid>
+            </Border>
+
+            <!-- Widget Placeholder 2: Right Card -->
+            <Border Grid.Column="1" Grid.Row="0" Classes="Card" Margin="12">
+                <Grid>
+                    <TextBlock Text="{DynamicResource Locale_Dashboard_Placeholder_CashFlow}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondary}"/>
+                </Grid>
+            </Border>
+
+            <!-- Lower half reserved for future expansion (e.g., Recent Transactions) -->
+        </Grid>
+    </Grid>
+</UserControl>

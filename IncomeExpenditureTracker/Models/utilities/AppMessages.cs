@@ -132,4 +132,10 @@ namespace IncomeExpenditureTracker.Models
         TaskCompletionSource<bool> CompletionSource,
         string ConfirmText = "Confirm",
         string CancelText = "Cancel");
+
+    // Tells the MainWindow to drop the loading curtain
+    public record ShowLoadingOverlayMessage(string Message = "Loading...");
+
+    // Tells the MainWindow to lift the loading curtain
+    public record HideLoadingOverlayMessage();
 }
