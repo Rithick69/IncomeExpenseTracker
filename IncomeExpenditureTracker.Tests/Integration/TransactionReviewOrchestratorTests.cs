@@ -42,10 +42,12 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var dbConnMock = new Mock<IDbConnection>();
             var dbTransMock = new Mock<IDbTransaction>();
 
-            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()))
-                   .Returns<Func<IDbConnection, IDbTransaction, Task>>(async action =>
+            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(
+                    It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(),
+                    It.IsAny<CancellationToken>()))
+                   .Returns<Func<IDbConnection, IDbTransaction, CancellationToken, Task>, CancellationToken>(async (action, ct) =>
                    {
-                       await action.Invoke(dbConnMock.Object, dbTransMock.Object);
+                       await action.Invoke(dbConnMock.Object, dbTransMock.Object, ct);
                    });
         }
 
@@ -62,9 +64,9 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var expectedTransactions = new List<Transaction> { new Transaction { Id = 1 } };
             int expectedCount = 50;
 
-            _transactionMock.Setup(x => x.GetFilteredTransactionsAsync(args, null, null))
+            _transactionMock.Setup(x => x.GetFilteredTransactionsAsync(args, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()))
                             .ReturnsAsync(expectedTransactions);
-            _transactionMock.Setup(x => x.GetFilteredTransactionCountAsync(args, null, null))
+            _transactionMock.Setup(x => x.GetFilteredTransactionCountAsync(args, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()))
                             .ReturnsAsync(expectedCount);
 
             // Act
@@ -83,7 +85,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var orchestrator = CreateOrchestrator();
             var args = new TransactionFilterArgs();
 
-            _transactionMock.Setup(x => x.GetFilteredTransactionsAsync(args, null, null))
+            _transactionMock.Setup(x => x.GetFilteredTransactionsAsync(args, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()))
                             .ThrowsAsync(new InvalidOperationException("DB Timeout"));
 
             // Act & Assert
@@ -117,8 +119,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
             await orchestrator.ApplyCorrectionsAsync(corrections);
 
             // Assert
-            _payeeMock.Verify(x => x.ExecuteRetroactiveSweepAsync("UBER", 100, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _transactionMock.Verify(x => x.ExecuteRetroactiveSweepAsync("UBER", 5, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _payeeMock.Verify(x => x.ExecuteRetroactiveSweepAsync("UBER", 100, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+            _transactionMock.Verify(x => x.ExecuteRetroactiveSweepAsync("UBER", 5, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         /// <summary>
@@ -138,7 +140,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             };
 
             // Simply setup the mock to return a completed task
-            _tagMock.Setup(x => x.LearnRuleFromOverrideAsync("UBER EATS", 5))
+            _tagMock.Setup(x => x.LearnRuleFromOverrideAsync("UBER EATS", 5, It.IsAny<CancellationToken>()))
                     .Returns(Task.CompletedTask);
 
             // Act
@@ -146,7 +148,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // Assert
             // 1. Verify the database batch update executed immediately on the main thread
-            _transactionMock.Verify(x => x.UpdateTransactionsBulkAsync(corrections, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _transactionMock.Verify(x => x.UpdateTransactionsBulkAsync(corrections, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
 
             // 2. Use the polling pattern to wait for the background Task.Run to execute and hit our mock
             bool backgroundTaskCompleted = false;
@@ -155,7 +157,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 try
                 {
                     // If this succeeds, the background thread finished and called the mock!
-                    _tagMock.Verify(x => x.LearnRuleFromOverrideAsync("UBER EATS", 5), Times.Once);
+                    _tagMock.Verify(x => x.LearnRuleFromOverrideAsync("UBER EATS", 5, It.IsAny<CancellationToken>()), Times.Once);
 
                     backgroundTaskCompleted = true;
                     break; // Exit the loop immediately to keep the test fast
@@ -186,8 +188,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
             await orchestrator.ApplyCorrectionsAsync(new List<TransactionCorrectionDTO>());
 
             // Assert
-            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()), Times.Never);
-            _tagMock.Verify(x => x.LearnRuleFromOverrideAsync(It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()), Times.Never);
+            _tagMock.Verify(x => x.LearnRuleFromOverrideAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         /// <summary>
@@ -213,8 +215,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
             await Task.Delay(100);
 
             // Assert
-            _transactionMock.Verify(x => x.UpdateTransactionsBulkAsync(corrections, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _tagMock.Verify(x => x.LearnRuleFromOverrideAsync(It.IsAny<string>(), It.IsAny<int>()), Times.Never);
+            _transactionMock.Verify(x => x.UpdateTransactionsBulkAsync(corrections, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+            _tagMock.Verify(x => x.LearnRuleFromOverrideAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         /// <summary>
@@ -234,7 +236,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             };
 
             // Setup the mock to throw an exception when the background task calls it
-            _tagMock.Setup(x => x.LearnRuleFromOverrideAsync("UBER EATS", 5))
+            _tagMock.Setup(x => x.LearnRuleFromOverrideAsync("UBER EATS", 5, It.IsAny<CancellationToken>()))
                     .ThrowsAsync(new InvalidOperationException("Failed to tokenize description"));
 
             // Act - This should NOT throw an exception back to the caller
@@ -243,7 +245,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Assert
 
             // 1. Verify DB update still happened successfully on the main thread
-            _transactionMock.Verify(x => x.UpdateTransactionsBulkAsync(corrections, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _transactionMock.Verify(x => x.UpdateTransactionsBulkAsync(corrections, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
 
             // 2. Use the polling pattern to wait for the background Task.Run to execute and hit our mock
             bool backgroundTaskCompleted = false;
@@ -252,7 +254,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 try
                 {
                     // If this succeeds, the background thread finished and called the mock!
-                    _tagMock.Verify(x => x.LearnRuleFromOverrideAsync("UBER EATS", 5), Times.Once);
+                    _tagMock.Verify(x => x.LearnRuleFromOverrideAsync("UBER EATS", 5, It.IsAny<CancellationToken>()), Times.Once);
                     backgroundTaskCompleted = true;
                     break; // Exit the loop immediately to keep the test fast
                 }
@@ -285,8 +287,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
             await orchestrator.RevertImportBatchAsync(batchId);
 
             // Assert
-            _transactionMock.Verify(x => x.DeleteByBatchIdAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _batchMock.Verify(x => x.DeleteBatchAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _transactionMock.Verify(x => x.DeleteByBatchIdAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+            _batchMock.Verify(x => x.DeleteBatchAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         /// <summary>
@@ -301,7 +303,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             SetupDatabaseTransactionMock();
             int batchId = 123;
 
-            _transactionMock.Setup(x => x.DeleteByBatchIdAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()))
+            _transactionMock.Setup(x => x.DeleteByBatchIdAsync(batchId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()))
                             .ThrowsAsync(new InvalidOperationException("Database locked"));
 
             // Act & Assert
@@ -309,7 +311,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 await orchestrator.RevertImportBatchAsync(batchId));
 
             // The batch deletion must never execute because the child transaction wipe failed
-            _batchMock.Verify(x => x.DeleteBatchAsync(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Never);
+            _batchMock.Verify(x => x.DeleteBatchAsync(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Never);
         }
     }
 }

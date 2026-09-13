@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.StatementManagement;
 
@@ -47,10 +48,11 @@ public class StatementLoadResult : IDisposable
 public class StatementLoader : IStatementLoader
 {
 
-    public async Task<StatementLoadResult> LoadStatementAsync(string filePath, IProgress<LoadingProgress> progress = null!)
+    public async Task<StatementLoadResult> LoadStatementAsync(string filePath, IProgress<LoadingProgress> progress = null!, CancellationToken ct = default)
     {
         // This method will return workbook and worksheet objects to be used by the StatementExtractor for analysis and preview generation.
 
+        ct.ThrowIfCancellationRequested();
         // The actual implementation will depend on the libraries used for reading Excel, CSV, and PDF files.
 
         // Step 1: Validate the file path and extension
@@ -67,6 +69,9 @@ public class StatementLoader : IStatementLoader
         ValidateFilePath(filePath);
         ValidateExtension(filePath);
 
+        // Declare stream outside try block so we can clean it up in catch blocks
+        FileStream? stream = null;
+
         try
         {
             progress?.Report(new LoadingProgress { Percentage = 25, Message = "Opening file stream..." });
@@ -75,14 +80,23 @@ public class StatementLoader : IStatementLoader
             // FileShare.ReadWrite is crucial for desktop apps. It prevents crashes
             // if the user currently has the file open in Excel.
             // Added `useAsync: true` and a buffer size of 4096 for true asynchronous disk reads
-            var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, useAsync: true);
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, useAsync: true);
+
+            // Mid-flight exit: Check cancellation after acquiring the OS file handle
+            ct.ThrowIfCancellationRequested();
 
             progress?.Report(new LoadingProgress { Percentage = 75, Message = "Reading workbook data..." });
 
             // Step 3: Centralize ClosedXML access
             // ClosedXML doesn't have an async constructor, so we wrap it in Task.Run
             // to ensure it doesn't block the UI thread while parsing large files into memory.
-            var workbook = await Task.Run(() => new XLWorkbook(stream));
+            var workbook = await Task.Run(() =>
+            {
+                // Final Check: ClosedXML's constructor is fully synchronous and cannot be aborted
+                // once it starts. We do one last check right before beginning the heavy parsing.
+                ct.ThrowIfCancellationRequested();
+                return new XLWorkbook(stream);
+            }, ct);
 
             // Step 4: Select the worksheet
             // For now, we assume the first worksheet is the target.
@@ -93,6 +107,12 @@ public class StatementLoader : IStatementLoader
 
             // Step 5: Return the combined result
             return new StatementLoadResult(workbook, worksheet, Path.GetFileName(filePath), stream);
+        }
+        catch (OperationCanceledException)
+        {
+            // CRITICAL CLEANUP: If cancelled while loading, we must manually release the file lock
+            stream?.Dispose();
+            throw;
         }
         catch (IOException ex)
         {

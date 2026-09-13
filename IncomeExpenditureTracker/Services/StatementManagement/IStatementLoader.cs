@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -11,7 +12,7 @@ namespace IncomeExpenditureTracker.Services.StatementManagement;
 public interface IStatementLoader
 {
     // The main loading method for single/default sheet
-    Task<StatementLoadResult> LoadStatementAsync(string filePath, IProgress<LoadingProgress> progress = null!);
+    Task<StatementLoadResult> LoadStatementAsync(string filePath, IProgress<LoadingProgress> progress = null!, CancellationToken ct = default);
 
     // Retrieves metadata for all sheets to allow user selection
     Task<List<SheetMetaData>> GetAvailableSheetsAsync(string filePath);

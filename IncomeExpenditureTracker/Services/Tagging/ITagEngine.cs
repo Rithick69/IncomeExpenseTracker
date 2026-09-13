@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using IncomeExpenditureTracker.Models;
 
@@ -15,6 +16,6 @@ namespace IncomeExpenditureTracker.Services.Tagging
         /// </summary>
         /// <param name="transactions">The list of transactions to process.</param>
         /// <param name="tokenRows">The token rows used for tagging logic.</param>
-        Task ProcessTransactions(List<Transaction> transactions, List<List<string>> tokenRows);
+        Task ProcessTransactions(List<Transaction> transactions, List<List<string>> tokenRows, CancellationToken ct = default);
     }
 }

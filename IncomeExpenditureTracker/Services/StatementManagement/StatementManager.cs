@@ -70,7 +70,7 @@ public class StatementManager : IDisposable
     /// If individual files fail (e.g., OS file lock or corruption), they are trapped and returned as UI errors,
     /// allowing successfully loaded files to remain in the staging queue without interruption.
     /// </summary>
-    public async Task<StagingBatchResult> StageFilesAsync(List<string> filePaths, IProgress<LoadingProgress> progress)
+    public async Task<StagingBatchResult> StageFilesAsync(List<string> filePaths, IProgress<LoadingProgress> progress, CancellationToken ct = default)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(filePaths);
@@ -111,13 +111,16 @@ public class StatementManager : IDisposable
 
         var loadTasks = filePaths.Select(async path =>
         {
+            // Check for cancellation before starting file processing
+            ct.ThrowIfCancellationRequested();
+
             var fileId = Guid.NewGuid();
             var fileName = Path.GetFileName(path);
 
             try
             {
                 // Load the file asynchronously
-                var result = await _statementLoader.LoadStatementAsync(path, progress: null!);
+                var result = await _statementLoader.LoadStatementAsync(path, progress: null!, ct);
 
                 result.FileName = fileName; // Store the file name in the StatementLoadResult for reference
 
@@ -138,6 +141,12 @@ public class StatementManager : IDisposable
 
                 // Add to our successful list for the UI grid
                 successes.Add(new PendingFilePreview(fileId, fileName, sheetNames));
+            }
+            catch (OperationCanceledException)
+            {
+                // Specifically handle cancellation at the individual task level if needed
+                DiscardFile(fileId);
+                throw;
             }
             catch (IOException ex)
             {
@@ -192,7 +201,22 @@ public class StatementManager : IDisposable
         });
 
         // Wait for all 5 parallel loading tasks to finish their try/catch blocks
-        await Task.WhenAll(loadTasks);
+        try
+        {
+            await Task.WhenAll(loadTasks);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Staging operation was cancelled. Purging partially loaded files from memory.");
+
+            // Critical Memory Cleanup: Discard any files that successfully loaded before cancellation
+            foreach (var success in successes)
+            {
+                DiscardFile(success.Id);
+            }
+
+            throw; // Rethrow to notify the calling UI/ViewModel
+        }
 
         _logger.LogInformation("Staging batch completed. Successes: {SuccessCount}, Failures: {FailureCount}.", successes.Count, failures.Count);
 
@@ -213,7 +237,9 @@ public class StatementManager : IDisposable
     /// <param name="fileId">The unique GUID assigned to the file during StageFilesAsync.</param>
     /// <param name="targetSheetName">Optional specific sheet name if the workbook has multiple sheets.</param>
     /// <returns>A StatementPreview DTO containing the 20-row preview grid and detected dictionary fields.</returns>
-    public async Task<StatementPreview> PreviewStagedFileAsync(Guid fileId, string? targetSheetName = null)
+    /// Plan: Currently, this method accepts only fileId to process primary sheet, in future I would pass fileId along with worksheet number/id present in each file.
+    /// this would allow the viewmodel to parallely call multiple sheets belonging to one file in batches to process preview of sheets.
+    public async Task<StatementPreview> PreviewStagedFileAsync(Guid fileId, string? targetSheetName = null, CancellationToken ct = default)
     {
         ThrowIfDisposed();
         _logger.LogInformation("Generating preview for Staging ID: {FileId}. Target Sheet: '{SheetName}'", fileId, targetSheetName ?? "Default Primary");
@@ -249,28 +275,48 @@ public class StatementManager : IDisposable
 
         try
         {
-            // STEP 3: EXECUTE IN-MEMORY EXTRACTION ANALYSIS
-            // We call your extractor's Analyse method, passing both the in-memory document AND the FileName string.
-            // Guardrail Compliance: The extractor reads cells from 'targetDocument'. The 'stagedFile.FileName' string
-            // is utilized strictly as metadata (e.g., attaching the source file name to the DTO or hashing)
-            // without ever performing redundant file I/O on disk.
-            // This step emits the 20-row visual grid and the namespaced Dictionary<string, DetectedField> schema.
-            _logger.LogDebug("Executing cell extraction and schema analysis on sheet '{SheetName}' for file '{FileName}'...", targetDocument.Name, stagedFile.FileName);
-            StatementPreview preview = await _statementExtractor.Analyze(targetDocument, stagedFile.FileName);
+            // CRITICAL UPDATE: Offload the CPU-bound extraction to a background thread.
+            // This allows the ViewModel to call this method 5 times in a row without blocking the UI,
+            // letting the ThreadPool crunch the ClosedXML data in true parallel.
+            return await Task.Run(async () =>
+            {
+                // Check cancellation before starting heavy work
+                ct.ThrowIfCancellationRequested();
 
-            // STEP 4: INITIALIZE THE IN-MEMORY EDITING SCRATCHPAD
-            // Before returning to the UI, we hand off the generated preview DTO to the StatementEditSession.
-            // This session acts as a lightweight "shopping cart" that will hold user column re-mappings,
-            // tag overrides, and row exclusions in memory until explicit commit confirmation.
-            // Per our rules, this initialization executes ZERO SQLite database writes.
-            _logger.LogDebug("Initializing StatementEditSession scratchpad with 0-based coordinate mappings.");
-            _statementEditSession.Initialize(preview);
+                _logger.LogDebug("Executing cell extraction and schema analysis on sheet '{SheetName}' for file '{FileName}'...", targetDocument.Name, stagedFile.FileName);
+
+                // STEP 3: EXECUTE IN-MEMORY EXTRACTION ANALYSIS
+                // We call your extractor's Analyse method, passing both the in-memory document AND the FileName string.
+                // Guardrail Compliance: The extractor reads cells from 'targetDocument'. The 'stagedFile.FileName' string
+                // is utilized strictly as metadata (e.g., attaching the source file name to the DTO or hashing)
+                // without ever performing redundant file I/O on disk.
+                // This step emits the 20-row visual grid and the namespaced Dictionary<string, DetectedField> schema.
+                _logger.LogDebug("Executing cell extraction and schema analysis on sheet '{SheetName}' for file '{FileName}'...", targetDocument.Name, stagedFile.FileName);
+                StatementPreview preview = await _statementExtractor.Analyze(targetDocument, stagedFile.FileName, ct: ct);
+
+                // Check cancellation before allocating session memory
+                ct.ThrowIfCancellationRequested();
+
+                // STEP 4: INITIALIZE THE IN-MEMORY EDITING SCRATCHPAD
+                // Before returning to the UI, we hand off the generated preview DTO to the StatementEditSession.
+                // This session acts as a lightweight "shopping cart" that will hold user column re-mappings,
+                // tag overrides, and row exclusions in memory until explicit commit confirmation.
+                // Per our rules, this initialization executes ZERO SQLite database writes.
+                _logger.LogDebug("Initializing StatementEditSession scratchpad with 0-based coordinate mappings.");
+                _statementEditSession.Initialize(preview);
 
 
-            // STEP 5: RETURN TO UI FOR RENDERING
-            // The Avalonia UI binds to this DTO to render dropdown mappings (using 0-based integer indexing)
-            // and displays warning badges if required core columns were flagged as undetected (-1 index).
-            return preview;
+                // STEP 5: RETURN TO UI FOR RENDERING
+                // The Avalonia UI binds to this DTO to render dropdown mappings (using 0-based integer indexing)
+                // and displays warning badges if required core columns were flagged as undetected (-1 index).
+                return preview;
+            }, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Preview analysis was cancelled for file '{FileName}'.", stagedFile.FileName);
+            DiscardFile(fileId); // Memory cleared!
+            throw;
         }
         catch (Exception ex)
         {
@@ -293,7 +339,7 @@ public class StatementManager : IDisposable
     /// <summary>
     /// Phase 3: Commits a specific staged file. Dispatches background learning and executes SQLite batch import.
     /// </summary>
-    public async Task CommitStagedFileAsync(Guid fileId, PreviewTracker confirmedTracker)
+    public async Task CommitStagedFileAsync(Guid fileId, PreviewTracker confirmedTracker, CancellationToken ct = default)
     {
         ThrowIfDisposed();
 
@@ -322,8 +368,13 @@ public class StatementManager : IDisposable
             // 2. EXECUTE DATABASE IMPORT
             // ExcelStatementImportService applies coordinates and writes to SQLite via ExecuteWithRetryAsync
             _logger.LogInformation("Committing import for Staging ID: {FileId}. Corrections to learn: {CorrectionCount}", fileId, correctionsList.Count);
-            await _statementImport.ImportConfirmedStatementAsync(stagedFile.Worksheet, confirmedTracker.FinalPreview);
+            await _statementImport.ImportConfirmedStatementAsync(stagedFile.Worksheet, confirmedTracker.FinalPreview, ct);
 
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Database import was cancelled for Staging ID: {FileId}.", fileId);
+            throw;
         }
         catch (Exception ex)
         {
@@ -371,7 +422,8 @@ public class StatementManager : IDisposable
                     await _synonymService.LearnFromCorrectionAsync(
                         correction.RawHeaderName,
                         correction.TargetField,
-                        correction.Category
+                        correction.Category,
+                        CancellationToken.None
                     );
                 }
                 catch (Exception ex)

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Entities;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Database;
 
@@ -46,7 +47,7 @@ public class DatabaseInitializer : IDatabaseInitializer
             // "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;" upon opening,
             // guaranteeing WAL concurrency mode and relational constraints are active.
             // -------------------------------------------------------------------------
-            await _database.ExecuteWithRetryAsync(async (connection) =>
+            await _database.ExecuteWithRetryAsync(async (connection, cancelToken) =>
             {
                 var schemaDdl = @"
 
@@ -291,9 +292,9 @@ public class DatabaseInitializer : IDatabaseInitializer
 
                 // Execute schema DDL asynchronously
                 await connection.ExecuteAsync(schemaDdl);
-            });
+            }, CancellationToken.None);
 
-            await _database.ExecuteWithRetryAsync(async (c) =>
+            await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
             {
                 const string seedSql = @"
                     INSERT OR IGNORE INTO Tags (Id, Name, SubCategoryId)
@@ -304,7 +305,7 @@ public class DatabaseInitializer : IDatabaseInitializer
                 {
                     MiscTag = SystemConstants.MiscTag
                 });
-            });
+            }, CancellationToken.None);
 
             // -------------------------------------------------------------------------
             // DOMAIN ISOLATION PRE-SEEDING
@@ -329,7 +330,7 @@ public class DatabaseInitializer : IDatabaseInitializer
             // Wrap initial default synonym seeding in the retry wrapper as well.
             // Using INSERT OR IGNORE respects the compound unique constraint without failing.
             // -------------------------------------------------------------------------
-            await _database.ExecuteWithRetryAsync(async (connection) =>
+            await _database.ExecuteWithRetryAsync(async (connection, cancelToken) =>
             {
                 var seedSql = @"
                     INSERT OR IGNORE INTO Synonyms (FieldType, Synonym, Priority, Category) VALUES
@@ -386,7 +387,7 @@ public class DatabaseInitializer : IDatabaseInitializer
                         ('ENTITY_NAME', 'Name', 70, 'METADATA');";
 
                 await connection.ExecuteAsync(seedSql);
-            });
+            }, CancellationToken.None);
 
             _logger.LogInformation("Database schema initialization and baseline seeding completed successfully.");
         }

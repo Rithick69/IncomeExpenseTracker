@@ -14,6 +14,7 @@ using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Tagging;
 using IncomeExpenditureTracker.Services.TransactionExtractor;
 using IncomeExpenditureTracker.Services.Database;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Importing;
 
@@ -57,7 +58,7 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task ImportConfirmedStatementAsync(IXLWorksheet worksheet, StatementPreview previewMap)
+    public async Task ImportConfirmedStatementAsync(IXLWorksheet worksheet, StatementPreview previewMap, CancellationToken ct = default)
     {
         if (worksheet == null) throw new ArgumentNullException(nameof(worksheet));
         if (previewMap == null) throw new ArgumentNullException(nameof(previewMap));
@@ -71,6 +72,8 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
 
         try
         {
+            ct.ThrowIfCancellationRequested();
+
             // Resolve Metadata (with safe fallbacks for relaxed validation)
             string entityName = GetMetaValue(fields, "Meta:ENTITY_NAME", "Unknown Entity");
             string accountNumber = GetMetaValue(fields, "Meta:ACCOUNT_NUMBER", "Unknown Account");
@@ -90,7 +93,8 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
             var transactions = _transactionExtractor.ExtractTransactions(
                 worksheet,
                 previewMap.HeaderRow,
-                previewMap.Fields
+                previewMap.Fields,
+                ct
             );
 
             if (transactions.Count == 0)
@@ -103,11 +107,17 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
             // 2. IN-MEMORY TOKENIZATION & TAGGING
             // -------------------------------------------------------------------------
 
+            // Pre-Cache abort check: Don't hit the DB/cache if already cancelled
+            ct.ThrowIfCancellationRequested();
+
             var tokenRows = new List<List<string>>(transactions.Count);
             var payeeMappings = _payeeService.GetMappingsCache();
 
             foreach (var txn in transactions)
             {
+                // LOOP CHECK: Abort the heavy synchronous parsing if cancelled!
+                ct.ThrowIfCancellationRequested();
+
                 var tokens = _descriptionParser.ExtractTokens(txn.Description);
                 tokenRows.Add(tokens);
 
@@ -132,11 +142,11 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
                 }
             }
 
-            await _tagEngine.ProcessTransactions(transactions, tokenRows);
+            await _tagEngine.ProcessTransactions(transactions, tokenRows, ct);
 
             // DB Tasks
 
-            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx) =>
+            await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx, ct) =>
             {
 
                 // Ensure the account and entity exist in the database, creating them if necessary
@@ -144,7 +154,7 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
                 // -------------------------------------------------------------------------
                 // 3. DATABASE METADATA PERSISTENCE
                 // -------------------------------------------------------------------------
-                var entityId = await _entityService.GetOrCreateEntity(entityName, conn, tx);
+                var entityId = await _entityService.GetOrCreateEntity(entityName, conn, tx, ct);
 
                 var accountId = await _accountService.GetOrCreateAccount(new Account
                 {
@@ -155,7 +165,7 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
                     AccountType = accountType,
                     Currency = currency,
                     CreatedDate = DateTime.UtcNow
-                }, conn, tx);
+                }, conn, tx, ct);
 
                 // -------------------------------------------------------------------------
                 // 4. BATCH CREATION & HASHING
@@ -165,13 +175,15 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
                     ? previewMap.FileName
                     : $"Statement_{DateTime.UtcNow:yyyyMMdd}";
 
-                var batchId = await _batchService.CreateBatch(fileName, entityName, accountId, conn, tx);
+                var batchId = await _batchService.CreateBatch(fileName, entityName, accountId, conn, tx, ct);
 
                 // Assign the ImportBatchId and generate a hash for each transaction before insertion
                 // This allows us to identify duplicates and group transactions by import batch for easier management
 
                 foreach (var txn in transactions)
                 {
+                    ct.ThrowIfCancellationRequested();
+
                     txn.ImportBatchId = batchId;
                     txn.TransactionHash = GenerateHash(txn);
                     txn.AccountId = accountId;
@@ -184,15 +196,23 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
 
                 for (int i = 0; i < transactions.Count; i += BatchSize)
                 {
+                    ct.ThrowIfCancellationRequested();
+
                     int count = Math.Min(BatchSize, transactions.Count - i);
                     var batch = transactions.GetRange(i, count);
 
-                    await _transactionService.InsertTransactionsAsync(batch, conn, tx);
+                    await _transactionService.InsertTransactionsAsync(batch, conn, tx, ct);
                 }
                 _logger.LogInformation("Successfully imported {Count} transactions under Batch ID {BatchId} for account ID {AccountId}.", transactions.Count, batchId, accountId);
 
-            });
+            }, ct);
 
+        }
+        catch (OperationCanceledException)
+        {
+
+            _logger.LogWarning("Statement import was cancelled for file '{FileName}'.", previewMap.FileName);
+            throw;
         }
         catch (Exception ex)
         {

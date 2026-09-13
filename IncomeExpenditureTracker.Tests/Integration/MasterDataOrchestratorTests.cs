@@ -49,10 +49,12 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var dbConnMock = new Mock<IDbConnection>();
             var dbTransMock = new Mock<IDbTransaction>();
             // Boilerplate setup to intercept the transaction wrapper and execute the inner closure synchronously
-            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()))
-                   .Returns<Func<IDbConnection, IDbTransaction, Task>>(async action =>
+            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(
+                    It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(),
+                    It.IsAny<CancellationToken>()))
+                   .Returns<Func<IDbConnection, IDbTransaction, CancellationToken, Task>, CancellationToken>(async (action, ct) =>
                    {
-                       await action.Invoke(dbConnMock.Object, dbTransMock.Object);
+                       await action.Invoke(dbConnMock.Object, dbTransMock.Object, ct);
                    });
         }
 
@@ -72,9 +74,9 @@ namespace IncomeExpenditureTracker.Tests.Integration
             await orchestrator.DeleteCategorySafeAsync(catId);
 
             // Assert
-            _tagMock.Verify(x => x.FloatTagsByCategoryAsync(catId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _subCategoryMock.Verify(x => x.DeleteByCategoryId(catId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _categoryMock.Verify(x => x.DeleteCategory(catId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _tagMock.Verify(x => x.FloatTagsByCategoryAsync(catId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+            _subCategoryMock.Verify(x => x.DeleteByCategoryId(catId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+            _categoryMock.Verify(x => x.DeleteCategory(catId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         /// <summary>
@@ -93,8 +95,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
             await orchestrator.DeleteSubCategorySafeAsync(subCatId);
 
             // Assert
-            _tagMock.Verify(x => x.FloatTagsBySubCategoryAsync(subCatId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _subCategoryMock.Verify(x => x.DeleteSubCategory(subCatId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _tagMock.Verify(x => x.FloatTagsBySubCategoryAsync(subCatId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+            _subCategoryMock.Verify(x => x.DeleteSubCategory(subCatId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         /// <summary>
@@ -111,15 +113,15 @@ namespace IncomeExpenditureTracker.Tests.Integration
             int miscTagId = 999;
 
             // Mock the system tag retrieval to return a valid ID
-            _tagMock.Setup(x => x.GetTagIdByName(It.IsAny<string>())).ReturnsAsync(miscTagId);
+            _tagMock.Setup(x => x.GetTagIdByName(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(miscTagId);
 
             // Act
             await orchestrator.DeleteTagSafeAsync(targetTagId);
 
             // Assert
-            _transactionMock.Verify(x => x.ReassignTransactionsToFallbackTagAsync(targetTagId, miscTagId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _tagMock.Verify(x => x.DeleteRulesByTagId(targetTagId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _tagMock.Verify(x => x.DeleteTagAsync(targetTagId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _transactionMock.Verify(x => x.ReassignTransactionsToFallbackTagAsync(targetTagId, miscTagId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+            _tagMock.Verify(x => x.DeleteRulesByTagId(targetTagId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+            _tagMock.Verify(x => x.DeleteTagAsync(targetTagId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         /// <summary>
@@ -132,7 +134,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var orchestrator = CreateOrchestrator();
             int miscTagId = 999;
 
-            _tagMock.Setup(x => x.GetTagIdByName(It.IsAny<string>())).ReturnsAsync(miscTagId);
+            _tagMock.Setup(x => x.GetTagIdByName(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(miscTagId);
 
             // Act & Assert
             await Assert.ThrowsAsync<InvalidOperationException>(async () =>
@@ -150,14 +152,14 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var orchestrator = CreateOrchestrator();
             int accountId = 1;
 
-            _accountMock.Setup(x => x.HasTransactionsAsync(accountId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>())).ReturnsAsync(true);
+            _accountMock.Setup(x => x.HasTransactionsAsync(accountId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
             // Act & Assert
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
                 await orchestrator.DeleteAccountAsync(accountId));
 
             Assert.Contains("Cannot delete this Account because it contains historical transactions", ex.Message);
-            _accountMock.Verify(x => x.DeleteAccount(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Never);
+            _accountMock.Verify(x => x.DeleteAccount(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -167,13 +169,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var orchestrator = CreateOrchestrator();
             int accountId = 1;
 
-            _accountMock.Setup(x => x.HasTransactionsAsync(accountId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>())).ReturnsAsync(false);
+            _accountMock.Setup(x => x.HasTransactionsAsync(accountId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
             // Act
             await orchestrator.DeleteAccountAsync(accountId);
 
             // Assert
-            _accountMock.Verify(x => x.DeleteAccount(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _accountMock.Verify(x => x.DeleteAccount(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
@@ -186,7 +188,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Act
             await orchestrator.DeleteEntityAsync(entityId);
 
-            _entityMock.Verify(x => x.DeleteEntity(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _entityMock.Verify(x => x.DeleteEntity(It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         /// <summary>
@@ -206,8 +208,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
             await orchestrator.MergeEntitiesAsync(sourceEntityId, targetEntityId);
 
             // Assert
-            _accountMock.Verify(x => x.ReassignAccountsAsync(sourceEntityId, targetEntityId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
-            _entityMock.Verify(x => x.DeleteEntity(sourceEntityId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _accountMock.Verify(x => x.ReassignAccountsAsync(sourceEntityId, targetEntityId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+            _entityMock.Verify(x => x.DeleteEntity(sourceEntityId, It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         /// <summary>
@@ -258,7 +260,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             await orchestrator.MergePayeesAsync(targetPayeeId, sourcePayeeIds);
 
             // Assert
-            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()), Times.Never);
+            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         // =========================================================================
@@ -280,7 +282,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 await orchestrator.DeleteTagSafeAsync(10, cts.Token));
 
             // Verify database was never touched
-            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()), Times.Never);
+            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()), Times.Never);
         }
     }
 }

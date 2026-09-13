@@ -40,7 +40,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             var snapshot = new RuleBookSnapshot(ruleIndex, MiscTagId);
             _mockTagService
-                .Setup(s => s.GetRuleBookSnapshotAsync())
+                .Setup(s => s.GetRuleBookSnapshotAsync(CancellationToken.None))
                 .ReturnsAsync(snapshot);
         }
 
