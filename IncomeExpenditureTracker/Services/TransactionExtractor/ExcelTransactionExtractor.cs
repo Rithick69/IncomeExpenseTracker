@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Helpers;
@@ -139,10 +140,12 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
     // Extracts a small number of transactions to show
     // the user before performing the full import.
     //-------------------------------------------------------------
-    public List<TransactionPreview> ExtractPreview(IXLWorksheet worksheet, int headerRow, Dictionary<string, DetectedField> columnFields)
+    public List<TransactionPreview> ExtractPreview(IXLWorksheet worksheet, int headerRow, Dictionary<string, DetectedField> columnFields, CancellationToken ct = default)
     {
         try
         {
+            ct.ThrowIfCancellationRequested();
+
             if (worksheet == null)
             {
                 _logger.LogError("[ExtractPreview] Preview extraction rejected: worksheet was null.");
@@ -175,6 +178,9 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
 
             for (int row = startRow; row <= maxRow; row++)
             {
+                // Halt the loop if the user cancels
+                ct.ThrowIfCancellationRequested();
+
                 var sheetRow = worksheet.Row(row);
 
                 if (sheetRow.IsEmpty())
@@ -218,6 +224,11 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
 
             return results;
         }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("[ExtractPreview] Preview extraction was cancelled for worksheet '{WorksheetName}'.", worksheet?.Name ?? "Unknown");
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[ExtractPreview] Error extracting preview transactions for worksheet '{WorksheetName}' at header row {HeaderRow}.",
@@ -232,7 +243,7 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
     // ------------------------------------------------------------
     // Extracts all transactions from the worksheet.
     //-------------------------------------------------------------
-    public List<Transaction> ExtractTransactions(IXLWorksheet worksheet, int headerRow, Dictionary<string, DetectedField> previewFields)
+    public List<Transaction> ExtractTransactions(IXLWorksheet worksheet, int headerRow, Dictionary<string, DetectedField> previewFields, CancellationToken ct = default)
     {
         if (worksheet == null)
         {
@@ -247,6 +258,7 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         }
         try
         {
+            ct.ThrowIfCancellationRequested();
 
             // Resolve O(1) integers once before the loop
             var coords = TransactionColumnCoordinates.FromDictionary(previewFields);
@@ -261,6 +273,9 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
 
             for (int row = startRow; row <= lastRow; row++)
             {
+                // Halt the loop if the user cancels
+                ct.ThrowIfCancellationRequested();
+
                 var sheetrow = worksheet.Row(row);
 
                 if (sheetrow.IsEmpty())
@@ -310,6 +325,12 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 results.Count);
 
             return results;
+        }
+        catch (OperationCanceledException)
+        {
+            // CRITICAL: Catch and re-throw so the parent service can release memory
+            _logger.LogWarning("[ExtractTransactions] Full extraction was cancelled for worksheet '{WorksheetName}'.", worksheet.Name);
+            throw;
         }
         catch (Exception ex)
         {

@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Tasks;
 namespace IncomeExpenditureTracker.Services.Helpers;
 
@@ -5,5 +6,5 @@ namespace IncomeExpenditureTracker.Services.Helpers;
 public interface IHeaderDetector<TDocument>
 {
     // Detects the header row in the given Excel worksheet.
-    Task<int> DetectHeaderRow(TDocument document, bool forceReload = false);
+    Task<int> DetectHeaderRow(TDocument document, bool forceReload = false, CancellationToken ct = default);
 }

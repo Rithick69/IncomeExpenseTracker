@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Entities;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Tagging;
 
@@ -29,8 +30,10 @@ public class TagEngine : ITagEngine
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task ProcessTransactions(List<Transaction> transactions, List<List<string>> tokenRows)
+    public async Task ProcessTransactions(List<Transaction> transactions, List<List<string>> tokenRows, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         // -----------------------------------------------------------------------------------------
         // 1. PRE-FLIGHT VALIDATION
         // -----------------------------------------------------------------------------------------
@@ -62,12 +65,17 @@ public class TagEngine : ITagEngine
         RuleBookSnapshot snapshot;
         try
         {
-            snapshot = await _tagService.GetRuleBookSnapshotAsync();
+            snapshot = await _tagService.GetRuleBookSnapshotAsync(ct);
             if (snapshot.RuleIndex == null || snapshot.RuleIndex.Count == 0)
             {
                 _logger.LogWarning("RuleBookSnapshot is empty. All untagged transactions will default to MiscTagId ({MiscId}).",
                     snapshot.MiscTagId);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("TagEngine processing was cancelled during snapshot retrieval.");
+            throw;
         }
         catch (Exception ex)
         {
@@ -86,11 +94,18 @@ public class TagEngine : ITagEngine
         // -----------------------------------------------------------------------------------------
         try
         {
+            // Configure ParallelOptions to accept the CancellationToken
+            var parallelOptions = new ParallelOptions
+            {
+                CancellationToken = ct
+            };
+
             // Execute across multiple CPU cores utilizing thread-local dictionary recycling.
             // Each core allocates ONE small dictionary and reuses it for every row assigned to that core.
             Parallel.For(
                 0,
                 transactions.Count,
+                parallelOptions,
                 () => new Dictionary<int, (int MaxPriority, int MatchCount)>(8), // Thread-local state factory
                 (i, loopState, localScores) =>
                 {
@@ -214,6 +229,12 @@ public class TagEngine : ITagEngine
             );
 
             _logger.LogInformation("Successfully completed TagEngine processing for {Count} transactions.", transactions.Count);
+        }
+        catch (OperationCanceledException)
+        {
+            // Explicitly catch the cancellation exception thrown by ParallelOptions
+            _logger.LogWarning("TagEngine processing was cancelled by the user.");
+            throw;
         }
         catch (AggregateException aggEx)
         {

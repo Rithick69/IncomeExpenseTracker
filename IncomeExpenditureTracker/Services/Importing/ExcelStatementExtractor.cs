@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Services.TransactionExtractor;
 using IncomeExpenditureTracker.Services.Helpers;
 using IncomeExpenditureTracker.Services.PreviewInsights;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Importing;
 
@@ -39,10 +40,12 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
     }
 
     // Analyzes the given Excel file and returns a preview of the detected account information, column mappings, and a sample of transactions.
-    public async Task<StatementPreview> Analyze(IXLWorksheet worksheet, string fileName, bool forceReload = false)
+    public async Task<StatementPreview> Analyze(IXLWorksheet worksheet, string fileName, bool forceReload = false, CancellationToken ct = default)
     {
+
         try
         {
+            ct.ThrowIfCancellationRequested();
             if (worksheet == null)
             {
                 _logger.LogError("Statement analysis rejected: worksheet was null for file '{FileName}'.", fileName);
@@ -55,14 +58,14 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 forceReload);
 
             // 1. Detect account & entity metadata (Returns Dictionary<string, DetectedField>)
-            var metadataFields = await _fieldMapper.DetectAccountDetails(worksheet, forceReload);
+            var metadataFields = await _fieldMapper.DetectAccountDetails(worksheet, forceReload, ct);
 
             // 2. Detect the header row coordinate
-            var headerRow = await _headerDetector.DetectHeaderRow(worksheet, forceReload);
+            var headerRow = await _headerDetector.DetectHeaderRow(worksheet, forceReload, ct);
             _logger.LogInformation("Detected header row {HeaderRow} for file '{FileName}'.", headerRow, fileName);
 
             // 3. Detect column coordinates (Returns Dictionary<string, DetectedField>)
-            var columnFields = await _fieldMapper.DetectColumns(worksheet, headerRow, forceReload);
+            var columnFields = await _fieldMapper.DetectColumns(worksheet, headerRow, forceReload, ct);
             _logger.LogInformation(
                 "Detected {ColumnCount} mapped columns for file '{FileName}'.",
                 columnFields?.Count ?? 0,
@@ -74,15 +77,20 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 throw new InvalidOperationException($"Column mapping dictionary was null for file '{fileName}'.");
             }
 
+            // Pre-CPU check: Abort before jumping into CPU-heavy row enumeration
+            ct.ThrowIfCancellationRequested();
+
             // 4. Extract a sample of transactions for UI verification (first 20 rows)
             var previewTransactions = _transactionExtractor
-                .ExtractPreview(worksheet, headerRow, columnFields)
+                .ExtractPreview(worksheet, headerRow, columnFields, ct)
                 .Take(20)
                 .ToList();
             _logger.LogInformation(
                 "Preview extraction yielded {PreviewCount} sample transactions for file '{FileName}'.",
                 previewTransactions.Count,
                 fileName);
+
+            ct.ThrowIfCancellationRequested();
 
             // 5. MERGE both dictionaries into one unified map for our StatementPreview
             var unifiedFields = new Dictionary<string, DetectedField>(StringComparer.OrdinalIgnoreCase);
@@ -101,6 +109,9 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 ? ef.ExtractedValue
                 : "UNKNOWN_ENTITY";
 
+            // Final Pre-Return check
+            ct.ThrowIfCancellationRequested();
+
             var signature = GenerateHeaderSignature(entityName, columnFields);
 
             // Return the analysis results in a StatementPreview object
@@ -115,6 +126,11 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 ConfidenceScore = confidence,
                 RequiresVerification = confidence < 80 || !previewTransactions.Any()
             };
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Statement analysis was safely cancelled for file '{FileName}'.", fileName);
+            throw;
         }
         catch (Exception ex)
         {

@@ -54,25 +54,27 @@ namespace IncomeExpenditureTracker.Tests.Logic
             // Empty fields to force fallbacks
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
 
-            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>()))
+            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction> { new Transaction { Description = "Test" } }); // Must return > 0 to proceed
 
             // Intercept the database transaction wrapper to execute the inner action synchronously for testing
-            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()))
-                   .Returns<Func<IDbConnection, IDbTransaction, Task>>(async action =>
-                   {
-                       await action.Invoke(null!, null!); // Simulating execution
-                   });
+            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(
+                It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(),
+                It.IsAny<CancellationToken>()))
+                    .Returns<Func<IDbConnection, IDbTransaction, CancellationToken, Task>, CancellationToken>(async (action, ct) =>
+                    {
+                        await action.Invoke(null!, null!, ct); // Simulating execution
+                    });
 
             // Act
             await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
 
             // Assert
-            _entityMock.Verify(x => x.GetOrCreateEntity("Unknown Entity", It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _entityMock.Verify(x => x.GetOrCreateEntity("Unknown Entity", It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
             _accountMock.Verify(x => x.GetOrCreateAccount(It.Is<Account>(a =>
                 a.AccountNumber == "Unknown Account" &&
                 a.AccountType == "Checking" &&
-                a.Currency == "INR"), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+                a.Currency == "INR"), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         /// <summary>
@@ -91,18 +93,18 @@ namespace IncomeExpenditureTracker.Tests.Logic
             var transactions = new List<Transaction>();
             for (int i = 0; i < 300; i++) transactions.Add(new Transaction { Description = "Test" });
 
-            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>()))
+            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(transactions);
 
             // Simulate the transaction wrapper executing the provided payload
-            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()))
-                   .Returns<Func<IDbConnection, IDbTransaction, Task>>(async action =>
-                   {
-                       await action.Invoke(null!, null!);
-                   });
+            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+                .Returns<Func<IDbConnection, IDbTransaction, CancellationToken, Task>, CancellationToken>(async (action, ct) =>
+                {
+                    await action.Invoke(null!, null!, ct); // Simulating execution
+                });
 
             // Setup the chunked insert to throw an exception on the second batch
-            _transactionMock.SetupSequence(x => x.InsertTransactionsAsync(It.IsAny<List<Transaction>>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()))
+            _transactionMock.SetupSequence(x => x.InsertTransactionsAsync(It.IsAny<List<Transaction>>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()))
                             .Returns(Task.CompletedTask) // First chunk of 250 succeeds
                             .ThrowsAsync(new InvalidOperationException("SQLite Constraint Violation")); // Second chunk of 50 fails
 
@@ -124,14 +126,14 @@ namespace IncomeExpenditureTracker.Tests.Logic
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
 
             // Return empty list
-            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>()))
+            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction>());
 
             // Act
             await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
 
             // Assert
-            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()), Times.Never);
+            _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         /// <summary>
@@ -146,11 +148,14 @@ namespace IncomeExpenditureTracker.Tests.Logic
 
             var previewMap = new StatementPreview { FileName = null!, Fields = new Dictionary<string, DetectedField>() };
 
-            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>()))
+            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction> { new Transaction { Description = "Test" } });
 
-            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()))
-                   .Returns<Func<IDbConnection, IDbTransaction, Task>>(async action => await action.Invoke(null!, null!));
+            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+                   .Returns<Func<IDbConnection, IDbTransaction, CancellationToken, Task>, CancellationToken>(async (action, ct) =>
+                    {
+                        await action.Invoke(null!, null!, ct); // Simulating execution
+                    });
 
             var expectedPrefix = "Statement_";
 
@@ -158,7 +163,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
             await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
 
             // Assert
-            _batchMock.Verify(x => x.CreateBatch(It.Is<string>(s => s.StartsWith(expectedPrefix)), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+            _batchMock.Verify(x => x.CreateBatch(It.Is<string>(s => s.StartsWith(expectedPrefix)), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         /// <summary>
@@ -199,15 +204,15 @@ namespace IncomeExpenditureTracker.Tests.Logic
                 }
             };
 
-            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>()))
+            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction> { new Transaction { Description = "Test" } }); // Must return > 0 to proceed
 
             // Intercept the database transaction wrapper
-            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, Task>>()))
-                   .Returns<Func<IDbConnection, IDbTransaction, Task>>(async action =>
-                   {
-                       await action.Invoke(null!, null!); // Simulating execution
-                   });
+            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+                   .Returns<Func<IDbConnection, IDbTransaction, CancellationToken, Task>, CancellationToken>(async (action, ct) =>
+                    {
+                        await action.Invoke(null!, null!, ct); // Simulating execution
+                    });
 
             // Act
             await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
@@ -216,7 +221,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
             // Verify that the AccountService receives the exact garbage string, proving the parser doesn't swallow it.
             // If this string violates DB constraints, the ExecuteInTransactionWithRetryAsync will handle the rollback.
             _accountMock.Verify(x => x.GetOrCreateAccount(It.Is<Account>(a =>
-                a.Currency == invalidCurrency), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>()), Times.Once);
+                a.Currency == invalidCurrency), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
         }
     }
 }

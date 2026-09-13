@@ -65,16 +65,28 @@ namespace IncomeExpenditureTracker.Tests.Integration
             _dbServiceWrapper = new Mock<IDatabaseService>();
 
             _dbServiceWrapper
-                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, Task<int>>>()))
-                .Returns<Func<IDbConnection, Task<int>>>(func => func(_inMemoryConnection));
+                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, CancellationToken, Task<int>>>(), It.IsAny<CancellationToken>()))
+                .Returns<Func<IDbConnection, CancellationToken, Task<int>>, CancellationToken>((func, ct) =>
+                {
+                    ct.ThrowIfCancellationRequested(); // Simulate DatabaseService immediate cancellation check
+                    return func(_inMemoryConnection, ct);
+                });
 
             _dbServiceWrapper
-                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, Task<RuleBookSnapshot>>>()))
-                .Returns<Func<IDbConnection, Task<RuleBookSnapshot>>>(func => func(_inMemoryConnection));
+                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, CancellationToken, Task<RuleBookSnapshot>>>(), It.IsAny<CancellationToken>()))
+                .Returns<Func<IDbConnection, CancellationToken, Task<RuleBookSnapshot>>, CancellationToken>((func, ct) =>
+                {
+                    ct.ThrowIfCancellationRequested();
+                    return func(_inMemoryConnection, ct);
+                });
 
             _dbServiceWrapper
-                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, Task>>()))
-                .Returns<Func<IDbConnection, Task>>(async func => await func(_inMemoryConnection));
+                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+                .Returns<Func<IDbConnection, CancellationToken, Task>, CancellationToken>(async (func, ct) =>
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await func(_inMemoryConnection, ct);
+                });
 
             // Initialize REAL services for the workflow
             var descriptionLogger = new Mock<ILogger<DescriptionParser>>();
@@ -206,6 +218,26 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 () => _tagService.AddRuleAsync(invalidKeyword, tagId, 10));
 
             Assert.Contains("cannot be empty", exception.Message);
+        }
+
+        // =================================================================================
+        // Cancellation Token Abort Verification
+        // =================================================================================
+        [Fact]
+        public async Task EndToEnd_Cancellation_AbortsWorkflow_ThrowsOperationCanceledException()
+        {
+            // Arrange
+            var cts = new CancellationTokenSource();
+
+            // Immediately cancel the token to simulate a user navigating away
+            // or the system shutting down before the operation executes.
+            cts.Cancel();
+
+            // Act & Assert
+            // When we pass the canceled token to the service, the mocked DatabaseService
+            // should intercept it and immediately throw an OperationCanceledException.
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                async () => await _tagService.GetOrCreateTagAsync("CancelMe", 1, ct: cts.Token));
         }
     }
 }

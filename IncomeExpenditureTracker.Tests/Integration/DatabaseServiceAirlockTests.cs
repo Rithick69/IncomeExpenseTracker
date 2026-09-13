@@ -67,7 +67,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             bool slowQueryFinished = false;
 
             // Act - Start a query that takes 500ms (e.g., a complex background learning task)
-            var slowQueryTask = dbService.ExecuteWithRetryAsync(async conn =>
+            var slowQueryTask = dbService.ExecuteWithRetryAsync(async (conn, cancellationToken) =>
             {
                 await Task.Delay(500);
                 slowQueryFinished = true;
@@ -98,9 +98,9 @@ namespace IncomeExpenditureTracker.Tests.Integration
             await dbService.SetConnectionStringAsync(profileA.ConnectionString);
 
             // Block the Airlock for 1 full second
-            var blockingTask = dbService.ExecuteWithRetryAsync(async conn =>
+            var blockingTask = dbService.ExecuteWithRetryAsync(async (conn, cancellationToken) =>
             {
-                await Task.Delay(1000);
+                await Task.Delay(1000, cancellationToken);
             });
 
             await Task.Delay(50);
@@ -113,7 +113,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Act - Fire 50 concurrent queries meant for Profile A while the gate is closed
             // var stopwatch = Stopwatch.StartNew();
             var parallelQueries = Enumerable.Range(0, 50).Select(_ =>
-                dbService.ExecuteWithRetryAsync(async conn => await conn.ExecuteScalarAsync<int>("SELECT 1;"))
+                dbService.ExecuteWithRetryAsync(async (conn, cancellationToken) => await conn.ExecuteScalarAsync<int>("SELECT 1;"))
             ).ToList();
 
             // Assert - The queries MUST throw an exception because the passport changed while they waited!
@@ -148,7 +148,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // Act 1 - Execute a query on Profile A.
             // This forces SQLite to pool the connection and keeps the OS file locked.
-            await dbService.ExecuteWithRetryAsync(async conn => await conn.ExecuteScalarAsync<int>("SELECT 1;"));
+            await dbService.ExecuteWithRetryAsync(async (conn, cancellationToken) => await conn.ExecuteScalarAsync<int>("SELECT 1;"));
 
             // Act 2 - Swap to Profile B.
             // This triggers SqliteConnection.ClearAllPools().
@@ -190,6 +190,102 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Proves the SemaphoreSlim successfully forced the 3 swaps to execute in perfect order
             // without deadlocking the Interlocked.CompareExchange while loops.
             Assert.Equal(3, swapCount);
+        }
+
+
+        // =========================================================================
+        // CANCELLATION TOKEN TESTS (NEW)
+        // =========================================================================
+
+        [Fact]
+        public async Task ExecuteWithRetryAsync_ImmediateCancellation_ThrowsOperationCanceledException()
+        {
+            // Arrange
+            var dbService = CreateIsolatedDatabaseService();
+            var profile = await _fixture.CreateIsolatedDatabaseAsync("CancelImmediate");
+            await dbService.SetConnectionStringAsync(profile.ConnectionString);
+
+            var cts = new CancellationTokenSource();
+            cts.Cancel(); // Cancel the token prior to executing the operation
+
+            bool delegateExecuted = false;
+
+            // Act & Assert
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            {
+                await dbService.ExecuteWithRetryAsync(async (conn, ct) =>
+                {
+                    delegateExecuted = true;
+                    await Task.CompletedTask;
+                }, cts.Token);
+            });
+
+            // Assert that the database action was completely aborted
+            Assert.False(delegateExecuted, "The inner database action executed despite the cancellation token being triggered.");
+        }
+
+        [Fact]
+        public async Task ExecuteWithRetryAsync_CancellationWhileWaitingInAirlock_ThrowsOperationCanceledException()
+        {
+            // Arrange
+            var dbService = CreateIsolatedDatabaseService();
+            var profileA = await _fixture.CreateIsolatedDatabaseAsync("CancelAirlockWaitA");
+            var profileB = await _fixture.CreateIsolatedDatabaseAsync("CancelAirlockWaitB");
+
+            await dbService.SetConnectionStringAsync(profileA.ConnectionString);
+
+            // Use generic TaskCompletionSource<bool> for universal compatibility
+            var blockLock = new TaskCompletionSource<bool>();
+            Task? swapTask = null;
+
+            try
+            {
+                // 1. Block the Airlock DETERMINISTICALLY.
+                var blockingTask = dbService.ExecuteWithRetryAsync(async (conn, cancellationToken) =>
+                {
+                    await blockLock.Task;
+                });
+
+                // Yield to ensure the blocking task increments _activeQueries
+                await Task.Delay(150);
+
+                // 2. Initiate a profile swap. Because _activeQueries is > 0, it gets stuck waiting,
+                // securely setting _isSwapping to true.
+                swapTask = dbService.SetConnectionStringAsync(profileB.ConnectionString);
+
+                // Yield to ensure _isSwapping has been successfully flipped to true
+                await Task.Delay(150);
+
+                var cts = new CancellationTokenSource();
+
+                // 3. Fire a query. Because _isSwapping is true, it is guaranteed to get trapped
+                // inside the `while (_isSwapping)` loop.
+                var waitingQueryTask = dbService.ExecuteWithRetryAsync(async (conn, ct) =>
+                {
+                    await conn.ExecuteScalarAsync<int>("SELECT 1;");
+                }, cts.Token);
+
+                // Yield to ensure the query has entered the Airlock and is awaiting Task.Delay(10)
+                await Task.Delay(150);
+
+                // 4. Act: Cancel the token! The internal Task.Delay inside the Airlock will immediately throw.
+                cts.Cancel();
+
+                // Assert
+                // The query must abort and throw an OperationCanceledException
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waitingQueryTask);
+            }
+            finally
+            {
+                // Cleanup: ALWAYS release the lock so the background tasks can finish cleanly.
+                // This prevents the 31-second teardown hang caused by OS file locks.
+                blockLock.TrySetResult(true);
+
+                if (swapTask != null)
+                {
+                    await swapTask;
+                }
+            }
         }
     }
 }

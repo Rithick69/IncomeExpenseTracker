@@ -64,7 +64,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                     Date TEXT NOT NULL
                 );";
 
-            await _databaseService.ExecuteWithRetryAsync(async connection =>
+            await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
             {
                 await connection.ExecuteAsync(createTableSql);
             });
@@ -82,7 +82,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var row2 = new { TransactionHash = "HASH-002", AccountId = 1, Source = "Salary", Amount = 2000.00, Date = DateTime.UtcNow.ToString("O") };
 
             // Act
-            await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+            await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
             {
                 // Pass the transaction to Dapper so it runs inside the boundary
                 await connection.ExecuteAsync(sql, row1, transaction);
@@ -90,7 +90,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             });
 
             // Assert
-            await _databaseService.ExecuteWithRetryAsync(async connection =>
+            await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
             {
                 var rows = (await connection.QueryAsync("SELECT * FROM Transactions")).ToList();
                 Assert.Equal(2, rows.Count);
@@ -111,7 +111,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Act & Assert
             await Assert.ThrowsAnyAsync<SqliteException>(async () =>
             {
-                await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+                await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
                 {
                     await connection.ExecuteAsync(sql, validRow, transaction);
                     // This will throw due to NOT NULL constraint, triggering the defensive rollback block in your service
@@ -120,7 +120,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             });
 
             // CRITICAL ASSERTION: Prove transaction rolled back and the VALID row was NOT saved.
-            await _databaseService.ExecuteWithRetryAsync(async connection =>
+            await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
             {
                 var count = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM Transactions");
                 Assert.Equal(0, count); // Perfect atomicity
@@ -139,13 +139,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var duplicateRow = new { TransactionHash = "SHARED-HASH", AccountId = 1, Source = "Double", Amount = -100.00, Date = DateTime.UtcNow.ToString("O") };
 
             // Seed existing
-            await _databaseService.ExecuteWithRetryAsync(async connection =>
+            await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
                 await connection.ExecuteAsync(sql, existingRow));
 
             // Act & Assert
             var ex = await Assert.ThrowsAnyAsync<SqliteException>(async () =>
             {
-                await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+                await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
                 {
                     // This violates the UNIQUE constraint on TransactionHash
                     await connection.ExecuteAsync(sql, duplicateRow, transaction);
@@ -155,7 +155,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             Assert.Contains("UNIQUE constraint failed", ex.Message);
 
             // Verify only the original row exists
-            await _databaseService.ExecuteWithRetryAsync(async connection =>
+            await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
             {
                 var count = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM Transactions");
                 Assert.Equal(1, count);
@@ -169,14 +169,14 @@ namespace IncomeExpenditureTracker.Tests.Integration
         public async Task ImportBatch_EmptyBatch_CompletesGracefullyWithoutGhostData()
         {
             // Act
-            await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+            await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
             {
                 // Simulate receiving 0 rows to import. We do nothing.
                 await Task.CompletedTask;
             });
 
             // Assert
-            await _databaseService.ExecuteWithRetryAsync(async connection =>
+            await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
             {
                 var count = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM Transactions");
                 Assert.Equal(0, count);
@@ -192,7 +192,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Act & Assert
             await Assert.ThrowsAnyAsync<Exception>(async () =>
             {
-                await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+                await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
                 {
                     // Forcibly close the connection mid-flight
                     connection.Close();
@@ -221,7 +221,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 // Act & Assert: This should trigger your exponential backoff loop 5 times, then fail
                 var ex = await Assert.ThrowsAsync<SqliteException>(async () =>
                 {
-                    await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+                    await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
                     {
                         var sql = "INSERT INTO Transactions (TransactionHash, AccountId, Amount, Date) VALUES ('LOCK-FAIL', 1, 50, '2026-08-05');";
                         await connection.ExecuteAsync(sql, null, transaction);
@@ -265,14 +265,14 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Act
             // Your retry engine will hit the lock, wait using exponential backoff,
             // and try again. Because the background task releases the lock, it will succeed!
-            await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction) =>
+            await _databaseService.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
             {
                 var sql = "INSERT INTO Transactions (TransactionHash, AccountId, Amount, Date) VALUES ('TEMP-LOCK-RECOVER', 1, 50, '2026-08-05');";
                 await connection.ExecuteAsync(sql, null, transaction);
             });
 
             // Assert
-            await _databaseService.ExecuteWithRetryAsync(async connection =>
+            await _databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
             {
                 var count = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM Transactions WHERE TransactionHash = 'TEMP-LOCK-RECOVER'");
                 Assert.Equal(1, count);

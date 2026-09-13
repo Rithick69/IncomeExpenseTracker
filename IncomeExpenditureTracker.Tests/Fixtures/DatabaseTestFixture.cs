@@ -139,7 +139,7 @@ namespace IncomeExpenditureTracker.Tests.Fixtures
                             else
                             {
                                 // Wait 50ms and try again
-                                Thread.Sleep(50);
+                                await Task.Delay(50);
                             }
                         }
                     }

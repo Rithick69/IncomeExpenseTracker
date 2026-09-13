@@ -105,7 +105,7 @@ public class RegisterViewModelTests
         _mockHasher.Setup(h => h.HashPassword(It.IsAny<SecureString>())).Returns(("mock-hash", "mock-salt"));
         _mockRegistry.Setup(r => r.RegisterProfileAsync(It.IsAny<ProfileDto>())).Returns(Task.CompletedTask);
         _mockLoginService.Setup(l => l.AuthenticateAndLoadProfileAsync(It.IsAny<String>(), It.IsAny<SecureString>())).ReturnsAsync(true);
-        _mockUserSettingsService.Setup(u => u.SetSettingAsync(It.IsAny<string>(), It.IsAny<string>())).Returns(Task.CompletedTask);
+        _mockUserSettingsService.Setup(u => u.SetSettingAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // 2. CRITICAL FIX: Intercept the Master Key Dialog request and instantly resolve the TaskCompletionSource
         _mockBroker.Setup(b => b.Send(It.IsAny<ShowHelperMessage>()))
@@ -131,13 +131,13 @@ public class RegisterViewModelTests
         Assert.Equal(string.Empty, passwordBox.Text); // Verify UI memory wipe
 
         // Verify Settings were saved
-        _mockUserSettingsService.Verify(u => u.SetSettingAsync("BaseCurrency", "$"), Times.Once);
+        _mockUserSettingsService.Verify(u => u.SetSettingAsync("BaseCurrency", "$", CancellationToken.None), Times.Once);
 
         // Verify the Modal was shown
         _mockBroker.Verify(b => b.Send(It.Is<ShowHelperMessage>(m => m.Title == "SAVE YOUR MASTER KEY")), Times.Once);
 
         // THE FIX: Changed "Dashboard" to "MainDashboard" to match your ViewModel's actual routing string
-        _mockBroker.Verify(b => b.Send(It.Is<NavigationMessage>(m => m.Destination == "MainDashboard")), Times.Once);
+        _mockBroker.Verify(b => b.Send(It.Is<NavigationMessage>(m => m.Destination == "Dashboard")), Times.Once);
     }
 
     // =========================================================================
@@ -178,7 +178,7 @@ public class RegisterViewModelTests
         _mockLoginService.Setup(l => l.AuthenticateAndLoadProfileAsync(It.IsAny<string>(), It.IsAny<SecureString>())).ReturnsAsync(true);
 
         // Force failure on the user settings upsert
-        _mockUserSettingsService.Setup(u => u.SetSettingAsync(It.IsAny<string>(), It.IsAny<string>()))
+        _mockUserSettingsService.Setup(u => u.SetSettingAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                                 .ThrowsAsync(new Exception("Database locked"));
 
         var viewModel = CreateViewModel();

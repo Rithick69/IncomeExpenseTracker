@@ -73,13 +73,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockLoader = new Mock<IStatementLoader>();
 
             // Using the new helper method to construct valid StatementLoadResults
-            mockLoader.Setup(l => l.LoadStatementAsync(file1, null!))
+            mockLoader.Setup(l => l.LoadStatementAsync(file1, null!, It.IsAny<CancellationToken>()))
                       .ReturnsAsync(CreateMockLoadResult(file1));
 
-            mockLoader.Setup(l => l.LoadStatementAsync(file2, null!))
+            mockLoader.Setup(l => l.LoadStatementAsync(file2, null!, It.IsAny<CancellationToken>()))
                       .ThrowsAsync(new IOException("The process cannot access the file because it is being used by another process."));
 
-            mockLoader.Setup(l => l.LoadStatementAsync(file3, null!))
+            mockLoader.Setup(l => l.LoadStatementAsync(file3, null!, It.IsAny<CancellationToken>()))
                       .ReturnsAsync(CreateMockLoadResult(file3));
 
             // Declare and initialize the transient mocks before using them
@@ -104,7 +104,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Act
             // If concurrency isolation fails, this will throw an exception and fail the test.
             // If it works, it will trap the error and return a mixed batch result.
-            StagingBatchResult result = await manager.StageFilesAsync(filePaths, mockProgress);
+            StagingBatchResult result = await manager.StageFilesAsync(filePaths, mockProgress, CancellationToken.None);
 
             // Assert
             Assert.NotNull(result);
@@ -127,7 +127,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             _tempFilesToCleanup.Add(file1);
 
             var mockLoader = new Mock<IStatementLoader>();
-            mockLoader.Setup(l => l.LoadStatementAsync(file1, null!)).ThrowsAsync(new IOException("Locked by Excel"));
+            mockLoader.Setup(l => l.LoadStatementAsync(file1, null!, It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("Locked by Excel"));
 
             var mockBroker = new Mock<IApplicationBroker>(); // Our fake postman
 
@@ -142,7 +142,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             );
 
             // Act
-            await manager.StageFilesAsync(new List<string> { file1 }, null!);
+            await manager.StageFilesAsync(new List<string> { file1 }, null!, CancellationToken.None);
 
             // Assert: We mathematically prove that _broker.Send(...) was called exactly ONE time
             // and that the envelope it delivered contained the correct file name!
@@ -165,7 +165,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             _tempFilesToCleanup.Add(validFile);
 
             var mockLoader = new Mock<IStatementLoader>();
-            mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!))
+            mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!, It.IsAny<CancellationToken>()))
                       .ReturnsAsync(CreateMockLoadResult(validFile));
 
             var mockEditSession = new Mock<IStatementEditSession>();
@@ -175,12 +175,12 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // Setup the extractor mock so the Preview method succeeds
             mockExtractor
-                .Setup(e => e.Analyze(It.IsAny<IXLWorksheet>(), It.IsAny<string>(), It.IsAny<bool>()))
+                .Setup(e => e.Analyze(It.IsAny<IXLWorksheet>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new StatementPreview());
 
             var mockSynonymService = new Mock<ISynonymService>();
             mockSynonymService
-                .Setup(s => s.LearnFromCorrectionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+                .Setup(s => s.LearnFromCorrectionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
             var manager = new StatementManager(
@@ -194,7 +194,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             );
 
             // Stage the file first so it exists in the internal ConcurrentDictionary
-            var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!);
+            var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!, CancellationToken.None);
             Guid stagedFileId = stagingResult.Successes.First().Id;
 
             // Create a fake confirmed tracker with 1 column correction
@@ -209,13 +209,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
             };
 
             // Simulate the UI requesting a preview, which initializes our edit session in the dictionary
-            await manager.PreviewStagedFileAsync(stagedFileId);
+            await manager.PreviewStagedFileAsync(stagedFileId, null, CancellationToken.None);
 
             // Act
-            await manager.CommitStagedFileAsync(stagedFileId, confirmedTracker);
+            await manager.CommitStagedFileAsync(stagedFileId, confirmedTracker, CancellationToken.None);
 
             // Assert 1: Verify Import was called (Synchronous, so we check immediately)
-            mockImportService.Verify(i => i.ImportConfirmedStatementAsync(It.IsAny<IXLWorksheet>(), confirmedTracker.FinalPreview), Times.Once);
+            mockImportService.Verify(i => i.ImportConfirmedStatementAsync(It.IsAny<IXLWorksheet>(), confirmedTracker.FinalPreview, It.IsAny<CancellationToken>()), Times.Once);
 
             // Assert 2: Polling Wait for the Fire-and-Forget Background Thread
             // We give the thread pool up to 3 seconds to execute, checking every 50ms.
@@ -228,7 +228,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
                     mockSynonymService.Verify(s => s.LearnFromCorrectionAsync(
                         It.IsAny<string>(),
                         It.IsAny<string>(),
-                        It.IsAny<string>()), Times.Once);
+                        It.IsAny<string>(),
+                        It.IsAny<CancellationToken>()), Times.Once);
 
                     backgroundTaskCompleted = true;
                     break; // Exit the loop immediately to keep the test fast
@@ -248,7 +249,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Assert 4: Prove the file was removed from the staging dictionary.
             // Since DiscardFile silently ignores missing files by design, we prove it's gone
             // by attempting to generate a preview for it, which MUST throw a KeyNotFoundException.
-            var exception = await Assert.ThrowsAsync<KeyNotFoundException>(() => manager.PreviewStagedFileAsync(stagedFileId));
+            var exception = await Assert.ThrowsAsync<KeyNotFoundException>(() => manager.PreviewStagedFileAsync(stagedFileId, null, CancellationToken.None));
             Assert.Contains("was not found", exception.Message);
         }
 
@@ -269,7 +270,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockLoader = new Mock<IStatementLoader>();
 
             // Using the new helper method
-            mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!))
+            mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!, It.IsAny<CancellationToken>()))
                       .ReturnsAsync(CreateMockLoadResult(validFile));
 
             // Declare and initialize the transient mocks before using them
@@ -288,13 +289,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 mockBroker.Object
             ); ;
 
-            var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!);
+            var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!, CancellationToken.None);
             Guid stagedFileId = stagingResult.Successes.First().Id;
 
             // Act & Assert
             string badSheetName = "NonExistentSheet";
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                manager.PreviewStagedFileAsync(stagedFileId, badSheetName));
+                manager.PreviewStagedFileAsync(stagedFileId, badSheetName, CancellationToken.None));
 
             Assert.Contains($"was not found in workbook", exception.Message);
         }
@@ -315,7 +316,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockLoader = new Mock<IStatementLoader>();
 
             // Using the new helper method
-            mockLoader.Setup(l => l.LoadStatementAsync(corruptFile, null!))
+            mockLoader.Setup(l => l.LoadStatementAsync(corruptFile, null!, It.IsAny<CancellationToken>()))
                       .ReturnsAsync(CreateMockLoadResult(corruptFile));
 
             // Declare and initialize the transient mocks before using them
@@ -324,7 +325,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
             var mockBroker = new Mock<IApplicationBroker>();
 
-            mockExtractor.Setup(e => e.Analyze(It.IsAny<IXLWorksheet>(), It.IsAny<string>(), It.IsAny<bool>()))
+            mockExtractor.Setup(e => e.Analyze(It.IsAny<IXLWorksheet>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                          .ThrowsAsync(new Exception("Simulated catastrophic closedXML failure."));
 
             var manager = new StatementManager(
@@ -338,17 +339,17 @@ namespace IncomeExpenditureTracker.Tests.Integration
             );
 
 
-            var stagingResult = await manager.StageFilesAsync(new List<string> { corruptFile }, null!);
+            var stagingResult = await manager.StageFilesAsync(new List<string> { corruptFile }, null!, CancellationToken.None);
             Guid stagedFileId = stagingResult.Successes.First().Id;
 
             // Act & Assert
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                manager.PreviewStagedFileAsync(stagedFileId));
+                manager.PreviewStagedFileAsync(stagedFileId, null, CancellationToken.None));
 
             Assert.Contains("Failed to analyze the document", exception.Message);
 
             await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-                manager.PreviewStagedFileAsync(stagedFileId));
+                manager.PreviewStagedFileAsync(stagedFileId, null, CancellationToken.None));
         }
 
         [Fact]
@@ -379,7 +380,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // Act & Assert
             var exception = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-                manager.PreviewStagedFileAsync(ghostFileId));
+                manager.PreviewStagedFileAsync(ghostFileId, null, CancellationToken.None));
 
             Assert.Contains("was not found", exception.Message);
         }
@@ -412,9 +413,73 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // Act & Assert
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                manager.StageFilesAsync(tooManyFiles, null!));
+                manager.StageFilesAsync(tooManyFiles, null!, CancellationToken.None));
 
             Assert.Contains("Maximum limit of 5 files", exception.Message);
+        }
+
+        // =================================================================================
+        // Cancellation Token Support
+        // =================================================================================
+
+        [Fact]
+        public async Task StageFilesAsync_CancellationRequested_ThrowsOperationCanceledException()
+        {
+            // Arrange
+            var mockLoader = new Mock<IStatementLoader>();
+            var manager = new StatementManager(
+                mockLoader.Object,
+                () => new Mock<IStatementExtractor<IXLWorksheet>>().Object,
+                () => new Mock<IStatementEditSession>().Object,
+                () => new Mock<IStatementImport<IXLWorksheet>>().Object,
+                new Mock<ISynonymService>().Object,
+                _logger,
+                new Mock<IApplicationBroker>().Object
+            );
+
+            var cts = new CancellationTokenSource();
+            cts.Cancel(); // Immediately trigger cancellation
+
+            var filePaths = new List<string> { "dummy_file.xlsx" };
+
+            // Act & Assert
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                async () => await manager.StageFilesAsync(filePaths, null!, cts.Token));
+
+            // Verify that the Loader was never reached due to the early exit
+            mockLoader.Verify(l => l.LoadStatementAsync(It.IsAny<string>(), It.IsAny<IProgress<LoadingProgress>>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task PreviewStagedFileAsync_CancellationRequested_ThrowsOperationCanceledException()
+        {
+            // Arrange
+            string validFile = ExcelStatementGenerator.GenerateValidStatement(2);
+            _tempFilesToCleanup.Add(validFile);
+
+            var mockLoader = new Mock<IStatementLoader>();
+            mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!, It.IsAny<CancellationToken>()))
+                      .ReturnsAsync(CreateMockLoadResult(validFile));
+
+            var manager = new StatementManager(
+                mockLoader.Object,
+                () => new Mock<IStatementExtractor<IXLWorksheet>>().Object,
+                () => new Mock<IStatementEditSession>().Object,
+                () => new Mock<IStatementImport<IXLWorksheet>>().Object,
+                new Mock<ISynonymService>().Object,
+                _logger,
+                new Mock<IApplicationBroker>().Object
+            );
+
+            var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!, CancellationToken.None);
+            Guid stagedFileId = stagingResult.Successes.First().Id;
+
+            var cts = new CancellationTokenSource();
+            cts.Cancel(); // Cancel before initiating preview
+
+            // Act & Assert
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                async () => await manager.PreviewStagedFileAsync(stagedFileId, null, cts.Token));
         }
 
         public void Dispose()

@@ -6,6 +6,7 @@ using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Entities;
 using Microsoft.Extensions.Logging;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Helpers;
 
@@ -66,13 +67,15 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
 
 
     // 2. The new Async Initialization method
-    private async Task EnsureInitializedAsync(bool forceReload = false)
+    private async Task EnsureInitializedAsync(bool forceReload = false, CancellationToken ct = default)
     {
         // If we already built the dictionaries, skip doing it again
         if (_isInitialized && !forceReload) return; // this forces a reload if needed, e.g., if synonyms were updated in the database
 
+        ct.ThrowIfCancellationRequested();
+
         // Fetch from the database safely
-        _synonyms = await _synonymService.GetAllSynonyms();
+        _synonyms = await _synonymService.GetAllSynonyms(ct);
 
         // Build exact match dictionary
         _exactMatchMap = _synonyms
@@ -90,13 +93,15 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
         _isInitialized = true;
     }
 
-    private async Task<Dictionary<string, DetectedField>> PreseedDictionary(string category)
+    private async Task<Dictionary<string, DetectedField>> PreseedDictionary(string category, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         var dictionary = new Dictionary<string, DetectedField>(StringComparer.OrdinalIgnoreCase);
 
         var prefix = category == "TRANSACTION" ? "Col:" : "Meta:"; // e.g., "Col:" or "Meta:"
 
-        var synonymMap = await _synonymService.GetSynonymsByCategory(category);
+        var synonymMap = await _synonymService.GetSynonymsByCategory(category, ct);
 
         var knownFieldTypes = synonymMap.Values
             .Select(s => s.FieldType)
@@ -165,13 +170,15 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     // Returns:
     // detectedColumns containing detected column indices
     // ------------------------------------------------------------
-    public async Task<Dictionary<string, DetectedField>> DetectColumns(IXLWorksheet worksheet, int headerRow, bool forceReload = false)
+    public async Task<Dictionary<string, DetectedField>> DetectColumns(IXLWorksheet worksheet, int headerRow, bool forceReload = false, CancellationToken ct = default)
     {
         try
         {
-            await EnsureInitializedAsync(forceReload);
+            ct.ThrowIfCancellationRequested();
+
+            await EnsureInitializedAsync(forceReload, ct);
             // Using case-insensitive keys so "DATE", "Date", and "date" are handled uniformly
-            var detectedColumns = await PreseedDictionary("TRANSACTION"); // Pre-seed with "Col:" prefix for transaction columns
+            var detectedColumns = await PreseedDictionary("TRANSACTION", ct); // Pre-seed with "Col:" prefix for transaction columns
 
             var lastColCell = worksheet.LastColumnUsed();
             int lastColumn = lastColCell?.ColumnNumber() ?? 0;
@@ -182,6 +189,8 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
 
             for (int col = 1; col <= lastColumn; col++)
             {
+                ct.ThrowIfCancellationRequested();
+
                 var headerText = Normalize(worksheet.Cell(excelHeaderRow, col).GetString());
 
                 if (string.IsNullOrWhiteSpace(headerText))
@@ -213,6 +222,12 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
 
             return detectedColumns;
         }
+        catch (OperationCanceledException)
+        {
+            // CRITICAL: Prevent the generic catch below from swallowing the cancellation
+            _logger.LogWarning("[FieldMapper] Column detection was aborted.");
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[FieldMapper] Column detection failed");
@@ -233,19 +248,23 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
     //
     // Usually the value is stored in the next column.
     // ------------------------------------------------------------
-    public async Task<Dictionary<string, DetectedField>> DetectAccountDetails(IXLWorksheet worksheet, bool forceReload = false)
+    public async Task<Dictionary<string, DetectedField>> DetectAccountDetails(IXLWorksheet worksheet, bool forceReload = false, CancellationToken ct = default)
     {
         try
         {
-            await EnsureInitializedAsync(forceReload);
+            ct.ThrowIfCancellationRequested();
 
-            var detectedMetadata = await PreseedDictionary("METADATA"); // Pre-seed with "Meta:" prefix for account metadata
+            await EnsureInitializedAsync(forceReload, ct);
+
+            var detectedMetadata = await PreseedDictionary("METADATA", ct); // Pre-seed with "Meta:" prefix for account metadata
 
             var lastColCell = worksheet.LastColumnUsed();
             int lastColumn = lastColCell?.ColumnNumber() ?? 0;
 
             for (int row = 1; row <= 20; row++)
             {
+                ct.ThrowIfCancellationRequested();
+
                 for (int col = 1; col <= lastColumn; col++)
                 {
                     var text = Normalize(worksheet.Cell(row, col).GetString());
@@ -286,6 +305,12 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
             // ValidateAccountDetails(account);
 
             return detectedMetadata;
+        }
+        catch (OperationCanceledException)
+        {
+            // CRITICAL: Prevent the generic catch below from swallowing the cancellation
+            _logger.LogWarning("[FieldMapper] Account detail detection was aborted.");
+            throw;
         }
         catch (Exception ex)
         {

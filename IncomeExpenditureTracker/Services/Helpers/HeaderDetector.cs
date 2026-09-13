@@ -6,6 +6,7 @@ using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Entities;
 using Microsoft.Extensions.Logging;
+using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Helpers;
 
@@ -35,10 +36,12 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
 
 
     // 2. The new Async Initialization method
-    private async Task EnsureInitializedAsync(bool forceReload = false)
+    private async Task EnsureInitializedAsync(bool forceReload = false, CancellationToken ct = default)
     {
         // If we already built the dictionaries, skip doing it again
         if (_isInitialized && !forceReload) return; // this forces a reload if needed, e.g., if synonyms were updated in the database
+
+        ct.ThrowIfCancellationRequested();
 
         // Fetch from the database safely
         _synonyms = await _synonymService.GetSynonymsByCategory("TRANSACTION"); // Default category for transaction headers
@@ -65,11 +68,13 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
         { "AMOUNT", 1 }
     };
 
-    public async Task<int> DetectHeaderRow(IXLWorksheet worksheet, bool forceReload = false)
+    public async Task<int> DetectHeaderRow(IXLWorksheet worksheet, bool forceReload = false, CancellationToken ct = default)
     {
         try
         {
-            await EnsureInitializedAsync(forceReload);
+            ct.ThrowIfCancellationRequested();
+
+            await EnsureInitializedAsync(forceReload, ct);
 
             int bestRow = -1; // Zero-based index of the best header row found so far
             int bestScore = 0;
@@ -80,7 +85,7 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
 
             for (int startRow = 1; startRow <= maxRows; startRow++)
             {
-
+                ct.ThrowIfCancellationRequested();
                 // =========================================================================
                 // Don't start a window on a completely blank row!
                 // This prevents empty rows above the table from stealing credit for headers below them.
@@ -151,6 +156,10 @@ public class HeaderDetector : IHeaderDetector<IXLWorksheet>
                 throw new InvalidOperationException("Failed to detect header row.");
 
             return bestRow;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

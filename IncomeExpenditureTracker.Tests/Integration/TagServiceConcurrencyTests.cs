@@ -87,7 +87,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // Mock the exact method used by TagService to query the database
             _mockDatabaseService
-                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, Task<RuleBookSnapshot>>>()))
+                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, CancellationToken, Task<RuleBookSnapshot>>>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(() =>
                 {
                     // Increment thread-safely just in case the defense fails
@@ -140,7 +140,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             Assert.Equal(1, databaseReadCount);
 
             // Verify via Moq as a secondary check that the ExecuteWithRetryAsync wrapper was only called once
-            _mockDatabaseService.Verify(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, Task<RuleBookSnapshot>>>()), Times.Once);
+            _mockDatabaseService.Verify(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, CancellationToken, Task<RuleBookSnapshot>>>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
@@ -158,7 +158,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // We set up the mock to fail on the FIRST call, but succeed on the SECOND call.
             _mockDatabaseService
-                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, Task<RuleBookSnapshot>>>()))
+                .Setup(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, CancellationToken, Task<RuleBookSnapshot>>>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(() =>
                 {
                     callCount++;
@@ -192,7 +192,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // THE CRITICAL ASSERTION: Prove the database was queried EXACTLY TWICE.
             Assert.Equal(2, callCount);
-            _mockDatabaseService.Verify(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, Task<RuleBookSnapshot>>>()), Times.Exactly(2));
+            _mockDatabaseService.Verify(db => db.ExecuteWithRetryAsync(It.IsAny<Func<IDbConnection, CancellationToken, Task<RuleBookSnapshot>>>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
         }
     }
 }

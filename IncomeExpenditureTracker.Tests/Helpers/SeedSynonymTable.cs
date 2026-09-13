@@ -75,10 +75,10 @@ public static class SeedSynonymTable
                 ('ENTITY_NAME', 'Entity Name', 80, 'METADATA'),
                 ('ENTITY_NAME', 'Name', 70, 'METADATA');";
 
-        await databaseService.ExecuteWithRetryAsync(async (connection) =>
+        await databaseService.ExecuteWithRetryAsync(async (connection, cancelToken) =>
         {
             await connection.ExecuteAsync(createTableSql);
             await connection.ExecuteAsync(seedDataSql);
-        });
+        }, CancellationToken.None);
     }
 }
