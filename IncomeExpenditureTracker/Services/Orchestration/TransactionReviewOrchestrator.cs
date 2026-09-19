@@ -76,7 +76,11 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         }
         catch (Exception)
         {
-            _broker.Send(new CrudErrorMessage("Transaction", "Get", $"Could not fetch transactions."));
+            _broker.Send(new CrudErrorMessage(
+                DomainEntity.Transaction,
+                CrudOperation.Read,
+                "Locale_Error_Read_Transaction"
+            ));
             throw;
         }
     }
@@ -143,7 +147,11 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to apply bulk transaction corrections.");
-            _broker.Send(new CrudErrorMessage("Transactions", "Bulk Update", "Failed to apply batch corrections."));
+            _broker.Send(new CrudErrorMessage(
+                DomainEntity.Transaction,
+                CrudOperation.Update,
+                "Locale_Error_Update_BulkTransaction"
+            ));
             throw;
         }
     }
@@ -163,7 +171,7 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
                 await _importBatchService.DeleteBatchAsync(batchId, conn, tx, ct);
             }, ct);
             _logger.LogInformation("Successfully reverted and deleted Import Batch ID {BatchId}.", batchId);
-            _broker.Send(new EntityDeletedMessage("Import Batch", $"Batch #{batchId}"));
+            _broker.Send(new EntityDeletedMessage(DomainEntity.ImportBatch, $"Batch #{batchId}"));
         }
         catch (OperationCanceledException)
         {
@@ -172,7 +180,11 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to revert Import Batch ID {BatchId}.", batchId);
-            _broker.Send(new CrudErrorMessage("Import Batch", "Revert", $"Could not revert batch #{batchId}."));
+            _broker.Send(new CrudErrorMessage(
+                DomainEntity.ImportBatch,
+                CrudOperation.Delete,
+                "Locale_Error_Delete_ImportBatch"
+            ));
             throw;
         }
     }

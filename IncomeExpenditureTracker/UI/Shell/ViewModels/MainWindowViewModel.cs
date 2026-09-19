@@ -8,10 +8,12 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Microsoft.Extensions.DependencyInjection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input; // Needed for [RelayCommand]
+using System.Windows.Input;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.UI.Shared;
 using IncomeExpenditureTracker.UI.Gatekeeper;
+using IncomeExpenditureTracker.UI.MasterData;
 
 // =========================================================================
 // ARCHITECTURAL NOTE: Why 'partial'?
@@ -97,6 +99,8 @@ namespace IncomeExpenditureTracker.UI.Shell
         [ObservableProperty]
         private bool _isCopyButtonVisible;
 
+        public ICommand NavigateCommand { get; }
+
         // =========================================================================
         // CONSTRUCTOR
         // =========================================================================
@@ -104,6 +108,8 @@ namespace IncomeExpenditureTracker.UI.Shell
             : base(broker)
         {
             _serviceProvider = serviceProvider;
+
+            NavigateCommand = new RelayCommand<string?>(NavigateTo);
 
             // 1. Subscribe to Routing
             Broker.Register<NavigationMessage>(this, OnNavigationRequested);
@@ -134,7 +140,7 @@ namespace IncomeExpenditureTracker.UI.Shell
             NavigateTo(message.Destination);
         }
 
-        private void NavigateTo(string destination)
+        private void NavigateTo(string? destination)
         {
             RunOnUIThread(() =>
             {
@@ -159,6 +165,12 @@ namespace IncomeExpenditureTracker.UI.Shell
                     "Login" => _serviceProvider.GetRequiredService<LoginViewModel>(),
                     "Register" => _serviceProvider.GetRequiredService<RegisterViewModel>(),
                     "Dashboard" => _serviceProvider.GetRequiredService<DashboardViewModel>(),
+
+                    // "Ledger" => _serviceProvider.GetRequiredService<LedgerViewModel>(),
+                    // "StatementImport" => _serviceProvider.GetRequiredService<StatementImportViewModel>(),
+                    "DataTaxonomy" => _serviceProvider.GetRequiredService<DataTaxonomyViewModel>(),
+                    // "Reports" => _serviceProvider.GetRequiredService<ReportsViewModel>(),
+                    // "AuditLogs" => _serviceProvider.GetRequiredService<AuditLogsViewModel>(),
                     _ => throw new ArgumentException($"Unknown route: {destination}")
                 };
             });

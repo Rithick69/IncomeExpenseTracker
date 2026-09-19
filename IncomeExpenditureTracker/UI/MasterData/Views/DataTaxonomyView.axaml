@@ -1,0 +1,167 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.MasterData"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
+             x:Class="IncomeExpenditureTracker.UI.MasterData.DataTaxonomyView"
+             x:DataType="vm:DataTaxonomyViewModel"
+             x:Name="RootControl"
+             Background="{DynamicResource BackgroundPrimary}">
+
+    <!-- Main Layout Container -->
+    <Grid ColumnDefinitions="220, *" Margin="16">
+
+        <!-- ========================================== -->
+        <!-- MENU SEARCH (Left Sidebar Header)          -->
+        <!-- ========================================== -->
+        <Grid Grid.Column="0" RowDefinitions="Auto, *" Margin="0,0,16,0">
+            <!-- Menu Search Bar (Debounced filtering in ViewModel) -->
+            <TextBox Grid.Row="0"
+                     Text="{Binding MenuSearchText, Mode=TwoWay}"
+                     Watermark="{DynamicResource Locale_DataMgmt_SearchMenu}"
+                     Margin="0,0,0,16">
+                <TextBox.InnerRightContent>
+                    <Button Command="{Binding ClearMenuSearchCommand}"
+                            IsVisible="{Binding HasMenuSearchText}"
+                            Background="Transparent"
+                            Margin="4">
+                        <TextBlock Text="✕" Foreground="{DynamicResource TextSecondary}" />
+                    </Button>
+                </TextBox.InnerRightContent>
+            </TextBox>
+
+            <!-- ========================================== -->
+            <!-- VERTICAL NAVIGATION TABS                   -->
+            <!-- ========================================== -->
+            <TabControl Grid.Row="1"
+                        TabStripPlacement="Left"
+                        Background="Transparent">
+
+                <!-- PAYEES TAB -->
+                <TabItem Header="{DynamicResource Locale_DataMgmt_Tab_Payees}"
+                         IsVisible="{Binding IsPayeesTabVisible}">
+
+                    <Border Classes="Card" Margin="16,0,0,0">
+                        <Grid RowDefinitions="Auto, Auto, *">
+
+                            <!-- Header & Create Action -->
+                            <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                                <TextBlock Text="{DynamicResource Locale_DataMgmt_Title_Payees}"
+                                           Classes="DisplayNumber"
+                                           Foreground="{DynamicResource TextPrimary}" />
+
+                                <Button Grid.Column="1"
+                                        Classes="Primary"
+                                        Content="{DynamicResource Locale_Common_Create}"
+                                        Command="{Binding OpenCreatePayeeCommand}" />
+                            </Grid>
+
+                            <!-- Main Content Search & Filters -->
+                            <Grid Grid.Row="1" ColumnDefinitions="*, Auto" Margin="0,0,0,16">
+                                <TextBox Watermark="{DynamicResource Locale_DataMgmt_SearchPayees}"
+                                         Text="{Binding PayeeSearchText, Mode=TwoWay}" />
+
+                                <!-- Optional Filter Dropdown (e.g., Status, Date) -->
+                                <ComboBox Grid.Column="1"
+                                          Margin="16,0,0,0"
+                                          PlaceholderText="{DynamicResource Locale_Common_FilterBy}"
+                                          ItemsSource="{Binding PayeeFilterOptions}"
+                                          SelectedItem="{Binding SelectedPayeeFilter}" />
+                            </Grid>
+
+                            <!-- Virtualized Data Grid -->
+                            <DataGrid Grid.Row="2"
+                                      ItemsSource="{Binding FilteredPayees}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="{DynamicResource Locale_Common_ID}" Binding="{Binding PayeeId}" />
+                                    <DataGridTextColumn Header="{DynamicResource Locale_Common_Name}" Binding="{Binding Name}" />
+
+                                    <!-- ACTION COLUMN -->
+                                    <DataGridTemplateColumn Header="{DynamicResource Locale_Common_Actions}">
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="8,0">
+
+                                                <!-- Update Action -->
+                                                <Button Command="{Binding #RootControl.DataContext.UpdatePayeeCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="Transparent"
+                                                        ToolTip.Tip="{DynamicResource Locale_Common_Update}">
+                                                    <!-- Note: Replace TextBlock with PathIcon using your SVG geometries -->
+                                                    <TextBlock Text="✎" Foreground="{DynamicResource AccentIndigo}" />
+                                                </Button>
+
+                                                <!-- Merge Action -->
+                                                <Button Command="{Binding #RootControl.DataContext.MergePayeeCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="Transparent"
+                                                        ToolTip.Tip="{DynamicResource Locale_Common_Merge}">
+                                                    <TextBlock Text="⎘" Foreground="{DynamicResource AccentIndigo}" />
+                                                </Button>
+
+                                                <!-- Delete Action (Safe Reparenting / Hard Block) -->
+                                                <Button Command="{Binding #RootControl.DataContext.DeletePayeeCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="Transparent"
+                                                        ToolTip.Tip="{DynamicResource Locale_Common_Delete}">
+                                                    <TextBlock Text="🗑" Foreground="{DynamicResource TextSecondary}" />
+                                                </Button>
+
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                </TabItem>
+
+                <!-- TAGS TAB (Demonstrating Column Filters via Hierarchy DTO) -->
+                <TabItem Header="{DynamicResource Locale_DataMgmt_Tab_Tags}"
+                         IsVisible="{Binding IsTagsTabVisible}">
+
+                    <Border Classes="Card" Margin="16,0,0,0">
+                        <Grid RowDefinitions="Auto, Auto, *">
+                            <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                                <TextBlock Text="{DynamicResource Locale_DataMgmt_Title_Tags}" Classes="DisplayNumber" />
+                                <Button Grid.Column="1" Classes="Primary" Content="{DynamicResource Locale_Common_Create}" Command="{Binding OpenCreateTagCommand}" />
+                            </Grid>
+
+                            <Grid Grid.Row="1" Margin="0,0,0,16">
+                                <TextBox Watermark="{DynamicResource Locale_DataMgmt_SearchTags}" Text="{Binding TagSearchText, Mode=TwoWay}" />
+                            </Grid>
+
+                            <!-- Grid using Enriched Hierarchy DTOs -->
+                            <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredTags}" AutoGenerateColumns="False" IsReadOnly="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="{DynamicResource Locale_Common_ID}" Binding="{Binding TagId}" />
+                                    <DataGridTextColumn Header="{DynamicResource Locale_DataMgmt_TagName}" Binding="{Binding TagName}" />
+                                    <DataGridTextColumn Header="{DynamicResource Locale_DataMgmt_ParentSubCategory}" Binding="{Binding SubCategoryName}" />
+                                    <DataGridTextColumn Header="{DynamicResource Locale_DataMgmt_ParentCategory}" Binding="{Binding CategoryName}" />
+
+                                    <DataGridTemplateColumn Header="{DynamicResource Locale_Common_Actions}">
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="8,0">
+                                                <Button Command="{Binding #RootControl.DataContext.UpdateTagCommand}" CommandParameter="{Binding}" Background="Transparent">
+                                                    <TextBlock Text="✎" Foreground="{DynamicResource AccentIndigo}" />
+                                                </Button>
+                                                <Button Command="{Binding #RootControl.DataContext.DeleteTagCommand}" CommandParameter="{Binding}" Background="Transparent">
+                                                    <TextBlock Text="🗑" Foreground="{DynamicResource TextSecondary}" />
+                                                </Button>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                </TabItem>
+
+                <!-- Additional Tabs (Categories, Accounts, Audit Logs) follow the exact same template -->
+
+            </TabControl>
+        </Grid>
+    </Grid>
+</UserControl>

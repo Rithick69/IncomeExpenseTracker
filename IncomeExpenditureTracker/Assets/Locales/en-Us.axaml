@@ -9,6 +9,14 @@
     <system:String x:Key="Locale_Global_Button_Cancel">Cancel</system:String>
     <system:String x:Key="Locale_Global_Button_Confirm">Confirm</system:String>
 
+    <!--NAVIGATION MENU ITEMS-->
+    <system:String x:Key="Locale_Navigation_Menu_Dashboard">Dashboard</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Ledger">Ledger</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Statement_Import">Import Statements</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Data_Taxanomy">Data &amp; Taxanomy</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Reports">Reports</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Audit_Logs">Audit Logs</system:String>
+
     <!-- GATEKEEPER MODULE -->
     <system:String x:Key="Locale_Gatekeeper_Title_Login">Welcome Back</system:String>
     <system:String x:Key="Locale_Gatekeeper_Label_ProfileName">Profile Name</system:String>
@@ -25,4 +33,48 @@
     <system:String x:Key="Locale_Dashboard_WelcomeMessage">Welcome to your financial command center.</system:String>
     <system:String x:Key="Locale_Dashboard_Placeholder_NetWorth">Net Worth Tracker (Coming Soon)</system:String>
     <system:String x:Key="Locale_Dashboard_Placeholder_CashFlow">Cash Flow (Coming Soon)</system:String>
+    <!-- Dashboard Quick Links -->
+    <system:String x:Key="Locale_Dashboard_Button_ManageData">Manage Data &amp; Taxonomy</system:String>
+
+    <!-- ========================================== -->
+    <!-- DATA TAXONOMY HUB                        -->
+    <!-- ========================================== -->
+
+    <!-- Sidebar Menu -->
+    <system:String x:Key="Locale_DataMgmt_SearchMenu">Search menu...</system:String>
+
+    <!-- Payees Tab -->
+    <system:String x:Key="Locale_DataMgmt_Tab_Payees">Payees</system:String>
+    <system:String x:Key="Locale_DataMgmt_Title_Payees">Manage Payees</system:String>
+    <system:String x:Key="Locale_DataMgmt_SearchPayees">Search payees by name or description...</system:String>
+
+    <!-- Tags Tab -->
+    <system:String x:Key="Locale_DataMgmt_Tab_Tags">Tags</system:String>
+    <system:String x:Key="Locale_DataMgmt_Title_Tags">Manage Tags</system:String>
+    <system:String x:Key="Locale_DataMgmt_SearchTags">Search tags...</system:String>
+    <system:String x:Key="Locale_DataMgmt_TagName">Tag Name</system:String>
+    <system:String x:Key="Locale_DataMgmt_ParentSubCategory">Sub-Category</system:String>
+    <system:String x:Key="Locale_DataMgmt_ParentCategory">Category</system:String>
+
+    <!-- Categories Tab -->
+    <system:String x:Key="Locale_DataMgmt_Tab_Categories">Categories</system:String>
+    <system:String x:Key="Locale_DataMgmt_Title_Categories">Manage Categories</system:String>
+    <system:String x:Key="Locale_DataMgmt_SearchCategories">Search categories...</system:String>
+
+    <!-- Accounts Tab -->
+    <system:String x:Key="Locale_DataMgmt_Tab_Accounts">Accounts</system:String>
+    <system:String x:Key="Locale_DataMgmt_Title_Accounts">Manage Accounts</system:String>
+    <system:String x:Key="Locale_DataMgmt_SearchAccounts">Search accounts...</system:String>
+
+    <!-- Audit Logs / Import Batches Tab -->
+    <system:String x:Key="Locale_DataMgmt_Tab_AuditLogs">Import Batches</system:String>
+    <system:String x:Key="Locale_DataMgmt_Title_AuditLogs">Import Batches</system:String>
+    <system:String x:Key="Locale_DataMgmt_SearchAuditLogs">Search logs...</system:String>
+
+    <!-- Grid Columns -->
+    <system:String x:Key="Locale_Grid_Id">ID</system:String>
+    <system:String x:Key="Locale_Grid_Name">Name</system:String>
+    <system:String x:Key="Locale_Grid_Actions">Actions</system:String>
+    <system:String x:Key="Locale_Common_Delete">Delete</system:String>
+    <system:String x:Key="Locale_Common_Merge">Merge</system:String>
 </ResourceDictionary>

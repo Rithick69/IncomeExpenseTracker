@@ -19,6 +19,66 @@ namespace IncomeExpenditureTracker.Services.Orchestration;
 /// </summary>
 public interface IMasterDataOrchestrator
 {
+
+    // =========================================================================
+    // VALIDATION SERVICES (New)
+    // =========================================================================
+
+    #region Validation Services
+
+    /// <summary>
+    /// Executes a lightweight, read-only check to verify if a property value is unique in the database.
+    /// Essential for real-time debounced UI validation (INotifyDataErrorInfo) before form submission.
+    /// </summary>
+    /// <param name="entityType">The table/entity to query.</param>
+    /// <param name="propertyName">The specific column (e.g., "Name", "AccountNumber").</param>
+    /// <param name="value">The user input to check.</param>
+    /// <param name="excludeId">Optional ID to ignore during the check (used when updating existing records).</param>
+    /// <param name="ct">Cancellation token for debounce aborting.</param>
+    Task<bool> IsUniqueAsync(DomainEntity entityType, string propertyName, string value, int? excludeId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Executes a read-only check for composite unique constraints (e.g., UNIQUE(FieldType, Synonym, Category)).
+    /// </summary>
+    Task<bool> IsUniqueAsync(DomainEntity entityType, Dictionary<string, object> properties, int? excludeId = null, CancellationToken ct = default);
+
+    #endregion
+
+    // =========================================================================
+    // HIERARCHY RETRIEVAL (Additions to existing regions)
+    // =========================================================================
+
+    #region Hierarchy Retrieval
+
+    // Add to Tag Management Region:
+    /// <summary>
+    /// Retrieves all tags enriched with their full Category and SubCategory string hierarchies.
+    /// Used by the Data & Taxonomy grid to support multi-column dropdown filtering.
+    /// </summary>
+    Task<IEnumerable<TagHierarchyDto>> GetAllTagsWithHierarchyAsync(CancellationToken ct = default);
+
+    // Add to SubCategory Management Region:
+    /// <summary>
+    /// Retrieves all SubCategories mapped to their parent Category strings.
+    /// </summary>
+    Task<IEnumerable<SubCategoryHierarchyDto>> GetAllSubCategoriesWithHierarchyAsync(CancellationToken ct = default);
+
+    // Add to Tag Rule Management Region:
+    /// <summary>
+    /// Retrieves all tag rules enriched with their associated Tag, SubCategory, and Category strings.
+    /// Used for zero-latency UI filtering in the Data Management grid.
+    /// </summary>
+    Task<IEnumerable<TagRuleHierarchyDto>> GetAllTagRulesWithHierarchyAsync(CancellationToken ct = default);
+
+
+    // Add to Synonym Management Region:
+    /// <summary>
+    /// Retrieves all synonyms enriched with their assigned category string.
+    /// </summary>
+    Task<IEnumerable<SynonymsHierarchyDto>> GetAllSynonymsWithHierarchyAsync(CancellationToken ct = default);
+
+    #endregion
+
     // =========================================================================
     // IMPORTBATCH SERVICES
     // =========================================================================
