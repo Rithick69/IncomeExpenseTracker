@@ -30,7 +30,7 @@ namespace IncomeExpenditureTracker.Services.Entities
         private readonly ILogger<PayeeService> _logger;
 
         // The flat dictionary for O(1) exact-match resolution during extraction
-        private readonly ConcurrentDictionary<string, long> _mappingCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, int> _mappingCache = new(StringComparer.OrdinalIgnoreCase);
 
         // The thread-safe entity cache (keyed by Name for duplicate prevention)
         private readonly ConcurrentDictionary<string, Lazy<Payee>> _entityCache = new(StringComparer.OrdinalIgnoreCase);
@@ -99,7 +99,7 @@ namespace IncomeExpenditureTracker.Services.Entities
                             cancellationToken: cancelToken
                         );
 
-                        var mappings = await conn.QueryAsync<(string CleanedDescription, long PayeeId)>(mapcmd);
+                        var mappings = await conn.QueryAsync<(string CleanedDescription, int PayeeId)>(mapcmd);
 
                         foreach (var m in mappings)
                         {
@@ -120,7 +120,7 @@ namespace IncomeExpenditureTracker.Services.Entities
             }, LazyThreadSafetyMode.ExecutionAndPublication);
         }
 
-        public ConcurrentDictionary<string, long> GetMappingsCache()
+        public ConcurrentDictionary<string, int> GetMappingsCache()
         {
             // Note: In Phase 2, this is called synchronously.
             // Pass CancellationToken.None since a synchronous block cannot be cancelled natively.
@@ -179,7 +179,7 @@ namespace IncomeExpenditureTracker.Services.Entities
                         cancellationToken: cancelToken
                     );
 
-                    payee.Id = await connection.ExecuteScalarAsync<long>(cmd);
+                    payee.Id = (int)await connection.ExecuteScalarAsync<long>(cmd);
 
                     // Update cache instantly to prevent immediate read-misses
                     _entityCache.TryAdd(payee.Name, new Lazy<Payee>(() => payee));
@@ -232,7 +232,7 @@ namespace IncomeExpenditureTracker.Services.Entities
             }
         }
 
-        public async Task DeleteAsync(long id, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
+        public async Task DeleteAsync(int id, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -295,7 +295,7 @@ namespace IncomeExpenditureTracker.Services.Entities
 
         public async Task AddMappingAsync(
             string cleanedDescription,
-            long payeeId,
+            int payeeId,
             IDbConnection? conn = null,
             IDbTransaction? tx = null,
             CancellationToken ct = default
@@ -343,8 +343,8 @@ namespace IncomeExpenditureTracker.Services.Entities
         }
 
         public async Task MergeEntitiesAsync(
-            long targetPayeeId,
-            List<long> sourcePayeeIds,
+            int targetPayeeId,
+            List<int> sourcePayeeIds,
             IDbConnection? conn = null,
             IDbTransaction? tx = null,
             CancellationToken ct = default
@@ -382,7 +382,7 @@ namespace IncomeExpenditureTracker.Services.Entities
             }
         }
 
-        private async Task ExecuteMergeLogicAsync(long targetPayeeId, List<long> sourcePayeeIds, IDbConnection conn, IDbTransaction tx, CancellationToken ct)
+        private async Task ExecuteMergeLogicAsync(int targetPayeeId, List<int> sourcePayeeIds, IDbConnection conn, IDbTransaction tx, CancellationToken ct)
         {
             // 1. Re-point mappings to the target Payee
             var mapcmd = new CommandDefinition(
@@ -418,7 +418,7 @@ namespace IncomeExpenditureTracker.Services.Entities
         // Maps a new description and retroactively sweeps existing
         // unmapped transactions to apply the new PayeeId.
         // ------------------------------------------------------------
-        public async Task ExecuteRetroactiveSweepAsync(string source, long payeeId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
+        public async Task ExecuteRetroactiveSweepAsync(string source, int payeeId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -455,7 +455,7 @@ namespace IncomeExpenditureTracker.Services.Entities
             }
         }
 
-        private async Task ExecuteSweepSqlAsync(string source, long payeeId, IDbConnection conn, IDbTransaction tx, CancellationToken ct)
+        private async Task ExecuteSweepSqlAsync(string source, int payeeId, IDbConnection conn, IDbTransaction tx, CancellationToken ct)
         {
             const string sql = @"
                 INSERT INTO PayeeMappings (CleanedDescription, PayeeId)

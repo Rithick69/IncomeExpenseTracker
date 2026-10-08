@@ -86,6 +86,9 @@ public class DatabaseService : IDatabaseService
             // 3. Swap the string securely now that traffic is completely stopped.
             _connectionString = newConnectionString;
 
+            // Destroy the old password before accepting the new one to prevent memory leaks
+            _activeProfilePassword?.Dispose();
+
             // Store the SecureString safely. It remains encrypted in RAM.
             _activeProfilePassword = profilePassword;
 

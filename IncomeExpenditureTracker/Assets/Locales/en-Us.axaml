@@ -41,40 +41,194 @@
     <!-- ========================================== -->
 
     <!-- Sidebar Menu -->
-    <system:String x:Key="Locale_DataMgmt_SearchMenu">Search menu...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchMenu">Search menu...</system:String>
+
+    <!-- Common -->
+    <system:String x:Key="Locale_DataTaxonomy_Common_Create">Create</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_FilterBy">Filter By</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_Update">✎</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_Delete">🗑</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_Merge">⎘</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_Type">Type...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_Category">Category...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_SubCategory">Sub-Category...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_Institute">Institutions...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_Priority">Priority...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_TargetTag">Target Tag...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_FieldType">Field Type...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Common_CategoryType">Category Type...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_ParentSubCategory">Sub-Category</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_ParentCategory">Category</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_ParentInstitute">Institutions</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_ParentTag">Tags</system:String>
+    <!-- <system:String x:Key="Locale_DataTaxonomy_Common_Create">Create</system:String> -->
 
     <!-- Payees Tab -->
-    <system:String x:Key="Locale_DataMgmt_Tab_Payees">Payees</system:String>
-    <system:String x:Key="Locale_DataMgmt_Title_Payees">Manage Payees</system:String>
-    <system:String x:Key="Locale_DataMgmt_SearchPayees">Search payees by name or description...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Tab_Payees">Payees</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_Payees">Manage Payees</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchPayees">Search payees by name...</system:String>
 
     <!-- Tags Tab -->
-    <system:String x:Key="Locale_DataMgmt_Tab_Tags">Tags</system:String>
-    <system:String x:Key="Locale_DataMgmt_Title_Tags">Manage Tags</system:String>
-    <system:String x:Key="Locale_DataMgmt_SearchTags">Search tags...</system:String>
-    <system:String x:Key="Locale_DataMgmt_TagName">Tag Name</system:String>
-    <system:String x:Key="Locale_DataMgmt_ParentSubCategory">Sub-Category</system:String>
-    <system:String x:Key="Locale_DataMgmt_ParentCategory">Category</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Tab_Tags">Tags</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_Tags">Manage Tags</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchTags">Search tags...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_TagName">Tag Name</system:String>
+
 
     <!-- Categories Tab -->
-    <system:String x:Key="Locale_DataMgmt_Tab_Categories">Categories</system:String>
-    <system:String x:Key="Locale_DataMgmt_Title_Categories">Manage Categories</system:String>
-    <system:String x:Key="Locale_DataMgmt_SearchCategories">Search categories...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Tab_Categories">Categories</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_Categories">Manage Categories</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchCategories">Search categories...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_CategoryName">Category Name</system:String>
+
+    <!-- SubCategories Tab -->
+    <system:String x:Key="Locale_DataTaxonomy_Tab_SubCategories">Sub-Categories</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_SubCategories">Manage Sub-Categories</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchSubCategories">Search sub-categories...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SubCategoryName">Sub-Category Name</system:String>
 
     <!-- Accounts Tab -->
-    <system:String x:Key="Locale_DataMgmt_Tab_Accounts">Accounts</system:String>
-    <system:String x:Key="Locale_DataMgmt_Title_Accounts">Manage Accounts</system:String>
-    <system:String x:Key="Locale_DataMgmt_SearchAccounts">Search accounts...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Tab_Accounts">Accounts</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_Accounts">Manage Accounts</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchAccounts">Search accounts...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_AccountNum">Account No.</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_CardNum">Card No.</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_AccType">Account Type</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_CreditLimit">Credit Limit</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Currency">Currency</system:String>
+
+    <!-- Institutions Tab -->
+    <system:String x:Key="Locale_DataTaxonomy_Tab_Institutes">Institutions</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_Institutes">Manage Institutions</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchInstitutes">Search institutions...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_InstituteName">Name</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_InstituteCountry">Country</system:String>
+
+    <!-- TagRule Tab -->
+    <system:String x:Key="Locale_DataTaxonomy_Tab_TagRule">Tag Rules</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_TagRule">Manage Auto-Tag Rules</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchTagRule">Search keywords...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_TagRule_Keyword">Keyword</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_TagRule_Tag">Applies Tag</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_TagRule_Priority">Priority</system:String>
+
+    <!-- Synonyms Tab -->
+    <system:String x:Key="Locale_DataTaxonomy_Tab_Synonyms">Synonyms</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_Synonyms">Header Mapping Synonyms</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchSynonyms">Search synonyms...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SynonymName">Synonym Name</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SynonymsField">Maps To Field</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SynonymsCatgType">Category Type</system:String>
 
     <!-- Audit Logs / Import Batches Tab -->
-    <system:String x:Key="Locale_DataMgmt_Tab_AuditLogs">Import Batches</system:String>
-    <system:String x:Key="Locale_DataMgmt_Title_AuditLogs">Import Batches</system:String>
-    <system:String x:Key="Locale_DataMgmt_SearchAuditLogs">Search logs...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Tab_ImportLogs">Import Logs</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_ImportLogs"> Import History</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchImportLogs">Search filenames...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_ImportLogDate">Import Date</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_ImportLogFileName">File Name</system:String>
+
+    <!-- User Preference Tab -->
+    <system:String x:Key="Locale_DataTaxonomy_Tab_UserPrefer">User Preferences</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Title_UserPrefer">Manage User Preferences</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_SearchUserPrefer">Search...</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_UserPreferKey">Setting Name</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_UserPreferValue">Value</system:String>
 
     <!-- Grid Columns -->
-    <system:String x:Key="Locale_Grid_Id">ID</system:String>
-    <system:String x:Key="Locale_Grid_Name">Name</system:String>
-    <system:String x:Key="Locale_Grid_Actions">Actions</system:String>
-    <system:String x:Key="Locale_Common_Delete">Delete</system:String>
-    <system:String x:Key="Locale_Common_Merge">Merge</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Grid_Id">ID</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Grid_Name">Name</system:String>
+    <system:String x:Key="Locale_DataTaxonomy_Grid_Actions">Actions</system:String>
+
+    <!-- Form Views / Modals -->
+    <!-- Account Form -->
+    <system:String x:Key="Locale_Forms_Account_Title">Account Details</system:String>
+    <system:String x:Key="Locale_Forms_Account_HelperText">Provide either an Account Number or a Card Number. Filling one will automatically disable the other.</system:String>
+    <system:String x:Key="Locale_Forms_Account_AccNum">Account Number</system:String>
+    <system:String x:Key="Locale_Forms_Account_AccNumWatermark">e.g., 123456789</system:String>
+    <system:String x:Key="Locale_Forms_Account_CardNum">Card Number</system:String>
+    <system:String x:Key="Locale_Forms_Account_CardNumWatermark">e.g., 987654321</system:String>
+    <system:String x:Key="Locale_Forms_Account_Institute">Institution</system:String>
+    <system:String x:Key="Locale_Forms_Account_InstituteWatermark">Search or create institution...</system:String>
+    <system:String x:Key="Locale_Forms_Account_Type">Account Type</system:String>
+    <system:String x:Key="Locale_Forms_Account_TypeWatermark">Select account type...</system:String>
+    <system:String x:Key="Locale_Forms_Account_Currency">Currency</system:String>
+    <system:String x:Key="Locale_Forms_Account_CurrencyWatermark">Select currency...</system:String>
+    <system:String x:Key="Locale_Forms_Account_CreditLimit">Credit Limit</system:String>
+    <system:String x:Key="Locale_Forms_Account_CreditLimitWatermark">e.g., 5000.00</system:String>
+    <system:String x:Key="Locale_Forms_Account_Save">Save Account</system:String>
+
+    <!-- Category Form -->
+    <system:String x:Key="Locale_Forms_Category_Title">Category Details</system:String>
+    <system:String x:Key="Locale_Forms_Category_HelperText">Categories are used to organize Sub-Categories. You can select/create a new category by typing a new name in the field below.</system:String>
+    <system:String x:Key="Locale_Forms_Category_Name">Category Name</system:String>
+    <system:String x:Key="Locale_Forms_Category_NameWatermark">Enter category name...</system:String>
+    <system:String x:Key="Locale_Forms_Category_Save">Save Category</system:String>
+
+    <!-- Institution Form -->
+    <system:String x:Key="Locale_Forms_Institute_Title">Institution Details</system:String>
+    <system:String x:Key="Locale_Forms_Institute_HelperText">Institutions are used to organize accounts. You can select/create a new institution by typing a new name in the field below.</system:String>
+    <system:String x:Key="Locale_Forms_Institute_Name">Institution Name</system:String>
+    <system:String x:Key="Locale_Forms_Institute_NameWatermark">Enter institution name...</system:String>
+    <system:String x:Key="Locale_Forms_Institute_Country">Country</system:String>
+    <system:String x:Key="Locale_Forms_Institute_CountryWatermark">Enter country...</system:String>
+    <system:String x:Key="Locale_Forms_Institute_Save">Save Institution</system:String>
+
+    <!-- Merge Form -->
+    <system:String x:Key="Locale_Forms_Merge_TargetName">Target Name</system:String>
+    <system:String x:Key="Locale_Forms_Merge_TargetNameWatermark">Search target...</system:String>
+    <system:String x:Key="Locale_Forms_Merge_Save">Merge</system:String>
+
+    <!-- Payee Form -->
+    <system:String x:Key="Locale_Forms_Payee_Title">Payee Details</system:String>
+    <system:String x:Key="Locale_Forms_Payee_HelperText">Payees are used to build AIS report and to organize transactions. You can select/create a new payee by typing a new name in the field below.</system:String>
+    <system:String x:Key="Locale_Forms_Payee_Name">Payee</system:String>
+    <system:String x:Key="Locale_Forms_Payee_NameWatermark">Enter payee...</system:String>
+    <system:String x:Key="Locale_Forms_Payee_DefaultIncome">Set as default income source</system:String>
+    <system:String x:Key="Locale_Forms_Payee_Save">Save Payee</system:String>
+
+    <!-- SubCategory Form -->
+    <system:String x:Key="Locale_Forms_SubCategory_Title">Sub-Category Details</system:String>
+    <system:String x:Key="Locale_Forms_SubCategory_Name">Name</system:String>
+    <system:String x:Key="Locale_Forms_SubCategory_NameWatermark">e.g., Groceries</system:String>
+    <system:String x:Key="Locale_Forms_SubCategory_Parent">Parent Category</system:String>
+    <system:String x:Key="Locale_Forms_SubCategory_ParentWatermark">Search or create category...</system:String>
+    <system:String x:Key="Locale_Forms_SubCategory_Save">Save Sub-Category</system:String>
+
+    <!-- Synonym Form -->
+    <system:String x:Key="Locale_Forms_Synonym_Title">Synonym Details</system:String>
+    <system:String x:Key="Locale_Forms_Synonym_HelperText">Synonyms are used to map different terms to the same column header. You can select/create a new synonym by typing a new name in the respective fields.</system:String>
+    <system:String x:Key="Locale_Forms_Synonym_Name">Synonym Name</system:String>
+    <system:String x:Key="Locale_Forms_Synonym_NameWatermark">e.g., Account Name, Description...</system:String>
+    <system:String x:Key="Locale_Forms_Synonym_CatgType">Category Type</system:String>
+    <system:String x:Key="Locale_Forms_Synonym_CatgTypeWatermark">Select a category type...</system:String>
+    <system:String x:Key="Locale_Forms_Synonym_FieldType">Field Type</system:String>
+    <system:String x:Key="Locale_Forms_Synonym_FieldTypeWatermark">Select a field type...</system:String>
+    <system:String x:Key="Locale_Forms_Synonym_Save">Save Synonym</system:String>
+
+    <!-- Tag Form -->
+    <system:String x:Key="Locale_Forms_Tag_Title">Tag Details</system:String>
+    <system:String x:Key="Locale_Forms_Tag_HelperText">Tags are used to categorize transactions. You can select/create a new category or sub-category by typing a new name in the respective fields.</system:String>
+    <system:String x:Key="Locale_Forms_Tag_Name">Tag Name</system:String>
+    <system:String x:Key="Locale_Forms_Tag_NameWatermark">e.g., Groceries, Fuel, Salary...</system:String>
+    <system:String x:Key="Locale_Forms_Tag_Category">Category</system:String>
+    <system:String x:Key="Locale_Forms_Tag_CategoryWatermark">Search or create category...</system:String>
+    <system:String x:Key="Locale_Forms_Tag_SubCategory">Sub-Category</system:String>
+    <system:String x:Key="Locale_Forms_Tag_SubCategoryWatermark">Search or create sub-category...</system:String>
+    <system:String x:Key="Locale_Forms_Tag_Save">Save Tag</system:String>
+
+    <!-- TagRule Form -->
+    <system:String x:Key="Locale_Forms_TagRule_Title">Tag Rule Details</system:String>
+    <system:String x:Key="Locale_Forms_TagRule_Keyword">Keyword</system:String>
+    <system:String x:Key="Locale_Forms_TagRule_KeywordWatermark">e.g., Coffee</system:String>
+    <system:String x:Key="Locale_Forms_TagRule_Tag">Target Tag</system:String>
+    <system:String x:Key="Locale_Forms_TagRule_TagWatermark">Search tag...</system:String>
+    <system:String x:Key="Locale_Forms_TagRule_Save">Save Rule</system:String>
+
+    <!-- UserSetting Form -->
+    <system:String x:Key="Locale_Forms_UserSetting_Title">Settings Details</system:String>
+    <system:String x:Key="Locale_Forms_UserSetting_Key">Setting Key</system:String>
+    <system:String x:Key="Locale_Forms_UserSetting_Value">Setting Value</system:String>
+    <system:String x:Key="Locale_Forms_UserSetting_ValueWatermark">Value...</system:String>
+    <system:String x:Key="Locale_Forms_UserSetting_Save">Save Setting</system:String>
+
 </ResourceDictionary>

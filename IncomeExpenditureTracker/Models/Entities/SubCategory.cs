@@ -31,7 +31,7 @@ public class SubCategory
     public string Name { get; set; } = "";
 
     // Foreign key linking to Category
-    public int CategoryId { get; set; }
+    public int? CategoryId { get; set; }
 
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 }

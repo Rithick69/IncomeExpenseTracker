@@ -179,11 +179,11 @@ public class SubCategoryService : ISubCategoryService, IDisposable
     // ------------------------------------------------------------
     // GET SUBCATEGORIES BY CATEGORY ID
     // ------------------------------------------------------------
-    public async Task<List<SubCategory>> GetSubCategoriesByCategoryId(int categoryId, CancellationToken ct = default)
+    public async Task<List<SubCategory>> GetSubCategoriesByCategoryId(int? categoryId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
-        var cacheKey = $"CATEGORY_{categoryId}";
+        var cacheKey = $"CATEGORY_{categoryId.ToString() ?? "NULL"}";
         try
         {
             // Cache Stampede Protection
@@ -193,7 +193,7 @@ public class SubCategoryService : ISubCategoryService, IDisposable
                 {
                     return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                     {
-                        const string sql = "SELECT Id, Name, CategoryId FROM SubCategories WHERE CategoryId = @CategoryId ORDER BY Name ASC;";
+                        const string sql = "SELECT Id, Name, CategoryId FROM SubCategories WHERE CategoryId IS @CategoryId ORDER BY Name ASC;";
                         var cmd = new CommandDefinition(sql, new { CategoryId = categoryId }, cancellationToken: cancelToken);
                         var subCategories = await c.QueryAsync<SubCategory>(cmd);
                         return subCategories.ToList();
@@ -278,7 +278,7 @@ public class SubCategoryService : ISubCategoryService, IDisposable
             {
                 // Check if subcategory is used by tags
                 var checkCmd = new CommandDefinition(
-                    @"SELECT COUNT(*) FROM Tag WHERE SubCategoryId = @SubCategoryId",
+                    @"SELECT COUNT(*) FROM Tags WHERE SubCategoryId = @SubCategoryId",
                      new { SubCategoryId = subCategoryId },
                     transaction: transaction,
                     cancellationToken: cancelToken);
@@ -367,7 +367,7 @@ public class SubCategoryService : ISubCategoryService, IDisposable
                 INSERT OR IGNORE INTO SubCategories (Name, CategoryId, CreatedDate)
                 VALUES (@Name, @CategoryId, @CreatedDate);
 
-                SELECT Id FROM SubCategories WHERE Name = @Name;";
+                SELECT Id FROM SubCategories WHERE Name = @Name AND CategoryId IS @CategoryId;";
 
             var cmd = new CommandDefinition(sql, new
             {

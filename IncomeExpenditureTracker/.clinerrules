@@ -1,0 +1,57 @@
+# Roo Code Agent Rules: Income & Expenditure Tracker
+
+## Role & Execution Philosophy
+
+You are an expert .NET 8 / Avalonia UI software engineer working on a local-first, post-facto forensic personal finance application[cite: 1].
+Follow an Architecture-First, Test-Driven approach. You do not guess APIs or bypass established layers.
+_Note: The application namespace is currently `IncomeExpenditureTracker`[cite: 1], but ensure code relies on relative paths and `nameof()` where possible to support future renaming._
+
+## 1. Architectural Guardrails (Non-Negotiable)
+
+1. **Database Access Lockdown:**
+   - NEVER reference `Microsoft.Data.Sqlite` or `Dapper` directly outside the data access layer[cite: 1].
+   - ALL database commands MUST route through `IDatabaseService.ExecuteWithRetryAsync()` or `ExecuteInTransactionWithRetryAsync()`[cite: 1].
+   - Never break `NetArchTestValidator` rules[cite: 1].
+2. **Master Transactions & Atomicity:**
+   - Multi-step persistence operations (e.g., file import, batch sweeps) MUST execute within a single transaction token (`conn`, `tx`)[cite: 1].
+   - Partial failures must trigger a complete rollback leaving 0 orphaned records[cite: 1].
+3. **Memory Annihilation & Cryptography:**
+   - Passwords must NEVER reside in plain managed strings longer than the immediate stack frame[cite: 1].
+   - Eradicate transient password memory using unsafe blocks with C-style pointer null-terminators (`\0`)[cite: 1].
+   - Passwords are injected into SQLite solely via `PRAGMA key`[cite: 1].
+4. **Taxonomy Integrity & Deletions:**
+   - **Tags/Categories:** Support Safe Re-Parenting (fall back to system-seeded "Misc Tag" ID 999; set `SubCategoryId = NULL`)[cite: 1].
+   - **Payees:** Enforce Hard Blocks (`InvalidOperationException`) if transactions exist[cite: 1].
+5. **Error Tracking:**
+   - String-based parse errors are forbidden[cite: 1]. Use the bitwise `[Flags]` enum `ReviewStatus`[cite: 1].
+
+## 2. Data Fetching & Reactive UI (Performance)
+
+1. **Keyset Cursor Paging:** Do NOT use SQL `OFFSET`. Fetch ledgers using `(TransactionDate DESC, Id DESC)` bounding.
+2. **In-Place Delta Patching:**
+   - Dapper bulk sweeps must return `IReadOnlyList<long> affectedIds`.
+   - ViewModels must intersect these IDs with an internal `Dictionary<long, ViewModel>` map.
+   - Mutate properties directly on existing ViewModels to trigger `INotifyPropertyChanged`. NEVER clear and rebuild the Avalonia `ObservableCollection` during background updates.
+3. **Conveyor Belt Bypass:** NEVER call `Dispatcher.UIThread` directly. Use `RunOnUIThread(...)` in `ViewModelBase`[cite: 1].
+4. **Lifecycle:** ViewModels must inherit from `ViewModelBase`, implement `IDisposable`, execute `_broker.UnregisterAll(this)`[cite: 1], and use `Transient` DI lifetimes for SPA routing[cite: 1].
+5. **Global Overlays:** Modals and Toasts route exclusively through `IApplicationBroker` payloads (`ShowConfirmationMessage`, `ToastNotificationMessage`)[cite: 1]. No custom popup windows.
+6. **Styling & Locales:**
+   - NEVER use inline hex colors or hardcoded margins. Use `{DynamicResource TokenName}` and global classes (e.g., `Classes="Card"`).
+   - Require `FontFeatures="tnum"` on all grids displaying numbers.
+   - All text must route through `Assets/Locales/en-US.axaml` via `{DynamicResource Locale_Module_Element}`[cite: 1].
+
+## 3. Post-Task Documentation (The Living Document Rule)
+
+When a feature is verified and tested, you MUST output a final `Task Completion Artifact` in the exact format below, ready for the user to append to their tracking document.
+
+### [Date] - [Feature/Component Name]
+
+**1. Architectural Changes:**
+
+- [Bullet points on DI, schema, or structural changes]
+  **2. System Decisions & Trade-offs:**
+- [Bullet points explaining WHY an approach was taken]
+  **3. Performance & Fetching Impacts:**
+- [Bullet points on Delta Patching, Cursor adjustments, or Caching]
+  **4. Completed Tracker Items:**
+- [x] [Task Name]

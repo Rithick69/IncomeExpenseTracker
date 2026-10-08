@@ -112,17 +112,17 @@ namespace IncomeExpenditureTracker.UI.MasterData
         public ObservableCollection<string> TagRuleFilterOptions { get; } = new() { "All", "High Priority", "Standard Priority" };
         partial void OnSelectedTagRuleFilterChanged(string? value) => FilterTagRules();
 
-        // --- SYNONYMS ---
-        [ObservableProperty] private string? _selectedSynonymFilter;
-        public ObservableCollection<string> SynonymFilterOptions { get; } = new() { "All", "Mapped to Category", "Unmapped" };
-        partial void OnSelectedSynonymFilterChanged(string? value) => FilterSynonyms();
+        // // --- SYNONYMS ---
+        // [ObservableProperty] private string? _selectedSynonymFilter;
+        // public ObservableCollection<string> SynonymFilterOptions { get; } = new() { "All", "Mapped to Category", "Unmapped" };
+        // partial void OnSelectedSynonymFilterChanged(string? value) => FilterSynonyms();
 
         // --- TAG FILTERS (Category -> SubCategory) ---
         [ObservableProperty] private string? _selectedTagCategoryFilter;
         [ObservableProperty] private string? _selectedTagSubCategoryFilter;
 
-        public ObservableCollection<string> AvailableTagCategories { get; } = new() { "All Categories" };
-        public ObservableCollection<string> AvailableTagSubCategories { get; } = new() { "All Sub-Categories" };
+        public ObservableCollection<SelectableFilter> AvailableTagCategories { get; } = new();
+        public ObservableCollection<SelectableFilter> AvailableTagSubCategories { get; } = new();
 
         partial void OnSelectedTagCategoryFilterChanged(string? value) => FilterTags();
         partial void OnSelectedTagSubCategoryFilterChanged(string? value) => FilterTags();
@@ -130,26 +130,31 @@ namespace IncomeExpenditureTracker.UI.MasterData
         // --- ACCOUNT FILTERS (Entity -> Account) ---
         [ObservableProperty] private string? _selectedAccountEntityFilter;
 
-        public ObservableCollection<string> AvailableAccountEntities { get; } = new() { "All" };
+        public ObservableCollection<string> AvailableAccountEntities { get; } = new();
 
         partial void OnSelectedAccountEntityFilterChanged(string? value) => FilterAccounts();
 
         // --- TAG RULE FILTERS (Tag -> Rule) ---
         [ObservableProperty] private string? _selectedTagRuleTagFilter;
 
-        public ObservableCollection<string> AvailableTagRuleTags { get; } = new() { "All Tags" };
+        public ObservableCollection<SelectableFilter> AvailableTagRuleTags { get; } = new();
+        partial void OnSelectedTagRuleTagFilterChanged(string? value) => FilterTagRules();
 
         // --- SYNONYM FILTERS(CategoryType -> Synonym)
         [ObservableProperty] private string? _selectedSynonymCategoryFilter;
+        [ObservableProperty] private string? _selectedSynonymFieldFilter;
 
-        public ObservableCollection<string> AvailableSynonymCategory { get; } = new() { "All CategoryTypes" };
+        public ObservableCollection<string> AvailableSynonymCategory { get; } = new();
+        public ObservableCollection<SelectableFilter> AvailableSynonymField { get; } = new();
+        partial void OnSelectedSynonymFieldFilterChanged(string? value) => FilterSynonyms();
 
         // --- SUBCATEGORY FILTERS(Category -> SubCategory)
         [ObservableProperty] private string? _selectedSubCategoryCategoryFilter;
 
-        public ObservableCollection<string> AvailableSubCategoryCategory { get; } = new() { "All Categories" };
+        public ObservableCollection<SelectableFilter> AvailableSubCatgCategory { get; } = new();
 
-        partial void OnSelectedTagRuleTagFilterChanged(string? value) => FilterTagRules();
+        partial void OnSelectedSubCategoryCategoryFilterChanged(string? value) => FilterSubCategories();
+
 
         // --- SEARCH PROPERTIES ---
         [ObservableProperty] private string _categorySearchText = string.Empty;
@@ -161,6 +166,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
         [ObservableProperty] private string _userSettingSearchText = string.Empty;
         [ObservableProperty] private string _payeeSearchText = string.Empty;
         [ObservableProperty] private string _tagSearchText = string.Empty;
+        [ObservableProperty] private string _importBatchSearchText = string.Empty;
 
         partial void OnCategorySearchTextChanged(string value) => FilterCategories();
         partial void OnSubCategorySearchTextChanged(string value) => FilterSubCategories();
@@ -171,6 +177,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
         partial void OnUserSettingSearchTextChanged(string value) => FilterUserSettings();
         partial void OnPayeeSearchTextChanged(string value) => FilterPayees();
         partial void OnTagSearchTextChanged(string value) => FilterTags();
+        partial void OnImportBatchSearchTextChanged(string value) => FilterImportBatches();
 
         // --- FILTERED COLLECTIONS ---
         public ObservableCollection<Category> FilteredCategories { get; } = new();
@@ -182,6 +189,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
         public ObservableCollection<UserSetting> FilteredUserSettings { get; } = new();
         public ObservableCollection<TagHierarchyDto> FilteredTags { get; } = new();
         public ObservableCollection<Payee> FilteredPayees { get; } = new();
+        public ObservableCollection<ImportBatch> FilteredImportBatches { get; } = new();
 
         #endregion
 
@@ -244,13 +252,20 @@ namespace IncomeExpenditureTracker.UI.MasterData
             try
             {
                 var data = await _orchestrator.GetAllCategoriesAsync(_cts.Token);
+                Console.WriteLine($"Loaded {data.Count()} categories from the orchestrator.");
                 RunOnUIThread(() =>
                 {
                     Categories.Clear();
                     foreach (var item in data) Categories.Add(item);
+                    FilterCategories();
                 });
             }
             catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                // TRAP THE ERROR: If Dapper fails, it will print here.
+                Console.WriteLine($"CRITICAL ERROR in LoadCategoriesAsync: {ex.Message}");
+            }
             finally { if (!isSilent) IsLoading = false; }
         }
 
@@ -262,18 +277,34 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 var data = (await _orchestrator.GetAllTagsWithHierarchyAsync(_cts.Token)).ToList();
                 RunOnUIThread(() =>
                 {
-                    // Hydrate the dynamic dropdowns
+                    // 1. Hydrate Dynamic Multi-Select Dropdowns
                     AvailableTagCategories.Clear();
-                    AvailableTagCategories.Add("All Categories");
-                    foreach (var cat in data.Where(t => !string.IsNullOrEmpty(t.CategoryName)).Select(t => t.CategoryName!).Distinct().OrderBy(c => c))
-                        AvailableTagCategories.Add(cat);
+                    var distinctCategories = data
+                        .Where(t => !string.IsNullOrEmpty(t.CategoryName))
+                        .Select(t => t.CategoryName!)
+                        .Distinct()
+                        .OrderBy(c => c);
+
+                    foreach (var cat in distinctCategories)
+                    {
+                        // Wrap in SelectableFilter and inject the FilterTags callback
+                        AvailableTagCategories.Add(new SelectableFilter(cat, OnCategoryFilterToggled));
+                    }
 
                     AvailableTagSubCategories.Clear();
-                    AvailableTagSubCategories.Add("All Sub-Categories");
-                    foreach (var sub in data.Where(t => !string.IsNullOrEmpty(t.SubCategoryName)).Select(t => t.SubCategoryName!).Distinct().OrderBy(s => s))
-                        AvailableTagSubCategories.Add(sub);
+                    var distinctSubCategories = data
+                        .Where(t => !string.IsNullOrEmpty(t.SubCategoryName))
+                        .Select(t => t.SubCategoryName!)
+                        .Distinct()
+                        .OrderBy(s => s);
 
-                    // Hydrate the grid
+                    foreach (var sub in distinctSubCategories)
+                    {
+                        // Wrap in SelectableFilter and inject the FilterTags callback
+                        AvailableTagSubCategories.Add(new SelectableFilter(sub, FilterTags));
+                    }
+
+                    // 2. Hydrate the Grid
                     Tags.Clear();
                     foreach (var item in data) Tags.Add(item);
                     FilterTags();
@@ -294,6 +325,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
                     Payees.Clear();
                     foreach (var item in data) Payees.Add(item);
                     FilterPayees();
+                    MergePayeeCommand.NotifyCanExecuteChanged();
                 });
             }
             catch (OperationCanceledException) { }
@@ -308,11 +340,19 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 var data = (await _orchestrator.GetAllAccountsAsync(_cts.Token)).ToList();
                 RunOnUIThread(() =>
                 {
-                    // Hydrate the dynamic dropdowns
+                    // 1. Hydrate Dynamic Dropdowns
                     AvailableAccountEntities.Clear();
-                    AvailableAccountEntities.Add("All");
-                    foreach (var entity in data.Where(a => !string.IsNullOrEmpty(a.EntityName)).Select(a => a.EntityName!).Distinct().OrderBy(e => e))
+                    var distinctEntities = data
+                        .Where(a => !string.IsNullOrEmpty(a.EntityName))
+                        .Select(a => a.EntityName!)
+                        .Distinct()
+                        .OrderBy(e => e);
+
+                    foreach (var entity in distinctEntities)
+                    {
+                        // Wrap in SelectableFilter and inject the Filter* callback
                         AvailableAccountEntities.Add(entity);
+                    }
 
                     // Hydrate the grid
                     Accounts.Clear();
@@ -334,6 +374,9 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 {
                     Entities.Clear();
                     foreach (var item in data) Entities.Add(item);
+
+                    FilterEntities();
+                    MergeEntityCommand.NotifyCanExecuteChanged();
                 });
             }
             catch (OperationCanceledException) { }
@@ -348,10 +391,19 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 var data = await _orchestrator.GetAllSubCategoriesWithHierarchyAsync(_cts.Token);
                 RunOnUIThread(() =>
                 {
-                    AvailableSubCategoryCategory.Clear();
-                    AvailableSubCategoryCategory.Add("All Categories");
-                    foreach (var category in data.Where(a => !string.IsNullOrEmpty(a.CategoryName)).Select(a => a.CategoryName!).Distinct().OrderBy(e => e))
-                        AvailableAccountEntities.Add(category);
+                    // 1. Hydrate Dynamic Multi-Select Dropdowns
+                    AvailableSubCatgCategory.Clear();
+                    var distinctCategories = data
+                        .Where(s => !string.IsNullOrEmpty(s.CategoryName))
+                        .Select(s => s.CategoryName!)
+                        .Distinct()
+                        .OrderBy(c => c);
+
+                    foreach (var cat in distinctCategories)
+                    {
+                        // Wrap in SelectableFilter and inject the Filter* callback
+                        AvailableSubCatgCategory.Add(new SelectableFilter(cat, FilterSubCategories));
+                    }
 
                     SubCategories.Clear();
                     foreach (var item in data) SubCategories.Add(item);
@@ -370,11 +422,19 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 var data = (await _orchestrator.GetAllTagRulesWithHierarchyAsync(_cts.Token)).ToList();
                 RunOnUIThread(() =>
                 {
-                    // Hydrate the dynamic dropdowns
+                    // 1. Hydrate Dynamic Multi-Select Dropdowns
                     AvailableTagRuleTags.Clear();
-                    AvailableTagRuleTags.Add("All Tags");
-                    foreach (var tag in data.Where(r => !string.IsNullOrEmpty(r.TagName)).Select(r => r.TagName!).Distinct().OrderBy(t => t))
-                        AvailableTagRuleTags.Add(tag);
+                    var distinctTags = data
+                        .Where(t => !string.IsNullOrEmpty(t.TagName))
+                        .Select(t => t.TagName!)
+                        .Distinct()
+                        .OrderBy(c => c);
+
+                    foreach (var tag in distinctTags)
+                    {
+                        // Wrap in SelectableFilter and inject the Filter* callback
+                        AvailableTagRuleTags.Add(new SelectableFilter(tag, FilterTagRules));
+                    }
 
                     // Hydrate the grid
                     TagRules.Clear();
@@ -389,16 +449,38 @@ namespace IncomeExpenditureTracker.UI.MasterData
         private async Task LoadSynonymsAsync(bool isSilent = false)
         {
             if (!isSilent) IsLoading = true;
+            Console.WriteLine("Loading synonyms from the orchestrator...");
             try
             {
                 var data = await _orchestrator.GetAllSynonymsWithHierarchyAsync(_cts.Token);
+                Console.WriteLine($"Loaded {data.Count()} synonyms from the orchestrator.");
                 RunOnUIThread(() =>
                 {
+                    // 1. Hydrate Dynamic Multi-Select Dropdowns
                     AvailableSynonymCategory.Clear();
-                    AvailableSynonymCategory.Add("All CategoryTypes");
+                    AvailableSynonymField.Clear();
+                    var distinctCategoryTypes = data
+                        .Where(s => !string.IsNullOrEmpty(s.CategoryName))
+                        .Select(s => s.CategoryName!)
+                        .Distinct()
+                        .OrderBy(c => c);
 
-                    foreach (var category in data.Where(r => !string.IsNullOrEmpty(r.CategoryName)).Select(r => r.CategoryName!).Distinct().OrderBy(t => t))
-                        AvailableTagRuleTags.Add(category);
+                    var distinctFields = data
+                        .Where(s => !string.IsNullOrEmpty(s.FieldType))
+                        .Select(s => s.FieldType!)
+                        .Distinct()
+                        .OrderBy(f => f);
+
+                    foreach (var cat in distinctCategoryTypes)
+                    {
+                        // Wrap in SelectableFilter and inject the Filter* callback
+                        AvailableSynonymCategory.Add(cat);
+                    }
+
+                    foreach (var field in distinctFields)
+                    {
+                        AvailableSynonymField.Add(new SelectableFilter(field, FilterSynonyms));
+                    }
 
                     Synonyms.Clear();
                     foreach (var item in data) Synonyms.Add(item);
@@ -406,6 +488,11 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 });
             }
             catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                // TRAP THE ERROR: If Dapper fails, it will print here.
+                Console.WriteLine($"CRITICAL ERROR in LoadSynonymsAsync: {ex.Message}");
+            }
             finally { if (!isSilent) IsLoading = false; }
         }
 
@@ -419,6 +506,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 {
                     ImportBatches.Clear();
                     foreach (var item in data) ImportBatches.Add(item);
+                    FilterImportBatches();
                 });
             }
             catch (OperationCanceledException) { }
@@ -434,7 +522,12 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 RunOnUIThread(() =>
                 {
                     UserSettings.Clear();
-                    foreach (var item in data) UserSettings.Add(item);
+                    foreach (var item in data)
+                    {
+                        Console.WriteLine($"Loaded UserSetting: Key={item.SettingKey}, Value={item.SettingValue}");
+                        UserSettings.Add(item);
+                    }
+                    FilterUserSettings();
                 });
             }
             catch (OperationCanceledException) { }
@@ -444,6 +537,64 @@ namespace IncomeExpenditureTracker.UI.MasterData
         #endregion
 
         #region In-Memory UI Filters
+
+        [RelayCommand]
+        public void ClearCategoryFilters()
+        {
+            // Bypasses the database entirely. Setting IsSelected to false
+            // automatically fires the FilterTags() callback you wired in the wrapper.
+            foreach (var filter in AvailableTagCategories)
+            {
+                filter.IsSelected = false;
+            }
+        }
+
+        [RelayCommand]
+        public void ClearSubCategoryFilters()
+        {
+            foreach (var filter in AvailableTagSubCategories)
+            {
+                filter.IsSelected = false;
+            }
+        }
+
+        [RelayCommand]
+        public void ClearTagFilters()
+        {
+            foreach (var filter in AvailableTagRuleTags)
+            {
+                filter.IsSelected = false;
+            }
+        }
+
+        [RelayCommand]
+        public void ClearSubCatgFilters()
+        {
+            foreach (var filter in AvailableSubCatgCategory)
+            {
+                filter.IsSelected = false;
+            }
+        }
+
+        [RelayCommand]
+        public void ClearFieldTypeFilters()
+        {
+            foreach (var filter in AvailableSynonymField)
+            {
+                filter.IsSelected = false;
+            }
+        }
+
+        private void FilterImportBatches()
+        {
+            RunOnUIThread(() =>
+            {
+                FilteredImportBatches.Clear();
+                var search = ImportBatchSearchText?.Trim().ToLowerInvariant() ?? "";
+                var query = string.IsNullOrEmpty(search) ? ImportBatches : ImportBatches.Where(b => b.FileName != null && b.FileName.ToLowerInvariant().Contains(search));
+                foreach (var item in query) FilteredImportBatches.Add(item);
+            });
+        }
 
         private void FilterCategories()
         {
@@ -462,9 +613,22 @@ namespace IncomeExpenditureTracker.UI.MasterData
             {
                 FilteredSubCategories.Clear();
                 var search = SubCategorySearchText?.Trim().ToLowerInvariant() ?? "";
+
                 var query = string.IsNullOrEmpty(search) ? SubCategories : SubCategories.Where(s =>
                     (s.SubCategoryName != null && s.SubCategoryName.ToLowerInvariant().Contains(search)) ||
                     (s.CategoryName != null && s.CategoryName.ToLowerInvariant().Contains(search)));
+
+                // 3. Strict Relational Column Filters (Multi-Select)
+                var selectedCategories = AvailableSubCatgCategory
+                    .Where(f => f.IsSelected)
+                    .Select(f => f.Name)
+                    .ToList();
+
+                if (selectedCategories.Any())
+                {
+                    query = query.Where(s => s.CategoryName != null && selectedCategories.Contains(s.CategoryName));
+                }
+
                 foreach (var item in query) FilteredSubCategories.Add(item);
             });
         }
@@ -482,6 +646,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
                     var search = AccountSearchText.Trim().ToLowerInvariant();
                     query = query.Where(a =>
                         (a.AccountNumber != null && a.AccountNumber.ToLowerInvariant().Contains(search)) ||
+                        (a.CardNumber != null && a.CardNumber.ToLowerInvariant().Contains(search)) ||
                         (a.EntityName != null && a.EntityName.ToLowerInvariant().Contains(search)));
                 }
 
@@ -489,9 +654,15 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 if (!string.IsNullOrEmpty(SelectedAccountFilter) && SelectedAccountFilter != "All")
                 {
                     if (SelectedAccountFilter == "Credit Lines (Cards/Loans)")
-                        query = query.Where(a => a.AccountType != null && (a.AccountType.Contains("Credit") || a.AccountType.Contains("Loan") || a.CreditLimit > 0));
+                        query = query.Where(a => a.AccountType != null && (a.AccountType.Contains("Credit") || a.AccountType.Contains("Loan") || (decimal.TryParse(a.CreditLimit, out var creditLimit) && creditLimit > 0)));
                     else if (SelectedAccountFilter == "Bank Accounts (Cash/Checking)")
                         query = query.Where(a => a.AccountType != null && (a.AccountType.Contains("Checking") || a.AccountType.Contains("Savings") || a.AccountType.Contains("Cash")));
+                }
+
+                // 3. Strict Relational Column Filters
+                if (!string.IsNullOrEmpty(SelectedAccountEntityFilter))
+                {
+                    query = query.Where(a => a.EntityName == SelectedAccountEntityFilter);
                 }
 
                 foreach (var item in query) FilteredAccounts.Add(item);
@@ -506,6 +677,60 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 var search = EntitySearchText?.Trim().ToLowerInvariant() ?? "";
                 var query = string.IsNullOrEmpty(search) ? Entities : Entities.Where(e => e.Name != null && e.Name.ToLowerInvariant().Contains(search));
                 foreach (var item in query) FilteredEntities.Add(item);
+            });
+        }
+
+        private void OnCategoryFilterToggled()
+        {
+            RunOnUIThread(() =>
+            {
+                // 1. Get all currently checked Categories
+                var selectedCategories = AvailableTagCategories
+                    .Where(c => c.IsSelected)
+                    .Select(c => c.Name)
+                    .ToList();
+
+                // 2. Remember what Sub-Categories were already checked
+                var previouslySelectedSubs = AvailableTagSubCategories
+                    .Where(s => s.IsSelected)
+                    .Select(s => s.Name)
+                    .ToList();
+
+                // 3. Clear the Sub-Category dropdown entirely
+                AvailableTagSubCategories.Clear();
+
+                // 4. Determine which Sub-Categories should be visible
+                IEnumerable<string> validSubCatsQuery = Tags
+                    .Where(t => !string.IsNullOrEmpty(t.SubCategoryName))
+                    .Select(t => t.SubCategoryName!);
+
+                // If ANY categories are checked, restrict the sub-categories to ONLY those parents
+                if (selectedCategories.Any())
+                {
+                    validSubCatsQuery = Tags
+                        .Where(t => t.CategoryName != null && selectedCategories.Contains(t.CategoryName) && !string.IsNullOrEmpty(t.SubCategoryName))
+                        .Select(t => t.SubCategoryName!);
+                }
+
+                var newDistinctSubCats = validSubCatsQuery.Distinct().OrderBy(s => s);
+
+                // 5. Repopulate the Sub-Category dropdown
+                foreach (var subCat in newDistinctSubCats)
+                {
+                    // Note: The child filter only needs to trigger FilterTags(), not another cascade
+                    var filter = new SelectableFilter(subCat, FilterTags);
+
+                    // Re-apply the checkmark if it's still a valid option
+                    if (previouslySelectedSubs.Contains(subCat))
+                    {
+                        filter.IsSelected = true;
+                    }
+
+                    AvailableTagSubCategories.Add(filter);
+                }
+
+                // 6. Finally, refresh the DataGrid
+                FilterTags();
             });
         }
 
@@ -534,7 +759,66 @@ namespace IncomeExpenditureTracker.UI.MasterData
                         query = query.Where(r => r.Priority < 10);
                 }
 
+                // 3. Strict Relational Column Filters (Multi-Select)
+                var selectedTags = AvailableTagRuleTags
+                    .Where(f => f.IsSelected)
+                    .Select(f => f.Name)
+                    .ToList();
+
+                if (selectedTags.Any())
+                {
+                    query = query.Where(t => t.TagName != null && selectedTags.Contains(t.TagName));
+                }
+
                 foreach (var item in query) FilteredTagRules.Add(item);
+            });
+        }
+
+        partial void OnSelectedSynonymCategoryFilterChanged(string? value)
+        {
+            RunOnUIThread(() =>
+            {
+                // 1. Remember what was checked so we can re-check it if it still exists in the new category
+                var previouslySelected = AvailableSynonymField
+                    .Where(f => f.IsSelected)
+                    .Select(f => f.Name)
+                    .ToList();
+
+                // 2. Clear the dropdown list entirely
+                AvailableSynonymField.Clear();
+
+                // 3. Determine which fields should be visible in the dropdown
+                IEnumerable<string> validFieldsQuery = Synonyms
+                    .Where(s => !string.IsNullOrEmpty(s.FieldType))
+                    .Select(s => s.FieldType!);
+
+                // If a specific category is selected, filter the dropdown options to ONLY that category
+                if (!string.IsNullOrEmpty(value))
+                {
+                    validFieldsQuery = Synonyms
+                        .Where(s => s.CategoryName == value && !string.IsNullOrEmpty(s.FieldType))
+                        .Select(s => s.FieldType!);
+                }
+
+                var newDistinctFields = validFieldsQuery.Distinct().OrderBy(f => f);
+
+                // 4. Repopulate the dropdown with only the valid fields
+                foreach (var field in newDistinctFields)
+                {
+                    // Re-create the filter wrapper
+                    var filter = new SelectableFilter(field, FilterSynonyms);
+
+                    // If the user previously had this checked, keep it checked
+                    if (previouslySelected.Contains(field))
+                    {
+                        filter.IsSelected = true;
+                    }
+
+                    AvailableSynonymField.Add(filter);
+                }
+
+                // 5. Finally, refresh the DataGrid
+                FilterSynonyms();
             });
         }
 
@@ -550,17 +834,27 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 {
                     var search = SynonymSearchText.Trim().ToLowerInvariant();
                     query = query.Where(s =>
-                        (s.SynonymsName != null && s.SynonymsName.ToLowerInvariant().Contains(search)) ||
-                        (s.CategoryName != null && s.CategoryName.ToLowerInvariant().Contains(search)));
+                        (s.SynonymName != null && s.SynonymName.ToLowerInvariant().Contains(search)) ||
+                        (s.CategoryName != null && s.CategoryName.ToLowerInvariant().Contains(search)) ||
+                        (s.FieldType != null && s.FieldType.ToLowerInvariant().Contains(search)));
                 }
 
-                // 2. Apply Dropdown Filter
-                if (!string.IsNullOrEmpty(SelectedSynonymFilter) && SelectedSynonymFilter != "All")
+                // 2. Strict Relational Column Filters (Multi-Select)
+
+                if (!string.IsNullOrEmpty(SelectedSynonymCategoryFilter))
                 {
-                    if (SelectedSynonymFilter == "Mapped to Category")
-                        query = query.Where(s => !string.IsNullOrEmpty(s.CategoryName));
-                    else if (SelectedSynonymFilter == "Unmapped")
-                        query = query.Where(s => string.IsNullOrEmpty(s.CategoryName));
+                    query = query.Where(s => s.CategoryName == SelectedSynonymCategoryFilter);
+                }
+
+                // Check Fields (FieldType Filter)
+                var selectedFieldTypes = AvailableSynonymField
+                    .Where(f => f.IsSelected)
+                    .Select(f => f.Name)
+                    .ToList();
+
+                if (selectedFieldTypes.Any())
+                {
+                    query = query.Where(t => t.FieldType != null && selectedFieldTypes.Contains(t.FieldType));
                 }
 
                 foreach (var item in query) FilteredSynonyms.Add(item);
@@ -607,7 +901,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
                 FilteredTags.Clear();
                 var query = Tags.AsEnumerable();
 
-                // 1. Apply Text Search
+                // 1. Apply Text Search (Fuzzy)
                 if (!string.IsNullOrWhiteSpace(TagSearchText))
                 {
                     var search = TagSearchText.Trim().ToLowerInvariant();
@@ -617,7 +911,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
                         (t.CategoryName != null && t.CategoryName.ToLowerInvariant().Contains(search)));
                 }
 
-                // 2. Apply Dropdown Filter
+                // 2. Apply Standard Dropdown Filter (Binary: Categorized vs Misc)
                 if (!string.IsNullOrEmpty(SelectedTagFilter) && SelectedTagFilter != "All")
                 {
                     if (SelectedTagFilter == "Categorized")
@@ -626,6 +920,31 @@ namespace IncomeExpenditureTracker.UI.MasterData
                         query = query.Where(t => !t.CategoryId.HasValue);
                 }
 
+                // 3. Strict Relational Column Filters (Multi-Select)
+
+                // Check Categories
+                var selectedCategories = AvailableTagCategories
+                    .Where(f => f.IsSelected)
+                    .Select(f => f.Name)
+                    .ToList();
+
+                if (selectedCategories.Any())
+                {
+                    query = query.Where(t => t.CategoryName != null && selectedCategories.Contains(t.CategoryName));
+                }
+
+                // Check Sub-Categories
+                var selectedSubCategories = AvailableTagSubCategories
+                    .Where(f => f.IsSelected)
+                    .Select(f => f.Name)
+                    .ToList();
+
+                if (selectedSubCategories.Any())
+                {
+                    query = query.Where(t => t.SubCategoryName != null && selectedSubCategories.Contains(t.SubCategoryName));
+                }
+
+                // 4. Push Results to UI
                 foreach (var item in query) FilteredTags.Add(item);
             });
         }
@@ -636,7 +955,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
 
         // --- CATEGORIES (Create & Update) ---
         [RelayCommand] public void OpenCreateCategory() => _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Category, FormMode.Create));
-        [RelayCommand] public void UpdateCategory(Category category) { if (category != null) _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Category, FormMode.Update, category.CategoryId)); }
+        [RelayCommand] public void UpdateCategory(Category category) { if (category != null) _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Category, FormMode.Update, category.Id)); }
 
         // --- CATEGORIES ---
         [RelayCommand]
@@ -676,7 +995,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
 
         // --- ACCOUNTS ---
         [RelayCommand] public void OpenCreateAccount() => _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Account, FormMode.Create));
-        [RelayCommand] public void UpdateAccount(Account account) { if (account != null) _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Account, FormMode.Update, account.AccountId)); }
+        [RelayCommand] public void UpdateAccount(Account account) { if (account != null) _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Account, FormMode.Update, account.Id)); }
 
         [RelayCommand]
         public async Task DeleteAccountAsync(Account account)
@@ -688,7 +1007,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
             {
                 try
                 {
-                    await _orchestrator.DeleteAccountAsync(account.AccountId, _cts.Token);
+                    await _orchestrator.DeleteAccountAsync(account.Id, _cts.Token);
                     await LoadAccountsAsync(isSilent: true);
                 }
                 catch (InvalidOperationException ex) // Catch Hard Block
@@ -700,8 +1019,10 @@ namespace IncomeExpenditureTracker.UI.MasterData
 
         // --- ENTITIES (Institutions) ---
         [RelayCommand] public void OpenCreateEntity() => _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Entity, FormMode.Create));
-        [RelayCommand] public void UpdateEntity(Entity entity) { if (entity != null) _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Entity, FormMode.Update, entity.EntityId)); }
-        [RelayCommand] public void MergeEntity(Entity entity) { if (entity != null) _broker.Send(new ShowEntityMergeModalMessage(DomainEntity.Entity, entity.EntityId, entity.Name)); }
+        [RelayCommand] public void UpdateEntity(Entity entity) { if (entity != null) _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Entity, FormMode.Update, entity.Id)); }
+
+        private bool CanMergeEntity(Entity entity) => Entities.Count > 1;
+        [RelayCommand(CanExecute = nameof(CanMergeEntity))] public void MergeEntity(Entity entity) { if (entity != null) _broker.Send(new ShowEntityMergeModalMessage(DomainEntity.Entity, entity.Id, entity.Name)); }
 
         [RelayCommand]
         public async Task DeleteEntityAsync(Entity entity)
@@ -711,7 +1032,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
             _broker.Send(new ShowConfirmationMessage("Delete Institution", $"Are you sure you want to delete '{entity.Name}'?", tcs));
             if (await tcs.Task)
             {
-                await _orchestrator.DeleteEntityAsync(entity.EntityId, _cts.Token);
+                await _orchestrator.DeleteEntityAsync(entity.Id, _cts.Token);
                 await LoadEntitiesAsync(isSilent: true);
             }
         }
@@ -742,7 +1063,7 @@ namespace IncomeExpenditureTracker.UI.MasterData
         {
             if (synonym == null) return;
             var tcs = new TaskCompletionSource<bool>();
-            _broker.Send(new ShowConfirmationMessage("Delete Synonym", $"Delete synonym '{synonym.SynonymsName}'?", tcs));
+            _broker.Send(new ShowConfirmationMessage("Delete Synonym", $"Delete synonym '{synonym.SynonymName}'?", tcs));
             if (await tcs.Task)
             {
                 await _orchestrator.DeleteSynonymAsync(synonym.SynonymsId, _cts.Token);
@@ -772,7 +1093,9 @@ namespace IncomeExpenditureTracker.UI.MasterData
             _broker.Send(new ShowEntityFormModalMessage(DomainEntity.Payee, FormMode.Update, payee.Id));
         }
 
-        [RelayCommand]
+        private bool CanMergePayee(Payee payee) => Payees.Count > 1;
+
+        [RelayCommand(CanExecute = nameof(CanMergePayee))]
         public void MergePayee(Payee payee)
         {
             if (payee == null) return;
@@ -874,9 +1197,12 @@ namespace IncomeExpenditureTracker.UI.MasterData
             {
                 case DomainEntity.Category:
                     await LoadCategoriesAsync(isSilent: true);
+                    await LoadSubCategoriesAsync(isSilent: true); // SubCategories rely on Categories
+                    await LoadTagsAsync(isSilent: true);          // Tags rely on Categories
                     break;
                 case DomainEntity.Tag:
                     await LoadTagsAsync(isSilent: true);
+                    await LoadTagRulesAsync(isSilent: true);      // Tag Rules rely on Tags
                     break;
                 case DomainEntity.Payee:
                     await LoadPayeesAsync(isSilent: true);
@@ -886,9 +1212,11 @@ namespace IncomeExpenditureTracker.UI.MasterData
                     break;
                 case DomainEntity.Account:
                     await LoadAccountsAsync(isSilent: true);
+                    await LoadAccountsAsync(isSilent: true);      // Accounts rely on Entities
                     break;
                 case DomainEntity.SubCategory:
                     await LoadSubCategoriesAsync(isSilent: true);
+                    await LoadTagsAsync(isSilent: true);          // Tags rely on SubCategories
                     break;
                 case DomainEntity.TagRule:
                     await LoadTagRulesAsync(isSilent: true);

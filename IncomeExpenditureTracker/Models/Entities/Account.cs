@@ -19,7 +19,7 @@ public class Account
 
     public string CardNumber { get; set; } = "";
 
-    public int EntityId { get; set; }
+    public int? EntityId { get; set; }
 
     public string EntityName { get; set; } = "";
 

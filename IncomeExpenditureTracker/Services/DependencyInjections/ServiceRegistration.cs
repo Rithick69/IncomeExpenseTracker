@@ -112,8 +112,17 @@ public static class ServiceRegistration
         // 2. Entity Form Modals
         services.AddTransient<AccountFormViewModel>();
         services.AddTransient<PayeeFormViewModel>();
+        services.AddTransient<EntityFormViewModel>();
+        services.AddTransient<CategoryFormViewModel>();
+        services.AddTransient<SubCategoryFormViewModel>();
+        services.AddTransient<SynonymFormViewModel>();
+        services.AddTransient<TagFormViewModel>();
+        services.AddTransient<TagRuleFormViewModel>();
+        services.AddTransient<UserSettingFormViewModel>();
+        services.AddTransient<MergeFormViewModel>();
 
-        // (Note: EntityFormViewModelBase is an abstract class and cannot be registered in DI)
+
+        // (Note: FormViewModelBase is an abstract class and cannot be registered in DI)
 
         // ---------------------------------------------------------
         // Profiles

@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:forms="clr-namespace:IncomeExpenditureTracker.UI.MasterData"
+             mc:Ignorable="d" d:DesignWidth="450" d:DesignHeight="350"
+             x:Class="IncomeExpenditureTracker.UI.MasterData.MergeFormView"
+             x:DataType="forms:MergeFormViewModel"
+             Width="450">
+
+    <!-- Triggers the initialization when the view loads -->
+    <UserControl.Styles>
+        <Style Selector="UserControl">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Classes="Card" Background="{DynamicResource BackgroundSecondary}">
+        <Grid RowDefinitions="Auto, Auto, Auto, Auto, Auto">
+
+            <TextBlock Grid.Row="0"
+                       Text="{Binding ModalTitle}"
+                       Classes="DisplayNumber"
+                       FontSize="24"
+                       Margin="0,0,0,16"/>
+
+            <TextBlock Grid.Row="1"
+                       Text="{Binding HelperText}"
+                       Foreground="{DynamicResource TextSecondary}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,24"/>
+
+            <TextBlock Grid.Row="2"
+                       Text="{DynamicResource Locale_Forms_Merge_TargetName}"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8"/>
+
+            <AutoCompleteBox Grid.Row="3"
+                             Text="{Binding TargetEntityName, Mode=TwoWay}"
+                             ItemsSource="{Binding AvailableTargets}"
+                             Watermark="{DynamicResource Locale_Forms_Merge_TargetNameWatermark}"
+                             FilterMode="ContainsOrdinal"
+                             GotFocus="OnDropDownFocus"
+                             Margin="0,0,0,32"/>
+
+            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
+                <Button Content="{DynamicResource Locale_Global_Button_Cancel}"
+                        Command="{Binding CancelCommand}"
+                        Background="Transparent"
+                        Foreground="{DynamicResource TextSecondary}"/>
+
+                <Button Content="{DynamicResource Locale_Forms_Merge_Save}"
+                        Classes="Primary"
+                        Command="{Binding ExecuteMergeCommand}"/>
+            </StackPanel>
+
+        </Grid>
+    </Border>
+</UserControl>

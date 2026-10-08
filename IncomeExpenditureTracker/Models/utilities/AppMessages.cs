@@ -74,43 +74,52 @@ namespace IncomeExpenditureTracker.Models
     /// <summary>
     /// Enriched DTO for Tags, flattening the relational hierarchy for zero-DB-call UI filtering.
     /// </summary>
-    public record TagHierarchyDto(
-        int TagId,
-        string TagName,
-        int? SubCategoryId,
-        string? SubCategoryName,
-        int? CategoryId,
-        string? CategoryName
-    );
+    public record TagHierarchyDto
+    {
+        // Dapper will automatically coerce SQLite's Int64 into these ints
+        public int TagId { get; init; }
+        public string TagName { get; init; } = string.Empty;
 
-    public record TagRuleHierarchyDto(
-        int TagRuleId,
-        int TagId,
-        string TagName,
-        string Keyword,
-        int? SubCategoryId,
-        string? SubCategoryName,
-        int? CategoryId,
-        string? CategoryName,
-        int Priority
-    );
+        // Nullable because of the LEFT JOIN
+        public int? SubCategoryId { get; init; }
+        public string? SubCategoryName { get; init; }
 
-    public record SynonymsHierarchyDto(
-        int SynonymsId,
-        string SynonymsName,
-        string CategoryName,
-        int Priority
-    );
+        public int? CategoryId { get; init; }
+        public string? CategoryName { get; init; }
+    };
+
+    public record TagRuleHierarchyDto
+    {
+        public int TagRuleId { get; init; }
+        public int TagId { get; init; }
+        public string TagName { get; init; } = string.Empty;
+        public string Keyword { get; init; } = string.Empty;
+        public int? SubCategoryId { get; init; }
+        public string? SubCategoryName { get; init; }
+        public int? CategoryId { get; init; }
+        public string? CategoryName { get; init; }
+        public int Priority { get; init; }
+    };
+
+    public record SynonymsHierarchyDto
+    {
+        public int SynonymsId { get; init; }
+        public string SynonymName { get; init; } = string.Empty;
+        public string FieldType { get; init; } = string.Empty;
+        public string CategoryName { get; init; } = string.Empty;
+        public int Priority { get; init; }
+    };
 
     /// <summary>
     /// Enriched DTO for SubCategories, mapping them to their parent Categories.
     /// </summary>
-    public record SubCategoryHierarchyDto(
-        int SubCategoryId,
-        string SubCategoryName,
-        int CategoryId,
-        string CategoryName
-    );
+    public record SubCategoryHierarchyDto
+    {
+        public int SubCategoryId { get; init; }
+        public string SubCategoryName { get; init; } = string.Empty;
+        public int CategoryId { get; init; }
+        public string CategoryName { get; init; } = string.Empty;
+    };
 
     /// <summary>
     /// Broadcast when a new entity is successfully saved.
@@ -126,7 +135,7 @@ namespace IncomeExpenditureTracker.Models
     /// <summary>
     /// Broadcast when an entity is successfully updated.
     /// </summary>
-    public record EntityUpdatedMessage(DomainEntity EntityType, long? EntityId = null, string? EntityName = null);
+    public record EntityUpdatedMessage(DomainEntity EntityType, int? EntityId = null, string? EntityName = null);
 
     /// <summary>
     /// Broadcast when a CRUD operation fails.
@@ -241,12 +250,12 @@ namespace IncomeExpenditureTracker.Models
     /// <summary>
     /// Broadcast to open the dynamic Create/Update form modal (e.g., AccountFormView)
     /// </summary>
-    public record ShowEntityFormModalMessage(DomainEntity EntityType, FormMode Mode, long? EntityId = null);
+    public record ShowEntityFormModalMessage(DomainEntity EntityType, FormMode Mode, int? EntityId = null);
 
     /// <summary>
     /// Broadcast to open the specific Merge resolution modal.
     /// </summary>
-    public record ShowEntityMergeModalMessage(DomainEntity EntityType, long SourceId, string SourceName);
+    public record ShowEntityMergeModalMessage(DomainEntity EntityType, int SourceId, string SourceName);
 
     /// <summary>
     /// Broadcast by a modal ViewModel (Save/Cancel) to tell the MainWindow to close the overlay.

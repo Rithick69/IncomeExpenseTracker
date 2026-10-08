@@ -13,7 +13,7 @@ public interface ISubCategoryService
 {
     Task<int> GetOrCreateSubCategory(string name, int? categoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
     Task<List<SubCategory>> GetAllSubCategories(CancellationToken ct = default);
-    Task<List<SubCategory>> GetSubCategoriesByCategoryId(int categoryId, CancellationToken ct = default);
+    Task<List<SubCategory>> GetSubCategoriesByCategoryId(int? categoryId, CancellationToken ct = default);
     Task UpdateSubCategory(SubCategory subCategory, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
     Task DeleteSubCategory(int subCategoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
     Task DeleteByCategoryId(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);

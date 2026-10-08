@@ -238,8 +238,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
         {
             // Arrange
             var orchestrator = CreateOrchestrator();
-            long targetPayeeId = 15;
-            var sourcePayeeIds = new List<long> { 12, 13, 15, 18 }; // 15 is duplicated here
+            int targetPayeeId = 15;
+            var sourcePayeeIds = new List<int> { 12, 13, 15, 18 }; // 15 is duplicated here
 
             // Act & Assert
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
@@ -253,8 +253,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
         {
             // Arrange
             var orchestrator = CreateOrchestrator();
-            long targetPayeeId = 15;
-            var sourcePayeeIds = new List<long>(); // Empty
+            int targetPayeeId = 15;
+            var sourcePayeeIds = new List<int>(); // Empty
 
             // Act
             await orchestrator.MergePayeesAsync(targetPayeeId, sourcePayeeIds);

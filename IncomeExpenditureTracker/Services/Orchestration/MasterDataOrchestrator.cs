@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Dapper;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Entities;
@@ -96,7 +97,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
 
     public async Task<bool> IsUniqueAsync(DomainEntity entityType, string propertyName, string value, int? excludeId = null, CancellationToken ct = default)
     {
-        return await _dbService.ExecuteWithRetryAsync(async (conn, tx) =>
+        return await _database.ExecuteWithRetryAsync(async (conn, tx) =>
         {
             // 1. Safely resolve table and primary key names to prevent SQL injection
             string tableName = entityType switch
@@ -112,12 +113,6 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
 
             string primaryKeyColumn = entityType switch
             {
-                DomainEntity.Category => "CategoryId",
-                DomainEntity.SubCategory => "SubCategoryId",
-                DomainEntity.Tag => "TagId",
-                DomainEntity.Entity => "EntityId",
-                DomainEntity.Account => "AccountId",
-                DomainEntity.Payee => "PayeeId",
                 _ => "Id"
             };
 
@@ -132,7 +127,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
                 sql += $" AND {primaryKeyColumn} != @ExcludeId";
             }
 
-            int count = await conn.ExecuteScalarAsync<int>(sql, new { Value = value, ExcludeId = excludeId }, transaction: tx);
+            int count = await conn.ExecuteScalarAsync<int>(sql, new { Value = value, ExcludeId = excludeId });
 
             return count == 0;
         }, ct);
@@ -143,7 +138,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         if (properties == null || properties.Count == 0)
             throw new ArgumentException("At least one property must be provided for a uniqueness check.");
 
-        return await _dbService.ExecuteWithRetryAsync(async (conn, tx) =>
+        return await _database.ExecuteWithRetryAsync(async (conn, tx) =>
         {
             string tableName = entityType switch
             {
@@ -154,17 +149,12 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
                 DomainEntity.Account => "Accounts",
                 DomainEntity.Payee => "Payees",
                 DomainEntity.Synonym => "Synonyms",
+                DomainEntity.TagRule => "TagRules",
                 _ => throw new ArgumentException($"Unsupported entity type: {entityType}")
             };
 
             string primaryKeyColumn = entityType switch
             {
-                DomainEntity.Category => "CategoryId",
-                DomainEntity.SubCategory => "SubCategoryId",
-                DomainEntity.Tag => "TagId",
-                DomainEntity.Entity => "EntityId",
-                DomainEntity.Account => "AccountId",
-                DomainEntity.Payee => "PayeeId",
                 _ => "Id"
             };
 
@@ -186,7 +176,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
                 parameters.Add("ExcludeId", excludeId.Value);
             }
 
-            int count = await conn.ExecuteScalarAsync<int>(sql, parameters, transaction: tx);
+            int count = await conn.ExecuteScalarAsync<int>(sql, parameters);
             return count == 0;
         }, ct);
     }
@@ -197,7 +187,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
 
     public async Task<IEnumerable<TagHierarchyDto>> GetAllTagsWithHierarchyAsync(CancellationToken ct = default)
     {
-        return await _dbService.ExecuteWithRetryAsync(async (conn, tx) =>
+        return await _database.ExecuteWithRetryAsync(async (conn, tx) =>
         {
             const string sql = @"
             SELECT
@@ -209,16 +199,16 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
                 c.Name AS CategoryName
             FROM Tags t
             LEFT JOIN SubCategories s ON t.SubCategoryId = s.Id
-            LEFT JOIN Categories c ON s.Id = c.CategoryId
+            LEFT JOIN Categories c ON s.CategoryId = c.Id
             ORDER BY t.Name;";
 
-            return await conn.QueryAsync<TagHierarchyDto>(sql, transaction: tx);
+            return await conn.QueryAsync<TagHierarchyDto>(sql);
         }, ct);
     }
 
     public async Task<IEnumerable<SubCategoryHierarchyDto>> GetAllSubCategoriesWithHierarchyAsync(CancellationToken ct = default)
     {
-        return await _dbService.ExecuteWithRetryAsync(async (conn, tx) =>
+        return await _database.ExecuteWithRetryAsync(async (conn, tx) =>
         {
             const string sql = @"
             SELECT
@@ -230,17 +220,17 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
             LEFT JOIN Categories c ON s.CategoryId = c.Id
             ORDER BY s.Name;";
 
-            return await conn.QueryAsync<SubCategoryHierarchyDto>(sql, transaction: tx);
+            return await conn.QueryAsync<SubCategoryHierarchyDto>(sql);
         }, ct);
     }
 
     public async Task<IEnumerable<TagRuleHierarchyDto>> GetAllTagRulesWithHierarchyAsync(CancellationToken ct = default)
     {
-        return await _dbService.ExecuteWithRetryAsync(async (conn, tx) =>
+        return await _database.ExecuteWithRetryAsync(async (conn, tx) =>
         {
             const string sql = @"
             SELECT
-                tr.TagRuleId,
+                tr.Id As TagRuleId,
                 tr.Id As TagId,
                 t.Name AS TagName,
                 tr.Keyword,
@@ -255,25 +245,26 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
             LEFT JOIN Categories c ON s.CategoryId = c.Id
             ORDER BY tr.Priority DESC, tr.Keyword;";
 
-            return await conn.QueryAsync<TagRuleHierarchyDto>(sql, transaction: tx);
+            return await conn.QueryAsync<TagRuleHierarchyDto>(sql);
         }, ct);
     }
 
     public async Task<IEnumerable<SynonymsHierarchyDto>> GetAllSynonymsWithHierarchyAsync(CancellationToken ct = default)
     {
-        return await _dbService.ExecuteWithRetryAsync(async (conn, tx) =>
+        return await _database.ExecuteWithRetryAsync(async (conn, tx) =>
         {
             // Assuming your Synonyms table uses Id and RawString based on standard nomenclature
             const string sql = @"
             SELECT
                 Id AS SynonymsId,
-                Synonym AS SynonymsName,
+                Synonym AS SynonymName,
+                FieldType,
                 Category AS CategoryName,
                 Priority
             FROM Synonyms
             ORDER BY Category, Synonym;";
 
-            return await conn.QueryAsync<SynonymsHierarchyDto>(sql, transaction: tx);
+            return await conn.QueryAsync<SynonymsHierarchyDto>(sql);
         }, ct);
     }
 
@@ -485,7 +476,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         }
     }
 
-    public async Task<int> GetOrCreateSubCategoryAsync(string name, int categoryId, CancellationToken ct = default)
+    public async Task<int> GetOrCreateSubCategoryAsync(string name, int? categoryId = null, CancellationToken ct = default)
 
     {
         try
@@ -740,11 +731,11 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
             throw;
         }
     }
-    public async Task<int> AddTagRuleAsync(string keyword, int tagId, int priority = 10, CancellationToken ct = default)
+    public async Task<int> AddTagRuleAsync(string keyword, int tagId, CancellationToken ct = default)
     {
         try
         {
-            int id = await _tagService.AddRuleAsync(keyword, tagId, priority, ct: ct);
+            int id = await _tagService.AddRuleAsync(keyword, tagId, ct: ct);
 
             _logger.LogInformation("Successfully inserted keyword '{keyword}' for tag id '{TagId}'.", keyword, tagId);
             _broker.Send(new EntitySavedMessage(DomainEntity.TagRule, keyword));
@@ -768,11 +759,11 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         }
     }
 
-    public async Task UpdateTagRuleAsync(int ruleId, string keyword, int tagId, int priority, CancellationToken ct = default)
+    public async Task UpdateTagRuleAsync(int ruleId, string keyword, int tagId, CancellationToken ct = default)
     {
         try
         {
-            await _tagService.UpdateRuleAsync(ruleId, keyword, tagId, priority, ct: ct);
+            await _tagService.UpdateRuleAsync(ruleId, keyword, tagId, ct: ct);
 
             _logger.LogInformation("Successfully updated ruleId {RuleId}.", ruleId);
             _broker.Send(new EntityUpdatedMessage(DomainEntity.TagRule, ruleId, $"ID: {ruleId}"));
@@ -1448,7 +1439,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         }
     }
 
-    public async Task DeletePayeeAsync(long payeeId, CancellationToken ct = default)
+    public async Task DeletePayeeAsync(int payeeId, CancellationToken ct = default)
     {
         try
         {
@@ -1472,7 +1463,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         }
     }
 
-    public async Task AddPayeeMappingAsync(string cleanedDescription, long payeeId, CancellationToken ct = default)
+    public async Task AddPayeeMappingAsync(string cleanedDescription, int payeeId, CancellationToken ct = default)
     {
         try
         {
@@ -1496,7 +1487,7 @@ public class MasterDataOrchestrator : IMasterDataOrchestrator
         }
     }
 
-    public async Task MergePayeesAsync(long targetPayeeId, List<long>? sourcePayeeIds, CancellationToken ct = default)
+    public async Task MergePayeesAsync(int targetPayeeId, List<int>? sourcePayeeIds, CancellationToken ct = default)
     {
         // 1. Fail fast if the user cancelled
         ct.ThrowIfCancellationRequested();

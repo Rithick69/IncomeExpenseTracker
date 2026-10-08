@@ -192,6 +192,21 @@
         </Grid>
 
         <!-- ========================================== -->
+        <!-- Z-INDEX 105: GLOBAL FORM OVERLAY           -->
+        <!-- ========================================== -->
+        <!-- This layer acts as the dynamic host for all CRUD and Merge forms -->
+        <Grid Background="#99000000"
+            IsVisible="{Binding IsFormModalVisible}"
+            ZIndex="105">
+
+            <!-- ViewLocator will automatically turn the ActiveModalContent (TagFormViewModel)
+                into the visual view (TagFormView) and place it dead center -->
+            <ContentControl Content="{Binding ActiveModalContent}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- ========================================== -->
         <!-- Z-INDEX 150: GLOBAL LOADING CURTAIN        -->
         <!-- ========================================== -->
         <!-- Absorbs all mouse clicks and dims the background for heavy CPU tasks -->

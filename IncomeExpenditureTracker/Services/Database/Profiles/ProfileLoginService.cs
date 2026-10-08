@@ -83,6 +83,9 @@ namespace IncomeExpenditureTracker.Services.Database
                 DateTime? newLockout = newFailCount >= 5 ? DateTime.UtcNow.AddMinutes(5) : null;
 
                 await _registry.UpdateLockoutStateAsync(profile.ProfileName, newFailCount, newLockout);
+
+                // Destroy the password in RAM because authentication failed
+                password.Dispose();
                 return false;
             }
 

@@ -3,7 +3,7 @@ namespace IncomeExpenditureTracker.Models;
 
 public class Payee
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
 
     /// <summary>
     /// The user-facing name of the merchant (e.g., "Infosys Ltd", "Zomato").

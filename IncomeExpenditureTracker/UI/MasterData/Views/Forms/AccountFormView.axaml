@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.MasterData"
+             mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="450"
+             x:Class="IncomeExpenditureTracker.UI.MasterData.AccountFormView"
+             x:DataType="vm:AccountFormViewModel"
+             Width="600">
+
+    <UserControl.Styles>
+        <Style Selector="UserControl">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="AutoCompleteBox">
+            <Setter Property="Background" Value="{DynamicResource BackgroundPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Classes="Card" Background="{DynamicResource BackgroundSecondary}" Padding="32">
+        <!-- 2-Column Grid with automatic spacing -->
+        <Grid ColumnDefinitions="*, *" RowDefinitions="Auto, Auto, Auto, Auto, Auto, Auto"
+              ColumnSpacing="24" RowSpacing="20">
+
+            <!-- Header (Spans across both columns) -->
+            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                       Text="{DynamicResource Locale_Forms_Account_Title}"
+                       Classes="DisplayNumber"
+                       FontSize="24"
+                       Margin="0,0,0,8"/>
+
+            <!-- Helper Text for Mutual Exclusion -->
+            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                       Text="{DynamicResource Locale_Forms_Account_HelperText}"
+                       Foreground="{DynamicResource TextSecondary}"
+                       FontStyle="Italic"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       Margin="0,-12,0,8"/>
+
+            <!-- Row 2: Identification -->
+            <StackPanel Grid.Row="2" Grid.Column="0" Spacing="8">
+                <TextBlock Text="{DynamicResource Locale_Forms_Account_AccNum}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+                <TextBox Text="{Binding AccountNumber, Mode=TwoWay}" IsEnabled="{Binding IsAccountNumberEnabled}" Watermark="{DynamicResource Locale_Forms_Account_AccNumWatermark}"/>
+            </StackPanel>
+
+            <StackPanel Grid.Row="2" Grid.Column="1" Spacing="8">
+                <TextBlock Text="{DynamicResource Locale_Forms_Account_CardNum}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+                <TextBox Text="{Binding CardNumber, Mode=TwoWay}" IsEnabled="{Binding IsCardNumberEnabled}" Watermark="{DynamicResource Locale_Forms_Account_CardNumWatermark}"/>
+            </StackPanel>
+
+            <!-- Row 3: Categorization -->
+            <StackPanel Grid.Row="3" Grid.Column="0" Spacing="8">
+                <TextBlock Text="{DynamicResource Locale_Forms_Account_Institute}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+                <AutoCompleteBox Text="{Binding EntityName, Mode=TwoWay}"
+                                 ItemsSource="{Binding AvailableEntities}"
+                                 FilterMode="ContainsOrdinal"
+                                 MinimumPrefixLength="0"
+                                 MaxDropDownHeight="200"
+                                 Watermark="{DynamicResource Locale_Forms_Account_InstituteWatermark}"
+                                 GotFocus="OnDropDownFocus"/>
+            </StackPanel>
+
+            <StackPanel Grid.Row="3" Grid.Column="1" Spacing="8">
+                <TextBlock Text="{DynamicResource Locale_Forms_Account_Type}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+                <!-- DisplayMemberPath removed because we are binding to a string list -->
+                <ComboBox SelectedItem="{Binding AccountType, Mode=TwoWay}"
+                          ItemsSource="{Binding AvailableAccountTypes}"
+                          HorizontalAlignment="Stretch"
+                          PlaceholderText="{DynamicResource Locale_Forms_Account_TypeWatermark}"/>
+            </StackPanel>
+
+            <!-- Row 4: Financials -->
+            <StackPanel Grid.Row="4" Grid.Column="0" Spacing="8">
+                <TextBlock Text="{DynamicResource Locale_Forms_Account_Currency}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+                <ComboBox SelectedItem="{Binding Currency, Mode=TwoWay}"
+                          ItemsSource="{Binding AvailableCurrencies}"
+                          HorizontalAlignment="Stretch"
+                          PlaceholderText="{DynamicResource Locale_Forms_Account_CurrencyWatermark}"/>
+            </StackPanel>
+
+            <StackPanel Grid.Row="4" Grid.Column="1" Spacing="8">
+                <TextBlock Text="{DynamicResource Locale_Forms_Account_CreditLimit}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+                <TextBox Text="{Binding CreditLimit, Mode=TwoWay}" Watermark="{DynamicResource Locale_Forms_Account_CreditLimitWatermark}"/>
+            </StackPanel>
+
+            <!-- Row 5: Action Bar (Spans both columns, pushed to the right) -->
+            <StackPanel Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2"
+                        Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,12,0,0">
+                <Button Content="{DynamicResource Locale_Global_Button_Cancel}"
+                        Command="{Binding CancelCommand}"
+                        Background="Transparent"
+                        Foreground="{DynamicResource TextSecondary}"/>
+
+                <Button Content="{DynamicResource Locale_Forms_Account_Save}"
+                        Classes="Primary"
+                        Command="{Binding SaveCommand}"/>
+            </StackPanel>
+
+        </Grid>
+    </Border>
+</UserControl>

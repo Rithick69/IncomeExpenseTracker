@@ -160,7 +160,7 @@ public partial class LoginViewModel : ViewModelBase
         }
 
         IsLoading = true;
-        using var securePassword = new SecureString();
+        var securePassword = new SecureString();
 
         Broker.Send(new ShowLoadingOverlayMessage("Decrypting Vault..."));
 

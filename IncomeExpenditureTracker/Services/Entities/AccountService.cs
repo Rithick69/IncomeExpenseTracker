@@ -181,11 +181,11 @@ public class AccountService : IAccountService, IDisposable
         }
     }
 
-    public async Task<List<Account>> GetAccountsByEntityId(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
+    public async Task<List<Account>> GetAccountsByEntityId(int? entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        var cacheKey = $"ENTITY_ACCOUNTS_{entityId?.ToString() ?? "NULL"}";
 
-        var cacheKey = $"ENTITY_ACCOUNTS_{entityId}";
 
         try
         {
@@ -195,7 +195,7 @@ public class AccountService : IAccountService, IDisposable
             {
                 return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
                 {
-                    const string sql = "SELECT * FROM Accounts WHERE EntityId = @EntityId ORDER BY AccountNumber ASC;";
+                    const string sql = "SELECT * FROM Accounts WHERE EntityId IS @EntityId ORDER BY AccountNumber ASC;";
                     var cmd = new CommandDefinition(sql, new { EntityId = entityId }, transaction: transaction, cancellationToken: cancelToken);
                     var accounts = await connection.QueryAsync<Account>(cmd);
                     return accounts.ToList();
@@ -210,7 +210,7 @@ public class AccountService : IAccountService, IDisposable
                     // Only one thread will ever run this block per cache miss for this specific EntityId
                     return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
                     {
-                        const string sql = "SELECT * FROM Accounts WHERE EntityId = @EntityId ORDER BY AccountNumber ASC;";
+                        const string sql = "SELECT * FROM Accounts WHERE EntityId IS @EntityId ORDER BY AccountNumber ASC;";
                         var cmd = new CommandDefinition(sql, new { EntityId = entityId }, transaction: transaction, cancellationToken: cancelToken);
                         var accounts = await connection.QueryAsync<Account>(cmd);
                         return accounts.ToList();
@@ -266,17 +266,20 @@ public class AccountService : IAccountService, IDisposable
                 // Get the value of the property for the given account instance.
                 var value = prop.GetValue(account);
 
+                // EntityId is nullable by design.
+                // NULL means the account should be unassigned from its entity.
                 // Only include properties that have a non-null value to allow for partial updates.
-
-                if (value != null)
+                if (prop.Name == nameof(Account.EntityId) || value != null)
                 {
                     // If the property has a value, we add it to the list of updates in the format "PropertyName = @PropertyName".
                     updates.Add($"{prop.Name} = @{prop.Name}");
                 }
             }
             // If there are no properties to update, we can skip the database call.
-            if (!updates.Any())
+            if (updates.Count == 0)
+            {
                 return;
+            }
 
             var sql = $@"
                 UPDATE Accounts
@@ -407,7 +410,7 @@ public class AccountService : IAccountService, IDisposable
         }
     }
 
-    public async Task ReassignAccountsAsync(int oldEntityId, int targetEntityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
+    public async Task ReassignAccountsAsync(int? oldEntityId, int? targetEntityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -416,7 +419,7 @@ public class AccountService : IAccountService, IDisposable
             const string sql = @"
                 UPDATE Accounts
                 SET EntityId = @targetEntityId
-                WHERE EntityId = @OldEntityId;";
+                WHERE EntityId IS @OldEntityId;";
 
             if (conn != null)
             {

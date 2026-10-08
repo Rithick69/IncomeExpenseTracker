@@ -115,7 +115,7 @@ public interface IMasterDataOrchestrator
 
     Task<List<SubCategory>> GetAllSubCategoriesAsync(CancellationToken ct = default);
     Task<List<SubCategory>> GetSubCategoriesByCategoryIdAsync(int categoryId, CancellationToken ct = default);
-    Task<int> GetOrCreateSubCategoryAsync(string name, int categoryId, CancellationToken ct = default);
+    Task<int> GetOrCreateSubCategoryAsync(string name, int? categoryId, CancellationToken ct = default);
     Task UpdateSubCategoryAsync(SubCategory subCategory, CancellationToken ct = default);
 
     /// <summary>
@@ -151,8 +151,8 @@ public interface IMasterDataOrchestrator
     #region Tag Rule Management
 
     Task<RuleBookSnapshot> GetRuleBookSnapshotAsync(CancellationToken ct = default);
-    Task<int> AddTagRuleAsync(string keyword, int tagId, int priority = 10, CancellationToken ct = default);
-    Task UpdateTagRuleAsync(int ruleId, string keyword, int tagId, int priority, CancellationToken ct = default);
+    Task<int> AddTagRuleAsync(string keyword, int tagId, CancellationToken ct = default);
+    Task UpdateTagRuleAsync(int ruleId, string keyword, int tagId, CancellationToken ct = default);
     Task DeleteTagRuleAsync(int ruleId, CancellationToken ct = default);
     Task DeleteTagRulesByKeywordsAsync(IEnumerable<string> keywords, int tagId, CancellationToken ct = default);
 
@@ -234,8 +234,8 @@ public interface IMasterDataOrchestrator
     Task<IEnumerable<Payee>> GetAllPayeesAsync(CancellationToken ct = default);
     Task<Payee> CreatePayeeAsync(Payee payee, CancellationToken ct = default);
     Task UpdatePayeeAsync(Payee payee, CancellationToken ct = default);
-    Task DeletePayeeAsync(long payeeId, CancellationToken ct = default);
-    Task AddPayeeMappingAsync(string cleanedDescription, long payeeId, CancellationToken ct = default);
-    Task MergePayeesAsync(long targetPayeeId, List<long> sourcePayeeIds, CancellationToken ct = default);
+    Task DeletePayeeAsync(int payeeId, CancellationToken ct = default);
+    Task AddPayeeMappingAsync(string cleanedDescription, int payeeId, CancellationToken ct = default);
+    Task MergePayeesAsync(int targetPayeeId, List<int> sourcePayeeIds, CancellationToken ct = default);
     #endregion
 }

@@ -504,7 +504,7 @@ public class TagService : ITagService, IDisposable
         }, LazyThreadSafetyMode.ExecutionAndPublication)).Value;
     }
 
-    public async Task<int> AddRuleAsync(string keyword, int tagId, int priority = 10, CancellationToken ct = default)
+    public async Task<int> AddRuleAsync(string keyword, int tagId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -512,20 +512,31 @@ public class TagService : ITagService, IDisposable
             throw new ArgumentException("Rule keyword cannot be empty.", nameof(keyword));
 
         const string sql = "INSERT INTO TagRules (Keyword, TagId, Priority) VALUES (@Keyword, @TagId, @Priority); SELECT last_insert_rowid();";
+        const string maxPriSql = "SELECT COALESCE(MAX(Priority), 10) FROM TagRules WHERE TagId = @TagId;";
 
         try
         {
-            _logger.LogDebug("Adding new TagRule: Keyword='{Keyword}', TagId={TagId}, Priority={Priority}", keyword, tagId, priority);
+            _logger.LogDebug("Adding new TagRule: Keyword='{Keyword}', TagId={TagId}", keyword, tagId);
 
             var id = await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
             {
+                var maxcmd = new CommandDefinition(
+                    maxPriSql,
+                    new
+                    {
+                        TagId = tagId
+                    },
+                    cancellationToken: cancelToken
+                );
+                var maxPriority = await conn.ExecuteScalarAsync<int>(maxcmd);
+                int newPriority = maxPriority + 1;
                 var cmd = new CommandDefinition(
                     sql,
                     new
                     {
                         Keyword = keyword.ToUpperInvariant(),
                         TagId = tagId,
-                        Priority = priority
+                        Priority = newPriority
                     },
                     cancellationToken: cancelToken
                 );
@@ -546,18 +557,18 @@ public class TagService : ITagService, IDisposable
         }
     }
 
-    public async Task UpdateRuleAsync(int ruleId, string keyword, int tagId, int priority, CancellationToken ct = default)
+    public async Task UpdateRuleAsync(int ruleId, string keyword, int tagId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
         if (string.IsNullOrWhiteSpace(keyword))
             throw new ArgumentException("Rule keyword cannot be empty.", nameof(keyword));
 
-        const string sql = "UPDATE TagRules SET Keyword = @Keyword, TagId = @TagId, Priority = @Priority WHERE Id = @Id;";
+        const string sql = "UPDATE TagRules SET Keyword = @Keyword, TagId = @TagId WHERE Id = @Id;";
 
         try
         {
-            _logger.LogDebug("Updating RuleId {RuleId}: Keyword='{Keyword}', TagId={TagId}, Priority={Priority}", ruleId, keyword, tagId, priority);
+            _logger.LogDebug("Updating RuleId {RuleId}: Keyword='{Keyword}', TagId={TagId}", ruleId, keyword, tagId);
 
             await _databaseService.ExecuteWithRetryAsync(async (conn, cancelToken) =>
             {
@@ -568,7 +579,6 @@ public class TagService : ITagService, IDisposable
                         Id = ruleId,
                         Keyword = keyword.ToUpperInvariant(),
                         TagId = tagId,
-                        Priority = priority
                     },
                     cancellationToken: cancelToken
                 );

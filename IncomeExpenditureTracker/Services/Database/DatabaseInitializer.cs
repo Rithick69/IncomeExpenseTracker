@@ -94,7 +94,7 @@ public class DatabaseInitializer : IDatabaseInitializer
                     CategoryId INTEGER,
                     CreatedDate DATETIME DEFAULT (datetime('now')),
                     FOREIGN KEY(CategoryId) REFERENCES Categories(Id),
-                    CONSTRAINT unique_subcategory UNIQUE(Name, CategoryId)
+                    UNIQUE(Name, CategoryId)
                 );
 
                 ------------------------------------------------------------
@@ -114,8 +114,7 @@ public class DatabaseInitializer : IDatabaseInitializer
                     Name TEXT NOT NULL UNIQUE,
                     SubCategoryId INTEGER,
                     CreatedDate DATETIME DEFAULT (datetime('now')),
-                    FOREIGN KEY(SubCategoryId) REFERENCES SubCategories(Id),
-                    CONSTRAINT unique_tag UNIQUE(Name, SubCategoryId)
+                    FOREIGN KEY(SubCategoryId) REFERENCES SubCategories(Id)
                 );
 
                 ------------------------------------------------------------
@@ -135,7 +134,7 @@ public class DatabaseInitializer : IDatabaseInitializer
                 CREATE TABLE IF NOT EXISTS TagRules (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Keyword TEXT NOT NULL,
-                    TagId INTEGER,
+                    TagId INTEGER NOT NULL,
                     Priority INTEGER DEFAULT 10,
                     CreatedDate DATETIME DEFAULT (datetime('now')),
                     FOREIGN KEY(TagId) REFERENCES Tags(Id),
