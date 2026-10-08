@@ -33,12 +33,29 @@
     </Style>
 
     <!-- UI COMPONENT: TEXTBOX & COMBOBOX (Form Inputs) -->
-    <Style Selector="TextBox, ComboBox">
+    <Style Selector="TextBox, ComboBox, DropDownButton">
         <Setter Property="CornerRadius" Value="6"/>
         <Setter Property="Padding" Value="12,8"/>
         <Setter Property="Background" Value="{DynamicResource BackgroundPrimary}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+    </Style>
+
+    <!-- UI COMPONENT: DROPDOWN BUTTON HOVER & PRESSED OVERRIDES -->
+
+    <!-- HOVER STATE: Keep background static, highlight only the border -->
+    <Style Selector="DropDownButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource BackgroundPrimary}"/>
+        <!-- A slightly brighter border for the hover highlight -->
+        <Setter Property="BorderBrush" Value="{DynamicResource TextSecondary}"/>
+        <Setter Property="TextBlock.Foreground" Value="{DynamicResource TextPrimary}"/>
+    </Style>
+
+    <!-- PRESSED / FLYOUT OPEN STATE: Revert border to normal, keep background static -->
+    <Style Selector="DropDownButton:pressed /template/ ContentPresenter#PART_ContentPresenter, DropDownButton:flyout-open /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource BackgroundPrimary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}"/>
+        <Setter Property="TextBlock.Foreground" Value="{DynamicResource TextPrimary}"/>
     </Style>
 
     <!-- UI COMPONENT: DATAGRID (Tabular Numerals Enforced) -->

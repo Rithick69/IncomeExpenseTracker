@@ -130,7 +130,7 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
                 // C.Perform O(1) Exact - Match Lookup
                 if (isCredit)
                 {
-                    if (!string.IsNullOrWhiteSpace(txn.Source) && payeeMappings.TryGetValue(txn.Source, out long payeeId))
+                    if (!string.IsNullOrWhiteSpace(txn.Source) && payeeMappings.TryGetValue(txn.Source, out int payeeId))
                     {
                         txn.PayeeId = payeeId;
                     }

@@ -82,7 +82,7 @@ public class Transaction
     /// <summary>
     /// The assigned Payee. Left null if the CleanedDescription has no mapping.
     /// </summary>
-    public long? PayeeId { get; set; }
+    public int? PayeeId { get; set; }
 
     /// <summary>
     /// The bitwise state machine replacing NeedsReview.

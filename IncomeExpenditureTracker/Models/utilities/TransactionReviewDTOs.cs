@@ -22,13 +22,13 @@ public enum ReviewFlags
 /// </summary>
 public record TransactionCorrectionDTO
 {
-    public long TransactionId { get; init; }
+    public int TransactionId { get; init; }
     public string Source { get; init; } = string.Empty; // The CleanedDescription exact-match key
     public string RawDescription { get; init; } = string.Empty; // Used for Tag Engine learning
     public DateTime Date { get; init; }
     public decimal Debit { get; init; }
     public decimal Credit { get; init; }
-    public long? PayeeId { get; init; }
+    public int? PayeeId { get; init; }
     public int? TargetTagId { get; init; }
     public ReviewFlags ReviewStatus { get; init; } // Bound directly to pass down user UI flag clears
 }

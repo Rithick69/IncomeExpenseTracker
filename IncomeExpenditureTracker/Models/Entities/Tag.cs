@@ -33,7 +33,7 @@ public class Tag
     public string Name { get; set; } = "";
 
     // Foreign key referencing SubCategory
-    public int SubCategoryId { get; set; }
+    public int? SubCategoryId { get; set; }
 
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 }

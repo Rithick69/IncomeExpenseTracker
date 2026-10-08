@@ -128,14 +128,14 @@ public class TagEngine : ITagEngine
                         // -------------------------------------------------------------------------
                         // STEP A: TOKEN EVALUATION & SCORE AGGREGATION
                         // -------------------------------------------------------------------------
-                        // Iterate over all sliding-window tokens generated for this row[cite: 2, 3]
+                        // Iterate over all sliding-window tokens generated for this row
                         for (int t = 0; t < tokens.Count; t++)
                         {
                             var token = tokens[t];
                             if (string.IsNullOrWhiteSpace(token))
                                 continue;
 
-                            // O(1) array lookup against pre-sorted priority rules[cite: 1, 3]
+                            // O(1) array lookup against pre-sorted priority rules
                             if (ruleIndex.TryGetValue(token, out var matchingRules))
                             {
                                 for (int r = 0; r < matchingRules.Length; r++)

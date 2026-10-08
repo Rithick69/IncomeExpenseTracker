@@ -1,0 +1,75 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.MasterData"
+             mc:Ignorable="d" d:DesignWidth="450" d:DesignHeight="450"
+             x:Class="IncomeExpenditureTracker.UI.MasterData.PayeeFormView"
+             x:DataType="vm:PayeeFormViewModel"
+             Width="450">
+
+   <UserControl.Styles>
+        <Style Selector="UserControl">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <!-- Optional: Forces AutoCompleteBox to look slightly more like a dropdown -->
+        <Style Selector="AutoCompleteBox">
+            <Setter Property="Background" Value="{DynamicResource BackgroundPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Classes="Card" Background="{DynamicResource BackgroundSecondary}" Padding="24">
+        <Grid RowDefinitions="Auto, Auto, Auto, Auto, Auto, Auto, Auto, Auto">
+
+            <!-- Header -->
+            <TextBlock Grid.Row="0"
+                       Text="{DynamicResource Locale_Forms_Payee_Title}"
+                       Classes="DisplayNumber"
+                       FontSize="24"
+                       Margin="0,0,0,24"/>
+
+            <!-- Helper Text for Mutual Exclusion -->
+            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                       Text="{DynamicResource Locale_Forms_Payee_HelperText}"
+                       Foreground="{DynamicResource TextSecondary}"
+                       FontStyle="Italic"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       Margin="0,-12,0,8"/>
+
+            <!-- Name Field -->
+            <TextBlock Grid.Row="2"
+                       Text="{DynamicResource Locale_Forms_Payee_Name}"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimary}"
+                       Margin="0,0,0,8"/>
+            <TextBox Grid.Row="3"
+                     Text="{Binding Name, Mode=TwoWay}"
+                     Watermark="{DynamicResource Locale_Forms_Payee_NameWatermark}"
+                     Margin="0,0,0,16"/>
+
+            <!-- Default Income Source Checkbox-->
+            <CheckBox Grid.Row="4"
+                      IsChecked="{Binding DefaultIncomeSource, Mode=TwoWay}"
+                      Content="{DynamicResource Locale_Forms_Payee_DefaultIncome}"
+                      Margin="0,0,0,16"/>
+
+            <!-- Action Bar -->
+            <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
+
+                <Button Content="{DynamicResource Locale_Global_Button_Cancel}"
+                        Command="{Binding CancelCommand}"
+                        Background="Transparent"
+                        Foreground="{DynamicResource TextSecondary}"/>
+
+                <Button Content="{DynamicResource Locale_Forms_Payee_Save}"
+                        Classes="Primary"
+                        Command="{Binding SaveCommand}"/>
+            </StackPanel>
+
+        </Grid>
+    </Border>
+</UserControl>

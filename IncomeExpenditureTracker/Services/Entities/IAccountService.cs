@@ -18,7 +18,7 @@ public interface IAccountService
 {
     Task<int> GetOrCreateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
     Task<List<Account>> GetAllAccounts(CancellationToken ct = default);
-    Task<List<Account>> GetAccountsByEntityId(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
+    Task<List<Account>> GetAccountsByEntityId(int? entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
     Task UpdateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
     Task DeleteAccount(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 
@@ -30,5 +30,5 @@ public interface IAccountService
     /// <summary>
     /// Re-parents all Accounts from a deleted Entity to Unassigned Entity (Id = 0) to maintain data integrity and avoid orphaned records.
     /// </summary>
-    Task ReassignAccountsAsync(int sourceEntityId, int targetEntityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
+    Task ReassignAccountsAsync(int? sourceEntityId, int? targetEntityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 }

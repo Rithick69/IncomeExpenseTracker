@@ -19,7 +19,7 @@ using IncomeExpenditureTracker.UI.Shell;
 using IncomeExpenditureTracker.UI.Shared;
 using IncomeExpenditureTracker.UI.Gatekeeper;
 using IncomeExpenditureTracker.UI.ImportHub;
-using IncomeExpenditureTracker.UI.Ledger;
+// using IncomeExpenditureTracker.UI.Ledger;
 using IncomeExpenditureTracker.UI.MasterData;
 using Microsoft.Extensions.Configuration;
 namespace IncomeExpenditureTracker.DependencyInjection;
@@ -102,11 +102,27 @@ public static class ServiceRegistration
         // If they close it, it gets destroyed cleanly without holding onto old data.
         services.AddTransient<MainWindowViewModel>();
         services.AddTransient<StatementEditViewModel>();
-        services.AddTransient<MasterDataViewModel>();
-        services.AddTransient<TransactionReviewViewModel>();
         services.AddTransient<LoginViewModel>();
         services.AddTransient<RegisterViewModel>();
         services.AddTransient<DashboardViewModel>();
+
+        // 1. Main Data & Taxonomy Hub
+        services.AddTransient<DataTaxonomyViewModel>();
+
+        // 2. Entity Form Modals
+        services.AddTransient<AccountFormViewModel>();
+        services.AddTransient<PayeeFormViewModel>();
+        services.AddTransient<EntityFormViewModel>();
+        services.AddTransient<CategoryFormViewModel>();
+        services.AddTransient<SubCategoryFormViewModel>();
+        services.AddTransient<SynonymFormViewModel>();
+        services.AddTransient<TagFormViewModel>();
+        services.AddTransient<TagRuleFormViewModel>();
+        services.AddTransient<UserSettingFormViewModel>();
+        services.AddTransient<MergeFormViewModel>();
+
+
+        // (Note: FormViewModelBase is an abstract class and cannot be registered in DI)
 
         // ---------------------------------------------------------
         // Profiles

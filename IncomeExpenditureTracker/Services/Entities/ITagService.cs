@@ -32,8 +32,8 @@ public interface ITagService
     Task FloatTagsByCategoryAsync(int categoryId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 
     // Atomic TagRule CRUD
-    Task<int> AddRuleAsync(string keyword, int tagId, int priority = 10, CancellationToken ct = default);
-    Task UpdateRuleAsync(int ruleId, string keyword, int tagId, int priority, CancellationToken ct = default);
+    Task<int> AddRuleAsync(string keyword, int tagId, CancellationToken ct = default);
+    Task UpdateRuleAsync(int ruleId, string keyword, int tagId, CancellationToken ct = default);
     Task DeleteRuleAsync(int ruleId, CancellationToken ct = default);
 
     Task DeleteRulesByTagId(int tagId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);

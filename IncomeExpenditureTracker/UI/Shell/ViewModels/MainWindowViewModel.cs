@@ -8,10 +8,12 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Microsoft.Extensions.DependencyInjection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input; // Needed for [RelayCommand]
+using System.Windows.Input;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.UI.Shared;
 using IncomeExpenditureTracker.UI.Gatekeeper;
+using IncomeExpenditureTracker.UI.MasterData;
 
 // =========================================================================
 // ARCHITECTURAL NOTE: Why 'partial'?
@@ -65,6 +67,13 @@ namespace IncomeExpenditureTracker.UI.Shell
 
         private TaskCompletionSource<bool>? _currentDialogTcs;
 
+        // Holds the specific Form ViewModel (e.g., TagFormViewModel, MergeFormViewModel)
+        [ObservableProperty]
+        private ViewModelBase? _activeModalContent;
+
+        [ObservableProperty]
+        private bool _isFormModalVisible;
+
         // =========================================================================
         // TOAST & PROGRESS STATE (The Status Tray)
         // =========================================================================
@@ -97,6 +106,8 @@ namespace IncomeExpenditureTracker.UI.Shell
         [ObservableProperty]
         private bool _isCopyButtonVisible;
 
+        public ICommand NavigateCommand { get; }
+
         // =========================================================================
         // CONSTRUCTOR
         // =========================================================================
@@ -104,6 +115,8 @@ namespace IncomeExpenditureTracker.UI.Shell
             : base(broker)
         {
             _serviceProvider = serviceProvider;
+
+            NavigateCommand = new RelayCommand<string?>(NavigateTo);
 
             // 1. Subscribe to Routing
             Broker.Register<NavigationMessage>(this, OnNavigationRequested);
@@ -121,7 +134,12 @@ namespace IncomeExpenditureTracker.UI.Shell
             Broker.Register<FileStagingErrorMessage>(this, OnFileStagingErrorReceived);
             Broker.Register<StagingBatchCompletedMessage>(this, OnStagingCompleted);
 
-            // 4. Initial Route
+            // 4. Subscribe to Form Modals
+            Broker.Register<ShowEntityFormModalMessage>(this, OnShowEntityFormRequested);
+            Broker.Register<ShowEntityMergeModalMessage>(this, OnShowEntityMergeRequested);
+            Broker.Register<CloseModalMessage>(this, OnCloseModalRequested);
+
+            // 5. Initial Route
             NavigateTo("Login");
         }
 
@@ -129,12 +147,82 @@ namespace IncomeExpenditureTracker.UI.Shell
         // EVENT HANDLERS (The Reactive Magic)
         // =========================================================================
 
+        private void OnShowEntityFormRequested(ShowEntityFormModalMessage message)
+        {
+            RunOnUIThread(() =>
+            {
+                // Cast the EntityId safely (assuming your new ID standard is int)
+                int? formId = message.EntityId.HasValue ? (int)message.EntityId.Value : null;
+
+                // Dynamically resolve the correct ViewModel based on the entity type
+                ActiveModalContent = message.EntityType switch
+                {
+                    DomainEntity.Tag => formId.HasValue
+                        ? ActivatorUtilities.CreateInstance<TagFormViewModel>(_serviceProvider, formId)
+                        : _serviceProvider.GetRequiredService<TagFormViewModel>(),
+                    DomainEntity.Payee => formId.HasValue
+                        ? ActivatorUtilities.CreateInstance<PayeeFormViewModel>(_serviceProvider, formId)
+                        : _serviceProvider.GetRequiredService<PayeeFormViewModel>(),
+                    DomainEntity.Account => formId.HasValue
+                        ? ActivatorUtilities.CreateInstance<AccountFormViewModel>(_serviceProvider, formId)
+                        : _serviceProvider.GetRequiredService<AccountFormViewModel>(),
+                    DomainEntity.TagRule => formId.HasValue
+                        ? ActivatorUtilities.CreateInstance<TagRuleFormViewModel>(_serviceProvider, formId)
+                        : _serviceProvider.GetRequiredService<TagRuleFormViewModel>(),
+                    DomainEntity.Entity => formId.HasValue
+                        ? ActivatorUtilities.CreateInstance<EntityFormViewModel>(_serviceProvider, formId)
+                        : _serviceProvider.GetRequiredService<EntityFormViewModel>(),
+                    DomainEntity.Synonym => formId.HasValue
+                        ? ActivatorUtilities.CreateInstance<SynonymFormViewModel>(_serviceProvider, formId)
+                        : _serviceProvider.GetRequiredService<SynonymFormViewModel>(),
+                    DomainEntity.Category => formId.HasValue
+                        ? ActivatorUtilities.CreateInstance<CategoryFormViewModel>(_serviceProvider, formId)
+                        : _serviceProvider.GetRequiredService<CategoryFormViewModel>(),
+                    DomainEntity.SubCategory => formId.HasValue
+                        ? ActivatorUtilities.CreateInstance<SubCategoryFormViewModel>(_serviceProvider, formId)
+                        : _serviceProvider.GetRequiredService<SubCategoryFormViewModel>(),
+                    DomainEntity.UserSetting => formId.HasValue
+                        ? ActivatorUtilities.CreateInstance<UserSettingFormViewModel>(_serviceProvider, formId)
+                        : _serviceProvider.GetRequiredService<UserSettingFormViewModel>(),
+                    // Add other entities here as you build them
+                    _ => throw new NotImplementedException($"Form for {message.EntityType} is not registered.")
+                };
+
+                // Note: If your forms need to receive the ExcludeId for Update mode,
+                // you will need to pass message.EntityId to them here.
+
+                IsFormModalVisible = true;
+            });
+        }
+
+        private void OnShowEntityMergeRequested(ShowEntityMergeModalMessage message)
+        {
+            RunOnUIThread(() =>
+            {
+                // Resolve the merge viewmodel
+                ActiveModalContent = ActivatorUtilities.CreateInstance<MergeFormViewModel>(_serviceProvider, message.EntityType, message.SourceId, message.SourceName);
+                IsFormModalVisible = true;
+            });
+        }
+
+        private void OnCloseModalRequested(CloseModalMessage message)
+        {
+            RunOnUIThread(() =>
+            {
+                IsFormModalVisible = false;
+
+                // Dispose of the form to free memory and cancel any pending debounced SQL queries
+                ActiveModalContent?.Dispose();
+                ActiveModalContent = null;
+            });
+        }
+
         private void OnNavigationRequested(NavigationMessage message)
         {
             NavigateTo(message.Destination);
         }
 
-        private void NavigateTo(string destination)
+        private void NavigateTo(string? destination)
         {
             RunOnUIThread(() =>
             {
@@ -159,6 +247,12 @@ namespace IncomeExpenditureTracker.UI.Shell
                     "Login" => _serviceProvider.GetRequiredService<LoginViewModel>(),
                     "Register" => _serviceProvider.GetRequiredService<RegisterViewModel>(),
                     "Dashboard" => _serviceProvider.GetRequiredService<DashboardViewModel>(),
+
+                    // "Ledger" => _serviceProvider.GetRequiredService<LedgerViewModel>(),
+                    // "StatementImport" => _serviceProvider.GetRequiredService<StatementImportViewModel>(),
+                    "DataTaxonomy" => _serviceProvider.GetRequiredService<DataTaxonomyViewModel>(),
+                    // "Reports" => _serviceProvider.GetRequiredService<ReportsViewModel>(),
+                    // "AuditLogs" => _serviceProvider.GetRequiredService<AuditLogsViewModel>(),
                     _ => throw new ArgumentException($"Unknown route: {destination}")
                 };
             });

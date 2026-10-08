@@ -234,52 +234,58 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             await dbService.SetConnectionStringAsync(profileA.ConnectionString);
 
-            // Use generic TaskCompletionSource<bool> for universal compatibility
-            var blockLock = new TaskCompletionSource<bool>();
+            // We use TWO deterministic locks now:
+            // 1. To know the exact microsecond the query officially starts executing.
+            var blockingTaskStarted = new TaskCompletionSource<bool>();
+            // 2. To hold the database connection open indefinitely.
+            var holdAirlock = new TaskCompletionSource<bool>();
             Task? swapTask = null;
 
             try
             {
-                // 1. Block the Airlock DETERMINISTICALLY.
+                // 1. Block the Airlock
                 var blockingTask = dbService.ExecuteWithRetryAsync(async (conn, cancellationToken) =>
                 {
-                    await blockLock.Task;
+                    // Signal to the test thread that we have successfully bypassed the Airlock
+                    // and incremented the _activeQueries counter!
+                    blockingTaskStarted.SetResult(true);
+
+                    // Now hold the connection open
+                    await holdAirlock.Task;
                 });
 
-                // Yield to ensure the blocking task increments _activeQueries
-                await Task.Delay(150);
+                // Mathematically wait for the delegate to start.
+                // This completely eliminates the need for the first Task.Delay!
+                await blockingTaskStarted.Task;
 
-                // 2. Initiate a profile swap. Because _activeQueries is > 0, it gets stuck waiting,
-                // securely setting _isSwapping to true.
+                // 2. Initiate a profile swap.
+                // Because _activeQueries is > 0, SetConnectionStringAsync runs synchronously until it
+                // hits `await Task.Delay(50)` inside its while loop. By the time this method yields
+                // the task back to us, _isSwapping is mathematically guaranteed to be TRUE.
                 swapTask = dbService.SetConnectionStringAsync(profileB.ConnectionString);
-
-                // Yield to ensure _isSwapping has been successfully flipped to true
-                await Task.Delay(150);
 
                 var cts = new CancellationTokenSource();
 
-                // 3. Fire a query. Because _isSwapping is true, it is guaranteed to get trapped
-                // inside the `while (_isSwapping)` loop.
+                // 3. Fire a query.
+                // Because _isSwapping is TRUE, ExecuteWithRetryInternalAsync runs synchronously until it
+                // hits `await Task.Delay(10, ct)` inside the Airlock loop. By the time this method yields
+                // the task back to us, the query is mathematically guaranteed to be trapped.
                 var waitingQueryTask = dbService.ExecuteWithRetryAsync(async (conn, ct) =>
                 {
                     await conn.ExecuteScalarAsync<int>("SELECT 1;");
                 }, cts.Token);
 
-                // Yield to ensure the query has entered the Airlock and is awaiting Task.Delay(10)
-                await Task.Delay(150);
-
-                // 4. Act: Cancel the token! The internal Task.Delay inside the Airlock will immediately throw.
+                // 4. Act: Cancel the token!
+                // Because the query is actively trapped awaiting `Task.Delay(10, ct)`, this instantly throws.
                 cts.Cancel();
 
                 // Assert
-                // The query must abort and throw an OperationCanceledException
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waitingQueryTask);
             }
             finally
             {
-                // Cleanup: ALWAYS release the lock so the background tasks can finish cleanly.
-                // This prevents the 31-second teardown hang caused by OS file locks.
-                blockLock.TrySetResult(true);
+                // Cleanup: ALWAYS release the lock so the background tasks can finish cleanly
+                holdAirlock.TrySetResult(true);
 
                 if (swapTask != null)
                 {

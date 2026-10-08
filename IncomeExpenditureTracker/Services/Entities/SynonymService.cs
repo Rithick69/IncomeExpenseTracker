@@ -300,7 +300,7 @@ public class SynonymService : ISynonymService, IDisposable
 
             await _database.ExecuteInTransactionWithRetryAsync(async (connection, transaction, cancelToken) =>
             {
-                const string maxPrioritySql = "SELECT MAX(Priority) FROM Synonyms WHERE Synonym = @Synonym AND Category = @Category;";
+                const string maxPrioritySql = "SELECT MAX(Priority) FROM Synonyms WHERE Synonym = @Synonym AND FieldType = @FieldType AND Category = @Category;";
 
                 /*
                  * WHY MAX(Priority) + 1 INSTEAD OF 0?
@@ -315,6 +315,7 @@ public class SynonymService : ISynonymService, IDisposable
                     new
                     {
                         Synonym = rawSynonym,
+                        FieldType = rawFieldType,
                         Category = normalizedCategory
                     },
                     transaction: transaction,
@@ -373,12 +374,33 @@ public class SynonymService : ISynonymService, IDisposable
 
         try
         {
+
             const string sql = @"
             INSERT INTO Synonyms (FieldType, Synonym, Priority, Category)
             VALUES (@FieldType, @Synonym, @Priority, @Category);";
 
             await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
+                const string maxPrioritySql = "SELECT MAX(Priority) FROM Synonyms WHERE Synonym = @Synonym AND FieldType = @FieldType AND Category = @Category;";
+
+                var prioritycmd = new CommandDefinition(
+                    maxPrioritySql,
+                    new
+                    {
+                        synonym.Synonym,
+                        synonym.FieldType,
+                        synonym.Category
+                    },
+                    transaction: transaction,
+                    cancellationToken: cancelToken
+                );
+
+                var currentMaxPriority = await connection.QuerySingleOrDefaultAsync<int?>(prioritycmd);
+
+                int newPriority = (currentMaxPriority ?? 0) + 1;
+
+                synonym.Priority = newPriority;
+
                 var cmd = new CommandDefinition(
                     sql,
                     synonym,

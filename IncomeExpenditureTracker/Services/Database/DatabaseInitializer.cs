@@ -93,7 +93,7 @@ public class DatabaseInitializer : IDatabaseInitializer
                     Name TEXT,
                     CategoryId INTEGER,
                     CreatedDate DATETIME DEFAULT (datetime('now')),
-                    FOREIGN KEY(CategoryId) REFERENCES Categories(Id)
+                    FOREIGN KEY(CategoryId) REFERENCES Categories(Id),
                     UNIQUE(Name, CategoryId)
                 );
 
@@ -134,10 +134,11 @@ public class DatabaseInitializer : IDatabaseInitializer
                 CREATE TABLE IF NOT EXISTS TagRules (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Keyword TEXT NOT NULL,
-                    TagId INTEGER,
+                    TagId INTEGER NOT NULL,
                     Priority INTEGER DEFAULT 10,
                     CreatedDate DATETIME DEFAULT (datetime('now')),
-                    FOREIGN KEY(TagId) REFERENCES Tags(Id)
+                    FOREIGN KEY(TagId) REFERENCES Tags(Id),
+                    CONSTRAINT unique_tagRule UNIQUE(Keyword, TagId)
                 );
 
                 -- SQLite B-tree indexes to speed up self-learning queries and joins
@@ -145,19 +146,6 @@ public class DatabaseInitializer : IDatabaseInitializer
                 CREATE INDEX IF NOT EXISTS idx_tagrules_keyword ON TagRules(Keyword);
                 CREATE INDEX IF NOT EXISTS idx_tagrules_tagid ON TagRules(TagId);
 
-                ------------------------------------------------------------
-                -- Unified View for Tag, SubCategory, Category
-                ------------------------------------------------------------
-
-                CREATE VIEW IF NOT EXISTS vw_TagTaxonomy AS
-                SELECT
-                    t.Id AS TagId,
-                    t.Name AS TagName,
-                    s.Name AS SubcategoryName,
-                    c.Name AS CategoryName
-                FROM Tags t
-                JOIN Subcategories s ON t.SubcategoryId = s.Id
-                JOIN Categories c ON s.CategoryId = c.Id;
 
                 ------------------------------------------------------------
                 -- ENTITIES
@@ -181,17 +169,30 @@ public class DatabaseInitializer : IDatabaseInitializer
                 ------------------------------------------------------------
 
                 CREATE TABLE IF NOT EXISTS Accounts (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    AccountNumber TEXT UNIQUE,
-                    CardNumber TEXT UNIQUE,
-                    EntityId INTEGER,
-                    EntityName TEXT,
-                    AccountType TEXT,
-                    Currency TEXT,
-                    CreatedDate DATETIME DEFAULT (datetime('now')),
-                    CreditLimit TEXT,
-                    FOREIGN KEY(EntityId) REFERENCES Entities(Id)
-                );
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                AccountNumber TEXT, -- Removed global UNIQUE
+                CardNumber TEXT,    -- Removed global UNIQUE
+                EntityId INTEGER,
+                EntityName TEXT,
+                AccountType TEXT,
+                Currency TEXT,
+                CreatedDate DATETIME DEFAULT (datetime('now')),
+                CreditLimit TEXT,
+                FOREIGN KEY(EntityId) REFERENCES Entities(Id),
+
+                -- 1. Prevents duplicate Account Numbers within the SAME bank
+                -- (SQLite natively allows multiple NULLs here if it's a Card-only account)
+                UNIQUE(EntityId, AccountNumber),
+
+                -- 2. Prevents duplicate Card Numbers within the SAME bank
+                UNIQUE(EntityId, CardNumber),
+
+                -- 3. Physically enforces that at least ONE is provided (not null and not empty)
+                CHECK (
+                    (AccountNumber IS NOT NULL AND AccountNumber != '') OR
+                    (CardNumber IS NOT NULL AND CardNumber != '')
+                )
+            );
 
                 CREATE INDEX IF NOT EXISTS idx_accounts_entityid ON Accounts(EntityId);
 

@@ -42,10 +42,42 @@
                                Margin="0,0,0,20"/>
 
                     <!-- Styling relies on global defaults. Active state logic will come later. -->
-                    <Button Content="Dashboard" Background="Transparent" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
-                    <Button Content="Import Statements" Background="Transparent" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
-                    <Button Content="Transaction Ledger" Background="Transparent" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
-                    <Button Content="Master Data" Background="Transparent" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                    <Button
+                        Content="{DynamicResource Locale_Navigation_Menu_Dashboard}"
+                        Command="{Binding NavigateCommand}"
+                        CommandParameter="Dashboard"
+                        Background="Transparent" Foreground="{DynamicResource TextPrimary}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                    <Button
+                        Content="{DynamicResource Locale_Navigation_Menu_Ledger}"
+                        Command="{Binding NavigateCommand}"
+                        CommandParameter="Ledger"
+                        Background="Transparent" Foreground="{DynamicResource TextPrimary}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                    <Button
+                        Content="{DynamicResource Locale_Navigation_Menu_Statement_Import}"
+                        Command="{Binding NavigateCommand}"
+                        CommandParameter="StatementImport"
+                        Background="Transparent" Foreground="{DynamicResource TextPrimary}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                    <Button
+                        Content="{DynamicResource Locale_Navigation_Menu_Data_Taxanomy}"
+                        Command="{Binding NavigateCommand}"
+                        CommandParameter="DataTaxonomy"
+                        Background="Transparent" Foreground="{DynamicResource TextPrimary}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                    <Button
+                        Content="{DynamicResource Locale_Navigation_Menu_Reports}"
+                        Command="{Binding NavigateCommand}"
+                        CommandParameter="Reports"
+                        Background="Transparent" Foreground="{DynamicResource TextPrimary}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+                    <Button
+                        Content="{DynamicResource Locale_Navigation_Menu_Audit_Logs}"
+                        Command="{Binding NavigateCommand}"
+                        CommandParameter="AuditLogs"
+                        Background="Transparent" Foreground="{DynamicResource TextPrimary}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
                 </StackPanel>
             </Border>
 
@@ -157,6 +189,21 @@
                     </Grid>
                 </StackPanel>
             </Border>
+        </Grid>
+
+        <!-- ========================================== -->
+        <!-- Z-INDEX 105: GLOBAL FORM OVERLAY           -->
+        <!-- ========================================== -->
+        <!-- This layer acts as the dynamic host for all CRUD and Merge forms -->
+        <Grid Background="#99000000"
+            IsVisible="{Binding IsFormModalVisible}"
+            ZIndex="105">
+
+            <!-- ViewLocator will automatically turn the ActiveModalContent (TagFormViewModel)
+                into the visual view (TagFormView) and place it dead center -->
+            <ContentControl Content="{Binding ActiveModalContent}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
         </Grid>
 
         <!-- ========================================== -->

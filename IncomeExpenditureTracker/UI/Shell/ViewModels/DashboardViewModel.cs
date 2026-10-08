@@ -1,6 +1,8 @@
 using IncomeExpenditureTracker.UI.Shared;
 using IncomeExpenditureTracker.Services.Messaging;
 using System;
+using CommunityToolkit.Mvvm.Input;
+using IncomeExpenditureTracker.Models;
 
 namespace IncomeExpenditureTracker.UI.Shell
 {
@@ -20,6 +22,23 @@ namespace IncomeExpenditureTracker.UI.Shell
 
             // Note: Data-fetching logic (e.g., loading Net Worth summaries)
             // will eventually be triggered here or via an IAsyncInitialization pattern.
+        }
+
+        // =========================================================================
+        // NAVIGATION COMMANDS
+        // =========================================================================
+
+        /// <summary>
+        /// Broadcasts a NavigationMessage to the MainWindowViewModel router.
+        /// The router will resolve a Transient instance of DataManagementViewModel
+        /// and seamlessly swap the ContentControl.
+        /// </summary>
+        [RelayCommand]
+        public void NavigateToDataManagement()
+        {
+            // Note: Adjust the payload of NavigationMessage based on how
+            // your specific enum or string routing dictionary is set up.
+            _broker.Send(new NavigationMessage("DataManagement"));
         }
 
         public override void Dispose()

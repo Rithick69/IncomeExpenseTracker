@@ -42,26 +42,106 @@ namespace IncomeExpenditureTracker.Models
     // Handled by: MasterDataOrchestrator
     // ---------------------------------------------------------
 
-    /// <summary>
-    /// Broadcast when a new category, tag, or account is successfully saved
-    /// </summary>
-    public record EntitySavedMessage(string EntityType, string Name);
+    // ---------------------------------------------------------
+    // SYSTEM ENUMS (For strongly typed i18n mapping)
+    // ---------------------------------------------------------
+
+    public enum DomainEntity
+    {
+        Category,
+        SubCategory,
+        Tag,
+        TagRule,
+        Payee,
+        PayeeMapping,
+        Entity, // General Merchant/Institution
+        Account,
+        Synonym,
+        ImportBatch,
+        UserSetting,
+        Transaction
+    }
+
+    public enum CrudOperation
+    {
+        Create,
+        Read,
+        Update,
+        Delete,
+        Merge
+    }
 
     /// <summary>
-    /// Broadcast when a category, tag, or account is successfully deleted
+    /// Enriched DTO for Tags, flattening the relational hierarchy for zero-DB-call UI filtering.
     /// </summary>
-    public record EntityDeletedMessage(string EntityType, string Name);
+    public record TagHierarchyDto
+    {
+        // Dapper will automatically coerce SQLite's Int64 into these ints
+        public int TagId { get; init; }
+        public string TagName { get; init; } = string.Empty;
+
+        // Nullable because of the LEFT JOIN
+        public int? SubCategoryId { get; init; }
+        public string? SubCategoryName { get; init; }
+
+        public int? CategoryId { get; init; }
+        public string? CategoryName { get; init; }
+    };
+
+    public record TagRuleHierarchyDto
+    {
+        public int TagRuleId { get; init; }
+        public int TagId { get; init; }
+        public string TagName { get; init; } = string.Empty;
+        public string Keyword { get; init; } = string.Empty;
+        public int? SubCategoryId { get; init; }
+        public string? SubCategoryName { get; init; }
+        public int? CategoryId { get; init; }
+        public string? CategoryName { get; init; }
+        public int Priority { get; init; }
+    };
+
+    public record SynonymsHierarchyDto
+    {
+        public int SynonymsId { get; init; }
+        public string SynonymName { get; init; } = string.Empty;
+        public string FieldType { get; init; } = string.Empty;
+        public string CategoryName { get; init; } = string.Empty;
+        public int Priority { get; init; }
+    };
 
     /// <summary>
-    /// Broadcast when a category, tag, or account is successfully updated
+    /// Enriched DTO for SubCategories, mapping them to their parent Categories.
     /// </summary>
-    public record EntityUpdatedMessage(string EntityType, string Name);
+    public record SubCategoryHierarchyDto
+    {
+        public int SubCategoryId { get; init; }
+        public string SubCategoryName { get; init; } = string.Empty;
+        public int CategoryId { get; init; }
+        public string CategoryName { get; init; } = string.Empty;
+    };
 
     /// <summary>
-    /// Broadcast when a CRUD operation fails (Catches the error without exposing stack traces)
+    /// Broadcast when a new entity is successfully saved.
+    /// EntityName is user-generated data (e.g., "Groceries") so it does not need translation.
     /// </summary>
-    public record CrudErrorMessage(string EntityType, string Operation, string UserFriendlyMessage);
+    public record EntitySavedMessage(DomainEntity EntityType, string? EntityName = null);
 
+    /// <summary>
+    /// Broadcast when an entity is successfully deleted.
+    /// </summary>
+    public record EntityDeletedMessage(DomainEntity EntityType, string? EntityName = null);
+
+    /// <summary>
+    /// Broadcast when an entity is successfully updated.
+    /// </summary>
+    public record EntityUpdatedMessage(DomainEntity EntityType, int? EntityId = null, string? EntityName = null);
+
+    /// <summary>
+    /// Broadcast when a CRUD operation fails.
+    /// Passes Enums and a LocaleKey so the UI can construct a localized error toast.
+    /// </summary>
+    public record CrudErrorMessage(DomainEntity EntityType, CrudOperation Operation, string LocaleKey, string[]? LocaleArgs = null);
 
     // ---------------------------------------------------------
     // 3. TRANSACTION REVIEW EVENTS
@@ -89,7 +169,28 @@ namespace IncomeExpenditureTracker.Models
     // BROKER MESSAGE: The global envelope for triggering a notification
     // Any Orchestrator or ViewModel can broadcast this message.
     // =========================================================================
-    public record ToastNotificationMessage(string Message, NotificationType Type);
+
+    public enum ToastType { Success = 0, Error = 1, Info = 2, Warning = 3 }
+
+    public record ToastNotificationMessage
+    {
+        public string Message { get; init; }
+        public NotificationType Type { get; init; }
+
+        // Your existing signature
+        public ToastNotificationMessage(string message, NotificationType type)
+        {
+            Message = message;
+            Type = type;
+        }
+
+        // New signature to support the generated ViewModels
+        public ToastNotificationMessage(ToastType type, string message)
+        {
+            Message = message;
+            Type = (NotificationType)type;
+        }
+    }
 
     /// <summary>
     /// Broadcasted immediately after the DatabaseService successfully swaps the physical .db connection.
@@ -138,4 +239,31 @@ namespace IncomeExpenditureTracker.Models
 
     // Tells the MainWindow to lift the loading curtain
     public record HideLoadingOverlayMessage();
+
+    // Determines if a form is creating a new entity or editing an existing one
+    public enum FormMode
+    {
+        Create,
+        Update
+    }
+
+    /// <summary>
+    /// Broadcast to open the dynamic Create/Update form modal (e.g., AccountFormView)
+    /// </summary>
+    public record ShowEntityFormModalMessage(DomainEntity EntityType, FormMode Mode, int? EntityId = null);
+
+    /// <summary>
+    /// Broadcast to open the specific Merge resolution modal.
+    /// </summary>
+    public record ShowEntityMergeModalMessage(DomainEntity EntityType, int SourceId, string SourceName);
+
+    /// <summary>
+    /// Broadcast by a modal ViewModel (Save/Cancel) to tell the MainWindow to close the overlay.
+    /// </summary>
+    public record CloseModalMessage();
+
+    /// <summary>
+    /// A unified boolean toggle for the loading spinner to replace separate show/hide messages.
+    /// </summary>
+    public record ToggleLoadingMessage(bool IsLoading, string? Message = null);
 }

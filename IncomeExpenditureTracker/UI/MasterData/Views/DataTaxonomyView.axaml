@@ -1,0 +1,533 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.MasterData"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="IncomeExpenditureTracker.UI.MasterData.DataTaxonomyView"
+             x:DataType="vm:DataTaxonomyViewModel"
+             x:Name="RootControl"
+             Background="{DynamicResource BackgroundPrimary}"
+             TextElement.FontFamily="{DynamicResource InterFont}"
+             TextElement.Foreground="{DynamicResource TextPrimary}"
+             TextElement.FontSize="14">
+
+    <!-- Main Layout Container (Row 0: Search, Row 1: Tabs & Content) -->
+    <Grid RowDefinitions="Auto, *" Margin="24">
+
+        <!-- ========================================== -->
+        <!-- MENU SEARCH (Aligned over the left tabs)   -->
+        <!-- ========================================== -->
+        <TextBox Grid.Row="0"
+                 Width="200"
+                 HorizontalAlignment="Left"
+                 Text="{Binding MenuSearchText, Mode=TwoWay}"
+                 Watermark="{DynamicResource Locale_DataTaxonomy_SearchMenu}"
+                 Margin="0,0,0,16">
+            <TextBox.InnerRightContent>
+                <Button Command="{Binding ClearMenuSearchCommand}"
+                        IsVisible="{Binding HasMenuSearchText}"
+                        Background="Transparent"
+                        Margin="4">
+                    <TextBlock Text="✕" Foreground="{DynamicResource TextSecondary}" />
+                </Button>
+            </TextBox.InnerRightContent>
+        </TextBox>
+
+        <!-- ========================================== -->
+        <!-- VERTICAL NAVIGATION TABS                   -->
+        <!-- ========================================== -->
+        <TabControl Grid.Row="1"
+                    TabStripPlacement="Left"
+                    Background="Transparent">
+
+            <!-- ========================================== -->
+            <!-- 1. PAYEES TAB                              -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_Payees}" IsVisible="{Binding IsPayeesTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                    <Grid RowDefinitions="Auto, Auto, *">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                            <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Title_Payees}" Classes="DisplayNumber" />
+                            <Button Grid.Column="1" Classes="Primary" Content="{DynamicResource Locale_DataTaxonomy_Common_Create}" Command="{Binding OpenCreatePayeeCommand}" />
+                        </Grid>
+                        <Grid Grid.Row="1" ColumnDefinitions="*, Auto" Margin="0,0,0,16">
+                            <TextBox Watermark="{DynamicResource Locale_DataTaxonomy_SearchPayees}" Text="{Binding PayeeSearchText, Mode=TwoWay}" />
+                            <ComboBox Grid.Column="1" Margin="16,0,0,0" Width="200" PlaceholderText="{DynamicResource Locale_DataTaxonomy_Common_FilterBy}" ItemsSource="{Binding PayeeFilterOptions}" SelectedItem="{Binding SelectedPayeeFilter}" />
+                        </Grid>
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredPayees}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Id}" Binding="{Binding Id}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Name}" Binding="{Binding Name}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <Button Command="{Binding #RootControl.DataContext.UpdatePayeeCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="{DynamicResource Locale_DataTaxonomy_Common_Update}">
+                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" />
+                                            </Button>
+                                            <Button Command="{Binding #RootControl.DataContext.MergePayeeCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="{DynamicResource Locale_DataTaxonomy_Common_Merge}">
+                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Merge}" Foreground="{DynamicResource AccentIndigo}" />
+                                            </Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeletePayeeCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="{DynamicResource Locale_DataTaxonomy_Common_Delete}">
+                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" />
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ========================================== -->
+            <!-- 2. TAGS TAB                                -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_Tags}" IsVisible="{Binding IsTagsTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                    <Grid RowDefinitions="Auto, Auto, *">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                            <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Title_Tags}" Classes="DisplayNumber" />
+                            <Button Grid.Column="1" Classes="Primary" Content="{DynamicResource Locale_DataTaxonomy_Common_Create}" Command="{Binding OpenCreateTagCommand}" />
+                        </Grid>
+                        <Grid Grid.Row="1" ColumnDefinitions="*, Auto, Auto, Auto" Margin="0,0,0,16">
+                            <TextBox Grid.Column="0" Watermark="{DynamicResource Locale_DataTaxonomy_SearchTags}" Text="{Binding TagSearchText, Mode=TwoWay}" />
+                            <ComboBox Grid.Column="1" Margin="12,0,0,0" Width="180" PlaceholderText="{DynamicResource Locale_DataTaxonomy_Common_Type}" ItemsSource="{Binding TagFilterOptions}" SelectedItem="{Binding SelectedTagFilter}" />
+
+                            <DropDownButton Grid.Column="2" Margin="12,0,0,0" Width="180" Content="{DynamicResource Locale_DataTaxonomy_Common_Category}">
+                            <DropDownButton.Flyout>
+                                <Flyout Placement="Bottom">
+                                <Grid RowDefinitions="Auto, *">
+                                    <!-- Clear All Action -->
+                                    <Button Grid.Row="0"
+                                            Content="Clear All"
+                                            Command="{Binding ClearCategoryFiltersCommand}"
+                                            Background="Transparent"
+                                            Foreground="{DynamicResource AccentIndigo}"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,0,0,8"
+                                            Padding="4"/>
+                                    <ScrollViewer Grid.Row="1" MaxHeight="300">
+                                        <ItemsControl ItemsSource="{Binding AvailableTagCategories}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}" Margin="2,4"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Grid>
+                                </Flyout>
+                            </DropDownButton.Flyout>
+                            </DropDownButton>
+
+                            <!-- Multi-Select Dropdown for SubCategory -->
+                            <DropDownButton Grid.Column="3" Margin="12,0,0,0" Width="180" Content="{DynamicResource Locale_DataTaxonomy_Common_SubCategory}">
+                                <DropDownButton.Flyout>
+                                    <Flyout Placement="Bottom">
+                                    <Grid RowDefinitions="Auto, *">
+                                    <!-- Clear All Action -->
+                                    <Button Grid.Row="0"
+                                            Content="Clear All"
+                                            Command="{Binding ClearSubCategoryFiltersCommand}"
+                                            Background="Transparent"
+                                            Foreground="{DynamicResource AccentIndigo}"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,0,0,8"
+                                            Padding="4"/>
+                                        <ScrollViewer Grid.Row="2" MaxHeight="300">
+                                            <ItemsControl ItemsSource="{Binding AvailableTagSubCategories}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}" Margin="2,4"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                        </Grid>
+                                    </Flyout>
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+                        </Grid>
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredTags}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Id}" Binding="{Binding TagId}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_TagName}" Binding="{Binding TagName}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_ParentSubCategory}" Binding="{Binding SubCategoryName}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_ParentCategory}" Binding="{Binding CategoryName}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateTagCommand}" CommandParameter="{Binding}" Background="Transparent">
+                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" />
+                                            </Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteTagCommand}" CommandParameter="{Binding}" Background="Transparent">
+                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" />
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ========================================== -->
+            <!-- 3. CATEGORIES TAB                          -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_Categories}" IsVisible="{Binding IsCategoriesTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                    <Grid RowDefinitions="Auto, Auto, *">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                            <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Title_Categories}" Classes="DisplayNumber" />
+                            <Button Grid.Column="1" Classes="Primary" Content="{DynamicResource Locale_DataTaxonomy_Common_Create}" Command="{Binding OpenCreateCategoryCommand}" />
+                        </Grid>
+                        <TextBox Grid.Row="1" Watermark="{DynamicResource Locale_DataTaxonomy_SearchCategories}" Text="{Binding CategorySearchText, Mode=TwoWay}" Margin="0,0,0,16" />
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredCategories}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Id}" Binding="{Binding Id}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_CategoryName}" Binding="{Binding Name}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateCategoryCommand}" CommandParameter="{Binding}" Background="Transparent">
+                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" />
+                                            </Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteCategoryCommand}" CommandParameter="{Binding}" Background="Transparent">
+                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" />
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ========================================== -->
+            <!-- 4. SUBCATEGORIES TAB                       -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_SubCategories}" IsVisible="{Binding IsSubCategoriesTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                    <Grid RowDefinitions="Auto, Auto, *">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                            <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Title_SubCategories}" Classes="DisplayNumber" />
+                            <Button Grid.Column="1" Classes="Primary" Content="{DynamicResource Locale_DataTaxonomy_Common_Create}" Command="{Binding OpenCreateSubCategoryCommand}" />
+                        </Grid>
+                        <Grid Grid.Row="1" ColumnDefinitions="*, Auto" Margin="0,0,0,16">
+                            <TextBox Grid.Column="0" Watermark="{DynamicResource Locale_DataTaxonomy_SearchSubCategories}" Text="{Binding SubCategorySearchText, Mode=TwoWay}" />
+                            <!-- <ComboBox Grid.Column="1" Margin="12,0,0,0" Width="200" PlaceholderText="Category..." ItemsSource="{Binding AvailableSubCategoryCategory}">
+                                <ComboBox.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate>
+                            </ComboBox> -->
+
+                            <DropDownButton Grid.Column="1" Margin="12,0,0,0" Width="200" Content="{DynamicResource Locale_DataTaxonomy_Common_Category}">
+                            <DropDownButton.Flyout>
+                                <Flyout Placement="Bottom">
+                                <Grid RowDefinitions="Auto, *">
+                                    <!-- Clear All Action -->
+                                    <Button Grid.Row="0"
+                                            Content="Clear All"
+                                            Command="{Binding ClearSubCatgFiltersCommand}"
+                                            Background="Transparent"
+                                            Foreground="{DynamicResource AccentIndigo}"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,0,0,8"
+                                            Padding="4"/>
+                                    <ScrollViewer Grid.Row="1" MaxHeight="300">
+                                        <ItemsControl ItemsSource="{Binding AvailableSubCatgCategory}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}" Margin="2,4"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    </Grid>
+                                </Flyout>
+                            </DropDownButton.Flyout>
+                            </DropDownButton>
+                        </Grid>
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredSubCategories}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Id}" Binding="{Binding SubCategoryId}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_SubCategoryName}" Binding="{Binding SubCategoryName}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_ParentCategory}" Binding="{Binding CategoryName}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateSubCategoryCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteSubCategoryCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ========================================== -->
+            <!-- 5. ACCOUNTS TAB                            -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_Accounts}" IsVisible="{Binding IsAccountsTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                    <Grid RowDefinitions="Auto, Auto, *">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                            <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Title_Accounts}" Classes="DisplayNumber" />
+                            <Button Grid.Column="1" Classes="Primary" Content="{DynamicResource Locale_DataTaxonomy_Common_Create}" Command="{Binding OpenCreateAccountCommand}" />
+                        </Grid>
+                        <Grid Grid.Row="1" ColumnDefinitions="*, Auto, Auto" Margin="0,0,0,16">
+                            <TextBox Grid.Column="0" Watermark="{DynamicResource Locale_DataTaxonomy_SearchAccounts}" Text="{Binding AccountSearchText, Mode=TwoWay}" />
+                            <ComboBox Grid.Column="1" Margin="12,0,0,0" Width="180" PlaceholderText="{DynamicResource Locale_DataTaxonomy_Common_Type}" ItemsSource="{Binding AccountFilterOptions}" SelectedItem="{Binding SelectedAccountFilter}" />
+                            <ComboBox Grid.Column="2" Margin="12,0,0,0" Width="180" PlaceholderText="{DynamicResource Locale_DataTaxonomy_Common_Institute}" ItemsSource="{Binding AvailableAccountEntities}" SelectedItem="{Binding SelectedAccountEntityFilter}" />
+                            <!-- <ComboBox Grid.Column="2" Margin="12,0,0,0" Width="180" PlaceholderText="{DynamicResource Locale_DataTaxonomy_Common_Institute}" ItemsSource="{Binding AvailableAccountEntities}">
+                                <ComboBox.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate>
+                            </ComboBox> -->
+                        </Grid>
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredAccounts}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_AccountNum}" Binding="{Binding AccountNumber}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_CardNum}" Binding="{Binding CardNumber}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_ParentInstitute}" Binding="{Binding EntityName}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_AccType}" Binding="{Binding AccountType}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_Currency}" Binding="{Binding Currency}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_CreditLimit}" Binding="{Binding CreditLimit}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateAccountCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteAccountCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ========================================== -->
+            <!-- 6. ENTITIES (Institutions) TAB             -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_Institutes}" IsVisible="{Binding IsEntitiesTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                    <Grid RowDefinitions="Auto, Auto, *">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                            <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Title_Institutes}" Classes="DisplayNumber" />
+                            <Button Grid.Column="1" Classes="Primary" Content="{DynamicResource Locale_DataTaxonomy_Common_Create}" Command="{Binding OpenCreateEntityCommand}" />
+                        </Grid>
+                        <TextBox Grid.Row="1" Watermark="{DynamicResource Locale_DataTaxonomy_SearchInstitutes}" Text="{Binding EntitySearchText, Mode=TwoWay}" Margin="0,0,0,16" />
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredEntities}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Id}" Binding="{Binding Id}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_InstituteName}" Binding="{Binding Name}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_InstituteCountry}" Binding="{Binding Country}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateEntityCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.MergeEntityCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Merge}" Foreground="{DynamicResource AccentIndigo}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteEntityCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ========================================== -->
+            <!-- 7. TAG RULES TAB                           -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_TagRule}" IsVisible="{Binding IsTagRulesTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                    <Grid RowDefinitions="Auto, Auto, *">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                            <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Title_TagRule}" Classes="DisplayNumber" />
+                            <Button Grid.Column="1" Classes="Primary" Content="{DynamicResource Locale_DataTaxonomy_Common_Create}" Command="{Binding OpenCreateTagRuleCommand}" />
+                        </Grid>
+                        <Grid Grid.Row="1" ColumnDefinitions="*, Auto, Auto" Margin="0,0,0,16">
+                            <TextBox Grid.Column="0" Watermark="{DynamicResource Locale_DataTaxonomy_SearchTagRule}" Text="{Binding TagRuleSearchText, Mode=TwoWay}" />
+                            <ComboBox Grid.Column="1" Margin="12,0,0,0" Width="180" PlaceholderText="{DynamicResource Locale_DataTaxonomy_Common_Priority}" ItemsSource="{Binding TagRuleFilterOptions}" SelectedItem="{Binding SelectedTagRuleFilter}" />
+                            <!-- <ComboBox Grid.Column="2" Margin="12,0,0,0" Width="180" PlaceholderText="{DynamicResource Locale_DataTaxonomy_Common_TargetTag}" ItemsSource="{Binding AvailableTagRuleTags}">
+                                <ComboBox.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate>
+                            </ComboBox> -->
+
+                            <DropDownButton Grid.Column="2" Margin="12,0,0,0" Width="180" Content="{DynamicResource Locale_DataTaxonomy_Common_TargetTag}">
+                            <DropDownButton.Flyout>
+                                <Flyout Placement="Bottom">
+                                <Grid RowDefinitions="Auto, *">
+                                    <!-- Clear All Action -->
+                                    <Button Grid.Row="0"
+                                            Content="Clear All"
+                                            Command="{Binding ClearTagFiltersCommand}"
+                                            Background="Transparent"
+                                            Foreground="{DynamicResource AccentIndigo}"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,0,0,8"
+                                            Padding="4"/>
+                                    <ScrollViewer Grid.Row="1" MaxHeight="300">
+                                        <ItemsControl ItemsSource="{Binding AvailableTagRuleTags}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}" Margin="2,4"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    </Grid>
+                                </Flyout>
+                            </DropDownButton.Flyout>
+                            </DropDownButton>
+                        </Grid>
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredTagRules}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_TagRule_Keyword}" Binding="{Binding Keyword}" />
+                                <DataGridTextColumn Header="{DynamicResource  Locale_DataTaxonomy_TagRule_Tag}" Binding="{Binding TagName}" />
+                                <DataGridTextColumn Header="{DynamicResource  Locale_DataTaxonomy_TagRule_Priority}" Binding="{Binding Priority}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateTagRuleCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteTagRuleCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ========================================== -->
+            <!-- 8. SYNONYMS TAB                            -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_Synonyms}" IsVisible="{Binding IsSynonymsTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                    <Grid RowDefinitions="Auto, Auto, *">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                            <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Title_Synonyms}" Classes="DisplayNumber" />
+                            <Button Grid.Column="1" Classes="Primary" Content="{DynamicResource Locale_DataTaxonomy_Common_Create}" Command="{Binding OpenCreateSynonymCommand}" />
+                        </Grid>
+                        <!-- <TextBox Grid.Row="1" Watermark="{DynamicResource Locale_DataTaxonomy_SearchSynonyms}" Text="{Binding SynonymSearchText, Mode=TwoWay}" Margin="0,0,0,16" /> -->
+                        <Grid Grid.Row="1" ColumnDefinitions="*, Auto, Auto" Margin="0,0,0,16">
+                            <TextBox Grid.Column="0" Watermark="{DynamicResource Locale_DataTaxonomy_SearchSynonyms}" Text="{Binding SynonymSearchText, Mode=TwoWay}" />
+                            <!-- <ComboBox Grid.Column="2" Margin="12,0,0,0" Width="180" PlaceholderText="{DynamicResource Locale_DataTaxonomy_Common_TargetTag}" ItemsSource="{Binding AvailableTagRuleTags}">
+                                <ComboBox.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate>
+                            </ComboBox> -->
+
+                            <ComboBox Grid.Column="1" Margin="12,0,0,0" Width="180" PlaceholderText="{DynamicResource Locale_DataTaxonomy_Common_CategoryType}" ItemsSource="{Binding AvailableSynonymCategory}" SelectedItem="{Binding SelectedSynonymCategoryFilter}" />
+
+                            <DropDownButton Grid.Column="2" Margin="12,0,0,0" Width="180" Content="{DynamicResource Locale_DataTaxonomy_Common_FieldType}">
+                            <DropDownButton.Flyout>
+                                <Flyout Placement="Bottom">
+                                <Grid RowDefinitions="Auto, *">
+                                    <!-- Clear All Action -->
+                                    <Button Grid.Row="0"
+                                            Content="Clear All"
+                                            Command="{Binding ClearFieldTypeFiltersCommand}"
+                                            Background="Transparent"
+                                            Foreground="{DynamicResource AccentIndigo}"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,0,0,8"
+                                            Padding="4"/>
+                                    <ScrollViewer Grid.Row="2" MaxHeight="300">
+                                        <ItemsControl ItemsSource="{Binding AvailableSynonymField}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}" Margin="2,4"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    </Grid>
+                                </Flyout>
+                            </DropDownButton.Flyout>
+                            </DropDownButton>
+
+                        </Grid>
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredSynonyms}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_SynonymName}" Binding="{Binding SynonymName}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_SynonymsField}" Binding="{Binding FieldType}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_SynonymsCatgType}" Binding="{Binding CategoryName}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateSynonymCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteSynonymCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ========================================== -->
+            <!-- 9. IMPORT BATCHES (Audit Logs) TAB         -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_ImportLogs}" IsVisible="{Binding IsImportBatchesTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                <Grid RowDefinitions="Auto, Auto, *">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,24">
+                            <TextBlock Grid.Row="0" Text="{DynamicResource Locale_DataTaxonomy_Title_ImportLogs}" Classes="DisplayNumber" Margin="0,0,0,24" />
+                        </Grid>
+                        <TextBox Grid.Row="1" Watermark="{DynamicResource Locale_DataTaxonomy_SearchImportLogs}" Text="{Binding ImportBatchSearchText, Mode=TwoWay}" Margin="0,0,0,16" />
+
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding ImportBatches}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Id}" Binding="{Binding Id}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_ImportLogDate}" Binding="{Binding ImportDate}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_ImportLogFileName}" Binding="{Binding FileName}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <!-- ONLY Revert (Delete) is allowed for Batches -->
+                                            <Button Command="{Binding #RootControl.DataContext.RevertBatchCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="Revert entire import batch">
+                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="#EF4444" /> <!-- Red warning color -->
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- ========================================== -->
+            <!-- 10. USER SETTINGS TAB                      -->
+            <!-- ========================================== -->
+            <TabItem Header="{DynamicResource Locale_DataTaxonomy_Tab_UserPrefer}" IsVisible="{Binding IsUserSettingsTabVisible}">
+                <Border Classes="Card" Margin="24,0,0,0">
+                    <Grid RowDefinitions="Auto, Auto, *">
+                        <TextBlock Grid.Row="0" Text="{DynamicResource Locale_DataTaxonomy_Title_UserPrefer}" Classes="DisplayNumber" Margin="0,0,0,24" />
+                        <TextBox Grid.Row="1" Watermark="{DynamicResource Locale_DataTaxonomy_SearchUserPrefer}" Text="{Binding UserSettingSearchText, Mode=TwoWay}" Margin="0,0,0,16" />
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding FilteredUserSettings}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_UserPreferKey}" Binding="{Binding SettingKey}" />
+                                <DataGridTextColumn Header="{DynamicResource Locale_DataTaxonomy_UserPreferValue}" Binding="{Binding SettingValue}" />
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
+                                            <!-- ONLY Update is allowed for core Settings to prevent app breaking -->
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateUserSettingCommand}" CommandParameter="{Binding}" Background="Transparent">
+                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" />
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+        </TabControl>
+    </Grid>
+</UserControl>
