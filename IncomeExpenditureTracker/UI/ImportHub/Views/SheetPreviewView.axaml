@@ -1,0 +1,217 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.ImportHub.ViewModels"
+             xmlns:conv="clr-namespace:IncomeExpenditureTracker.UI.Shared.Converters"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
+             x:Class="IncomeExpenditureTracker.UI.ImportHub.SheetPreviewView"
+             x:DataType="vm:SheetPreviewViewModel">
+
+    <UserControl.Resources>
+        <conv:ReviewStatusConverter x:Key="ReviewStatusConverter" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20">
+
+        <!-- ROW 0: Account Details Form -->
+        <Border Grid.Row="0" Classes="Card" Padding="20" Margin="0,0,0,20">
+            <StackPanel Spacing="15">
+                <TextBlock Text="{DynamicResource Locale_Module_Preview_AccountDetails}"
+                           FontSize="18"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource TextPrimary}" />
+
+                <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*" RowDefinitions="Auto">
+                    <TextBlock Grid.Column="0" Text="{DynamicResource Locale_Module_Preview_BankName}"
+                               VerticalAlignment="Center" Margin="0,0,10,0"
+                               Foreground="{DynamicResource TextPrimary}" />
+                    <TextBox Grid.Column="1" Text="{Binding BankName}"
+                             Watermark="{DynamicResource Locale_Module_Preview_BankWatermark}"
+                             Margin="0,0,20,0" />
+
+                    <TextBlock Grid.Column="2" Text="{DynamicResource Locale_Module_Preview_AccountNumber}"
+                               VerticalAlignment="Center" Margin="0,0,10,0"
+                               Foreground="{DynamicResource TextPrimary}" />
+                    <TextBox Grid.Column="3" Text="{Binding AccountNumber}"
+                             Watermark="{DynamicResource Locale_Module_Preview_AccountWatermark}"
+                             Margin="0,0,20,0" />
+
+                    <TextBlock Grid.Column="4" Text="{DynamicResource Locale_Module_Preview_TargetSheet}"
+                               VerticalAlignment="Center" Margin="0,0,10,0"
+                               Foreground="{DynamicResource TextPrimary}" />
+                    <TextBox Grid.Column="5" Text="{Binding TargetSheetName}"
+                             IsReadOnly="True"
+                             Background="{DynamicResource BackgroundSecondary}" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- ROW 1: Column Mapping Header -->
+        <TextBlock Grid.Row="1"
+                   Text="{DynamicResource Locale_Module_Preview_ColumnMapping}"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,10"
+                   Foreground="{DynamicResource TextPrimary}" />
+
+        <!-- ROW 2: Transaction Preview DataGrid -->
+        <Border Grid.Row="2" Classes="Card" Padding="10">
+            <DataGrid ItemsSource="{Binding TransactionRows}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      GridLinesVisibility="All"
+                      CanUserReorderColumns="False"
+                      CanUserResizeColumns="True"
+                      FontFeatures="tnum">
+
+               <!-- Date Column with Header ComboBox Mapping -->
+               <DataGrid.Columns>
+                   <DataGridTemplateColumn Width="120">
+                       <DataGridTemplateColumn.HeaderTemplate>
+                           <DataTemplate x:CompileBindings="False">
+                               <StackPanel>
+                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Date}"
+                                              FontWeight="SemiBold"
+                                              Margin="0,0,0,5" />
+                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             SelectedItem="{Binding DataContext.SelectedDateHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             MinWidth="100" />
+                               </StackPanel>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.HeaderTemplate>
+                       <DataGridTemplateColumn.CellTemplate>
+                           <DataTemplate>
+                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
+                                       Padding="8,4">
+                                   <TextBlock Text="{Binding Date, StringFormat='{}{0:dd-MMM-yyyy}'}"
+                                              VerticalAlignment="Center" />
+                               </Border>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.CellTemplate>
+                   </DataGridTemplateColumn>
+
+                   <!-- Description Column with Header ComboBox Mapping -->
+                   <DataGridTemplateColumn Width="*">
+                       <DataGridTemplateColumn.HeaderTemplate>
+                           <DataTemplate x:CompileBindings="False">
+                               <StackPanel>
+                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Description}"
+                                              FontWeight="SemiBold"
+                                              Margin="0,0,0,5" />
+                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             SelectedItem="{Binding DataContext.SelectedDescriptionHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             MinWidth="100" />
+                               </StackPanel>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.HeaderTemplate>
+                       <DataGridTemplateColumn.CellTemplate>
+                           <DataTemplate>
+                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
+                                       Padding="8,4">
+                                   <TextBlock Text="{Binding Description}"
+                                              VerticalAlignment="Center"
+                                              TextTrimming="CharacterEllipsis" />
+                               </Border>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.CellTemplate>
+                   </DataGridTemplateColumn>
+
+                   <!-- Debit Column with Header ComboBox Mapping -->
+                   <DataGridTemplateColumn Width="120">
+                       <DataGridTemplateColumn.HeaderTemplate>
+                           <DataTemplate x:CompileBindings="False">
+                               <StackPanel>
+                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Debit}"
+                                              FontWeight="SemiBold"
+                                              Margin="0,0,0,5" />
+                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             SelectedItem="{Binding DataContext.SelectedDebitHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             MinWidth="100" />
+                               </StackPanel>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.HeaderTemplate>
+                       <DataGridTemplateColumn.CellTemplate>
+                           <DataTemplate>
+                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
+                                       Padding="8,4">
+                                   <TextBlock Text="{Binding Debit, StringFormat='{}{0:N2}'}"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Right"
+                                              FontFeatures="tnum" />
+                               </Border>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.CellTemplate>
+                   </DataGridTemplateColumn>
+
+                   <!-- Credit Column with Header ComboBox Mapping -->
+                   <DataGridTemplateColumn Width="120">
+                       <DataGridTemplateColumn.HeaderTemplate>
+                           <DataTemplate x:CompileBindings="False">
+                               <StackPanel>
+                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Credit}"
+                                              FontWeight="SemiBold"
+                                              Margin="0,0,0,5" />
+                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             SelectedItem="{Binding DataContext.SelectedCreditHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             MinWidth="100" />
+                               </StackPanel>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.HeaderTemplate>
+                       <DataGridTemplateColumn.CellTemplate>
+                           <DataTemplate>
+                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
+                                       Padding="8,4">
+                                   <TextBlock Text="{Binding Credit, StringFormat='{}{0:N2}'}"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Right"
+                                              FontFeatures="tnum" />
+                               </Border>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.CellTemplate>
+                   </DataGridTemplateColumn>
+
+                   <!-- Amount Column with Header ComboBox Mapping -->
+                   <DataGridTemplateColumn Width="120">
+                       <DataGridTemplateColumn.HeaderTemplate>
+                           <DataTemplate x:CompileBindings="False">
+                               <StackPanel>
+                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Amount}"
+                                              FontWeight="SemiBold"
+                                              Margin="0,0,0,5" />
+                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             SelectedItem="{Binding DataContext.SelectedAmountHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                             MinWidth="100" />
+                               </StackPanel>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.HeaderTemplate>
+                       <DataGridTemplateColumn.CellTemplate>
+                           <DataTemplate>
+                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
+                                       Padding="8,4">
+                                   <TextBlock Text="{Binding Amount, StringFormat='{}{0:N2}'}"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Right"
+                                              FontFeatures="tnum" />
+                               </Border>
+                           </DataTemplate>
+                       </DataGridTemplateColumn.CellTemplate>
+                   </DataGridTemplateColumn>
+               </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <!-- ROW 3: Action Buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="{DynamicResource Locale_Module_ImportHub_Discard}"
+                    Command="{Binding DiscardPreviewCommand}"
+                    Background="{DynamicResource BackgroundSecondary}"
+                    Padding="20,10" />
+
+            <Button Content="{DynamicResource Locale_Module_ImportHub_Confirm}"
+                    Command="{Binding ConfirmImportCommand}"
+                    Classes="Primary"
+                    Padding="20,10" />
+        </StackPanel>
+    </Grid>
+</UserControl>

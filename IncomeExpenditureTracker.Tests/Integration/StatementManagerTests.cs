@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Xunit.Abstractions;
+using IncomeExpenditureTracker.Services.Importing.Strategies;
 
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Importing;
@@ -36,22 +37,6 @@ namespace IncomeExpenditureTracker.Tests.Integration
                       ?? new LoggerFactory().CreateLogger<StatementManager>();
         }
 
-        // =================================================================================
-        // HELPER METHOD: Generates a strictly valid StatementLoadResult for our mocks
-        // =================================================================================
-        private StatementLoadResult CreateMockLoadResult(string filePath)
-        {
-            var workbook = new XLWorkbook(filePath);
-            var worksheet = workbook.Worksheet(1); // Grab the first generated sheet
-            var fileName = Path.GetFileName(filePath);
-
-            // We use a dummy MemoryStream here to satisfy the constructor's strict Stream requirement
-            // without holding an actual OS lock during the test assertions.
-            var dummyStream = new MemoryStream();
-
-            return new StatementLoadResult(workbook, worksheet, fileName, dummyStream);
-        }
-
         [Fact]
         public async Task StageFilesAsync_ConcurrentExecution_IsolatesOSFileLocksWithoutCrashing()
         {
@@ -69,32 +54,26 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             _tempFilesToCleanup.AddRange(new[] { file1, file2, file3 });
 
-            // Mock the Loader to simulate the OS lock on file2
-            var mockLoader = new Mock<IStatementLoader>();
+            // Mock the strategy
+            var mockStrategy = new Mock<IFileParserStrategy>();
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), Path.GetFileName(file1), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new PendingFilePreview(Guid.NewGuid(), Path.GetFileName(file1), new List<string>()));
 
-            // Using the new helper method to construct valid StatementLoadResults
-            mockLoader.Setup(l => l.LoadStatementAsync(file1, null!, It.IsAny<CancellationToken>()))
-                      .ReturnsAsync(CreateMockLoadResult(file1));
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), Path.GetFileName(file2), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new IOException("The process cannot access the file because it is being used by another process."));
 
-            mockLoader.Setup(l => l.LoadStatementAsync(file2, null!, It.IsAny<CancellationToken>()))
-                      .ThrowsAsync(new IOException("The process cannot access the file because it is being used by another process."));
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), Path.GetFileName(file3), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new PendingFilePreview(Guid.NewGuid(), Path.GetFileName(file3), new List<string>()));
 
-            mockLoader.Setup(l => l.LoadStatementAsync(file3, null!, It.IsAny<CancellationToken>()))
-                      .ReturnsAsync(CreateMockLoadResult(file3));
-
-            // Declare and initialize the transient mocks before using them
-            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
             var mockEditSession = new Mock<IStatementEditSession>();
-            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
             var mockBroker = new Mock<IApplicationBroker>();
+            var mockSynonymService = new Mock<ISynonymService>();
 
             var manager = new StatementManager(
-                mockLoader.Object,
-                () => mockExtractor.Object,    // Func<IStatementExtractor>
-                () => mockEditSession.Object,  // Func<IStatementEditSession>
-                () => mockImport.Object,       // Func<IStatementImport>
-                new Mock<ISynonymService>().Object,
-                _logger, // Injecting the xUnit bridged logger
+                ext => mockStrategy.Object,
+                () => mockEditSession.Object,
+                mockSynonymService.Object,
+                _logger,
                 mockBroker.Object
             );
 
@@ -102,8 +81,6 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockProgress = new Progress<LoadingProgress>();
 
             // Act
-            // If concurrency isolation fails, this will throw an exception and fail the test.
-            // If it works, it will trap the error and return a mixed batch result.
             StagingBatchResult result = await manager.StageFilesAsync(filePaths, mockProgress, CancellationToken.None);
 
             // Assert
@@ -126,19 +103,18 @@ namespace IncomeExpenditureTracker.Tests.Integration
             string file1 = ExcelStatementGenerator.GenerateValidStatement(2);
             _tempFilesToCleanup.Add(file1);
 
-            var mockLoader = new Mock<IStatementLoader>();
-            mockLoader.Setup(l => l.LoadStatementAsync(file1, null!, It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("Locked by Excel"));
+            var mockStrategy = new Mock<IFileParserStrategy>();
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), Path.GetFileName(file1), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new IOException("Locked by Excel"));
 
             var mockBroker = new Mock<IApplicationBroker>(); // Our fake postman
 
             var manager = new StatementManager(
-                mockLoader.Object,
-                () => new Mock<IStatementExtractor<IXLWorksheet>>().Object,
+                ext => mockStrategy.Object,
                 () => new Mock<IStatementEditSession>().Object,
-                () => new Mock<IStatementImport<IXLWorksheet>>().Object,
                 new Mock<ISynonymService>().Object,
                 _logger,
-                mockBroker.Object // Inject it
+                mockBroker.Object
             );
 
             // Act
@@ -164,19 +140,9 @@ namespace IncomeExpenditureTracker.Tests.Integration
             string validFile = ExcelStatementGenerator.GenerateValidStatement(2);
             _tempFilesToCleanup.Add(validFile);
 
-            var mockLoader = new Mock<IStatementLoader>();
-            mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!, It.IsAny<CancellationToken>()))
-                      .ReturnsAsync(CreateMockLoadResult(validFile));
-
+            var mockStrategy = new Mock<IFileParserStrategy>();
             var mockEditSession = new Mock<IStatementEditSession>();
-            var mockImportService = new Mock<IStatementImport<IXLWorksheet>>();
-            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
             var mockBroker = new Mock<IApplicationBroker>();
-
-            // Setup the extractor mock so the Preview method succeeds
-            mockExtractor
-                .Setup(e => e.Analyze(It.IsAny<IXLWorksheet>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new StatementPreview());
 
             var mockSynonymService = new Mock<ISynonymService>();
             mockSynonymService
@@ -184,21 +150,26 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 .Returns(Task.CompletedTask);
 
             var manager = new StatementManager(
-                mockLoader.Object,
-                () => mockExtractor.Object,
+                ext => mockStrategy.Object,
                 () => mockEditSession.Object,
-                () => mockImportService.Object,
                 mockSynonymService.Object,
                 _logger,
                 mockBroker.Object
             );
+
+            var pendingPreview = new PendingFilePreview(Guid.NewGuid(), Path.GetFileName(validFile), new List<string>());
+
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), Path.GetFileName(validFile), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(pendingPreview);
+
+            mockStrategy.Setup(s => s.GeneratePreviewAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new StatementPreview());
 
             // Stage the file first so it exists in the internal ConcurrentDictionary
             var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!, CancellationToken.None);
             Guid stagedFileId = stagingResult.Successes.First().Id;
 
             // Create a fake confirmed tracker with 1 column correction
-
             var confirmedTracker = new PreviewTracker
             {
                 FinalPreview = new StatementPreview(),
@@ -208,14 +179,16 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 }
             };
 
+            var trackers = new List<PreviewTracker> { confirmedTracker };
+
             // Simulate the UI requesting a preview, which initializes our edit session in the dictionary
             await manager.PreviewStagedFileAsync(stagedFileId, null, CancellationToken.None);
 
             // Act
-            await manager.CommitStagedFileAsync(stagedFileId, confirmedTracker, CancellationToken.None);
+            await manager.CommitStagedBatchAsync(stagedFileId, trackers, CancellationToken.None);
 
             // Assert 1: Verify Import was called (Synchronous, so we check immediately)
-            mockImportService.Verify(i => i.ImportConfirmedStatementAsync(It.IsAny<IXLWorksheet>(), confirmedTracker.FinalPreview, It.IsAny<CancellationToken>()), Times.Once);
+            mockStrategy.Verify(i => i.ImportConfirmedBatchAsync(trackers, It.IsAny<CancellationToken>()), Times.Once);
 
             // Assert 2: Polling Wait for the Fire-and-Forget Background Thread
             // We give the thread pool up to 3 seconds to execute, checking every 50ms.
@@ -256,7 +229,6 @@ namespace IncomeExpenditureTracker.Tests.Integration
         [Fact]
         public async Task PreviewStagedFileAsync_Negative_SheetNotFound_ThrowsInvalidOperationException()
         {
-
             // =================================================================================
             // OBJECTIVE: Test the Target Document Resolution logic.
             // DECISION: Stage a valid file, but explicitly request a sheet name that doesn't exist.
@@ -267,27 +239,23 @@ namespace IncomeExpenditureTracker.Tests.Integration
             string validFile = ExcelStatementGenerator.GenerateValidStatement(3);
             _tempFilesToCleanup.Add(validFile);
 
-            var mockLoader = new Mock<IStatementLoader>();
+            var mockStrategy = new Mock<IFileParserStrategy>();
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), Path.GetFileName(validFile), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new PendingFilePreview(Guid.NewGuid(), Path.GetFileName(validFile), new List<string>()));
 
-            // Using the new helper method
-            mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!, It.IsAny<CancellationToken>()))
-                      .ReturnsAsync(CreateMockLoadResult(validFile));
+            mockStrategy.Setup(s => s.GeneratePreviewAsync("NonExistentSheet", It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("was not found in workbook"));
 
-            // Declare and initialize the transient mocks before using them
-            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
             var mockEditSession = new Mock<IStatementEditSession>();
-            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
             var mockBroker = new Mock<IApplicationBroker>();
 
             var manager = new StatementManager(
-                mockLoader.Object,
-                () => mockExtractor.Object,    // Func<IStatementExtractor>
-                () => mockEditSession.Object,  // Func<IStatementEditSession>
-                () => mockImport.Object,       // Func<IStatementImport>
+                ext => mockStrategy.Object,
+                () => mockEditSession.Object,
                 new Mock<ISynonymService>().Object,
-                _logger, // Injecting the xUnit bridged logger
+                _logger,
                 mockBroker.Object
-            ); ;
+            );
 
             var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!, CancellationToken.None);
             Guid stagedFileId = stagingResult.Successes.First().Id;
@@ -297,7 +265,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 manager.PreviewStagedFileAsync(stagedFileId, badSheetName, CancellationToken.None));
 
-            Assert.Contains($"was not found in workbook", exception.Message);
+            Assert.Contains("Failed to analyze the document", exception.Message);
         }
 
         [Fact]
@@ -313,31 +281,23 @@ namespace IncomeExpenditureTracker.Tests.Integration
             string corruptFile = ExcelStatementGenerator.GenerateCorruptedStatement();
             _tempFilesToCleanup.Add(corruptFile);
 
-            var mockLoader = new Mock<IStatementLoader>();
+            var mockStrategy = new Mock<IFileParserStrategy>();
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), Path.GetFileName(corruptFile), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new PendingFilePreview(Guid.NewGuid(), Path.GetFileName(corruptFile), new List<string>()));
 
-            // Using the new helper method
-            mockLoader.Setup(l => l.LoadStatementAsync(corruptFile, null!, It.IsAny<CancellationToken>()))
-                      .ReturnsAsync(CreateMockLoadResult(corruptFile));
+            mockStrategy.Setup(s => s.GeneratePreviewAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new Exception("Simulated catastrophic failure."));
 
-            // Declare and initialize the transient mocks before using them
-            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
             var mockEditSession = new Mock<IStatementEditSession>();
-            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
             var mockBroker = new Mock<IApplicationBroker>();
 
-            mockExtractor.Setup(e => e.Analyze(It.IsAny<IXLWorksheet>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-                         .ThrowsAsync(new Exception("Simulated catastrophic closedXML failure."));
-
             var manager = new StatementManager(
-                mockLoader.Object,
-                () => mockExtractor.Object,    // Func<IStatementExtractor>
-                () => mockEditSession.Object,  // Func<IStatementEditSession>
-                () => mockImport.Object,       // Func<IStatementImport>
+                ext => mockStrategy.Object,
+                () => mockEditSession.Object,
                 new Mock<ISynonymService>().Object,
-                _logger, // Injecting the xUnit bridged logger
+                _logger,
                 mockBroker.Object
             );
-
 
             var stagingResult = await manager.StageFilesAsync(new List<string> { corruptFile }, null!, CancellationToken.None);
             Guid stagedFileId = stagingResult.Successes.First().Id;
@@ -361,19 +321,12 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // EXPECTATION: It must throw a KeyNotFoundException immediately.
             // =================================================================================
 
-            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
-            var mockEditSession = new Mock<IStatementEditSession>();
-            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
-            var mockBroker = new Mock<IApplicationBroker>();
-
             var manager = new StatementManager(
-                new Mock<IStatementLoader>().Object,
-                () => mockExtractor.Object,    // Func<IStatementExtractor>
-                () => mockEditSession.Object,  // Func<IStatementEditSession>
-                () => mockImport.Object,       // Func<IStatementImport>
+                ext => new Mock<IFileParserStrategy>().Object,
+                () => new Mock<IStatementEditSession>().Object,
                 new Mock<ISynonymService>().Object,
-                _logger, // Injecting the xUnit bridged logger
-                mockBroker.Object
+                _logger,
+                new Mock<IApplicationBroker>().Object
             );
 
             Guid ghostFileId = Guid.NewGuid();
@@ -393,19 +346,12 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // DECISION: Pass a list of 6 file paths. It must reject the batch instantly.
             // =================================================================================
 
-            var mockExtractor = new Mock<IStatementExtractor<IXLWorksheet>>();
-            var mockEditSession = new Mock<IStatementEditSession>();
-            var mockImport = new Mock<IStatementImport<IXLWorksheet>>();
-            var mockBroker = new Mock<IApplicationBroker>();
-
             var manager = new StatementManager(
-                new Mock<IStatementLoader>().Object,
-                () => mockExtractor.Object,    // Func<IStatementExtractor>
-                () => mockEditSession.Object,  // Func<IStatementEditSession>
-                () => mockImport.Object,       // Func<IStatementImport>
+                ext => new Mock<IFileParserStrategy>().Object,
+                () => new Mock<IStatementEditSession>().Object,
                 new Mock<ISynonymService>().Object,
-                _logger, // Injecting the xUnit bridged logger
-                mockBroker.Object
+                _logger,
+                new Mock<IApplicationBroker>().Object
             );
 
             // Create a dummy list of 6 strings
@@ -426,12 +372,10 @@ namespace IncomeExpenditureTracker.Tests.Integration
         public async Task StageFilesAsync_CancellationRequested_ThrowsOperationCanceledException()
         {
             // Arrange
-            var mockLoader = new Mock<IStatementLoader>();
+            var mockStrategy = new Mock<IFileParserStrategy>();
             var manager = new StatementManager(
-                mockLoader.Object,
-                () => new Mock<IStatementExtractor<IXLWorksheet>>().Object,
+                ext => mockStrategy.Object,
                 () => new Mock<IStatementEditSession>().Object,
-                () => new Mock<IStatementImport<IXLWorksheet>>().Object,
                 new Mock<ISynonymService>().Object,
                 _logger,
                 new Mock<IApplicationBroker>().Object
@@ -447,7 +391,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 async () => await manager.StageFilesAsync(filePaths, null!, cts.Token));
 
             // Verify that the Loader was never reached due to the early exit
-            mockLoader.Verify(l => l.LoadStatementAsync(It.IsAny<string>(), It.IsAny<IProgress<LoadingProgress>>(), It.IsAny<CancellationToken>()), Times.Never);
+            mockStrategy.Verify(l => l.LoadAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -457,15 +401,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
             string validFile = ExcelStatementGenerator.GenerateValidStatement(2);
             _tempFilesToCleanup.Add(validFile);
 
-            var mockLoader = new Mock<IStatementLoader>();
-            mockLoader.Setup(l => l.LoadStatementAsync(validFile, null!, It.IsAny<CancellationToken>()))
-                      .ReturnsAsync(CreateMockLoadResult(validFile));
+            var mockStrategy = new Mock<IFileParserStrategy>();
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), Path.GetFileName(validFile), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new PendingFilePreview(Guid.NewGuid(), Path.GetFileName(validFile), new List<string>()));
 
             var manager = new StatementManager(
-                mockLoader.Object,
-                () => new Mock<IStatementExtractor<IXLWorksheet>>().Object,
+                ext => mockStrategy.Object,
                 () => new Mock<IStatementEditSession>().Object,
-                () => new Mock<IStatementImport<IXLWorksheet>>().Object,
                 new Mock<ISynonymService>().Object,
                 _logger,
                 new Mock<IApplicationBroker>().Object

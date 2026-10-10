@@ -231,4 +231,27 @@
     <system:String x:Key="Locale_Forms_UserSetting_ValueWatermark">Value...</system:String>
     <system:String x:Key="Locale_Forms_UserSetting_Save">Save Setting</system:String>
 
+    <system:String x:Key="Locale_Module_ImportHub_Title">Import Statements</system:String>
+    <system:String x:Key="Locale_Module_ImportHub_Confirm">Confirm &amp; Import</system:String>
+    <system:String x:Key="Locale_Module_ImportHub_Discard">Discard</system:String>
+
+    <system:String x:Key="Locale_Module_ImportQueue_Excel">Excel (.xlsx)</system:String>
+    <system:String x:Key="Locale_Module_ImportQueue_Csv">CSV</system:String>
+    <system:String x:Key="Locale_Module_ImportQueue_DropZone">Drag &amp; Drop Bank Statements Here</system:String>
+
+    <!-- PREVIEW WORKBENCH -->
+    <system:String x:Key="Locale_Module_Preview_AccountDetails">Account Details</system:String>
+    <system:String x:Key="Locale_Module_Preview_BankName">Bank Name</system:String>
+    <system:String x:Key="Locale_Module_Preview_AccountNumber">Account Number</system:String>
+    <system:String x:Key="Locale_Module_Preview_TargetSheet">Target Sheet</system:String>
+    <system:String x:Key="Locale_Module_Preview_ColumnMapping">Preview &amp; Column Mapping</system:String>
+    <system:String x:Key="Locale_Module_Preview_BankWatermark">e.g., HDFC Bank</system:String>
+    <system:String x:Key="Locale_Module_Preview_AccountWatermark">e.g., 1234567890</system:String>
+
+    <!-- PREVIEW WORKBENCH - DataGrid Headers -->
+    <system:String x:Key="Locale_Module_Preview_Header_Date">Date</system:String>
+    <system:String x:Key="Locale_Module_Preview_Header_Description">Description</system:String>
+    <system:String x:Key="Locale_Module_Preview_Header_Debit">Debit</system:String>
+    <system:String x:Key="Locale_Module_Preview_Header_Credit">Credit</system:String>
+    <system:String x:Key="Locale_Module_Preview_Header_Amount">Amount</system:String>
 </ResourceDictionary>

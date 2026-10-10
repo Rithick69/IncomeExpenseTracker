@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using ClosedXML.Excel;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -11,65 +10,44 @@ using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Importing;
+using IncomeExpenditureTracker.Services.Importing.Strategies;
 using IncomeExpenditureTracker.Services.Messaging;
+
 namespace IncomeExpenditureTracker.Services.StatementManagement;
 
-// This service manages the lifecycle of uploaded statement files, including staging them for preview and allowing users to discard them if they choose not to proceed with the import.
-// It ensures that memory is properly managed by disposing of loaded statements when they are no longer needed
-// or when the session ends. It also enforces a limit of 5 files per session to prevent excessive memory usage.
-// The StatementManager interacts with the StatementLoader to load files and keeps track of them in memory until the user decides to import or discard them.
-// The StageFilesAsync method loads multiple files concurrently, providing progress updates to the UI. Each loaded file is stored in a dictionary with a unique identifier (GUID) for easy retrieval and management.
-// The DiscardFile method allows users to remove a staged file from memory if they decide not to proceed with it, ensuring that resources are freed up immediately.
-public class StatementManager : IDisposable
+public class StatementManager : IStatementManager
 {
-    private readonly IStatementLoader _statementLoader;
-
-    private readonly Func<IStatementExtractor<IXLWorksheet>> _statementExtractorFactory;
-    // Inject a factory that knows how to create fresh edit sessions
+    private readonly Func<string, IFileParserStrategy> _strategyFactory;
     private readonly Func<IStatementEditSession> _editSessionFactory;
-    private readonly Func<IStatementImport<IXLWorksheet>> _statementImportFactory;
-
     private readonly ILogger<StatementManager> _logger;
-
     private readonly IApplicationBroker _broker;
     private readonly ISynonymService _synonymService;
 
-    // Lock-free concurrent storage prevents thread contention between UI reads and parallel background loads
-    private readonly ConcurrentDictionary<Guid, StatementLoadResult> _pendingStatements = new();
+    // Concurrency control for limiting max concurrent file operations (Load/Preview)
+    private readonly SemaphoreSlim _concurrencySemaphore = new SemaphoreSlim(5, 5);
+
+    // Lock-free concurrent storage for active parsing strategies
+    private readonly ConcurrentDictionary<Guid, IFileParserStrategy> _activeStrategies = new();
 
     // Dictionary to keep track of the transient edit sessions per file
     private readonly ConcurrentDictionary<Guid, IStatementEditSession> _activeSessions = new();
 
     private volatile bool _isDisposed;
 
-
     public StatementManager(
-        IStatementLoader statementLoader,
-        Func<IStatementExtractor<IXLWorksheet>> statementExtractorFactory,
+        Func<string, IFileParserStrategy> strategyFactory,
         Func<IStatementEditSession> editSessionFactory,
-        Func<IStatementImport<IXLWorksheet>> statementImportFactory,
         ISynonymService synonymService,
         ILogger<StatementManager> logger,
-        IApplicationBroker broker
-        )
+        IApplicationBroker broker)
     {
-        _statementLoader = statementLoader;
-        _statementExtractorFactory = statementExtractorFactory;
+        _strategyFactory = strategyFactory;
         _editSessionFactory = editSessionFactory;
-        _statementImportFactory = statementImportFactory;
         _synonymService = synonymService;
         _logger = logger;
         _broker = broker;
     }
 
-    // This method stages multiple files for preview by loading them asynchronously and providing progress updates.
-    // It enforces a maximum limit of 5 files per session to prevent excessive memory usage
-    // and returns a list of PendingFilePreview objects that contain the file name and sheet names for each loaded file, which can be displayed in the UI for user confirmation before import.
-    /// <summary>
-    /// Phase 1: Asynchronously stages up to 5 files concurrently into RAM using a Resilient Partial Staging model.
-    /// If individual files fail (e.g., OS file lock or corruption), they are trapped and returned as UI errors,
-    /// allowing successfully loaded files to remain in the staging queue without interruption.
-    /// </summary>
     public async Task<StagingBatchResult> StageFilesAsync(List<string> filePaths, IProgress<LoadingProgress> progress, CancellationToken ct = default)
     {
         ThrowIfDisposed();
@@ -104,103 +82,86 @@ public class StatementManager : IDisposable
         // Broadcast the start of the process to the UI
         _broker.Send(new StagingProgressMessage(0, startMessage));
 
-        // Load all files concurrently and track progress
-        // We use Task.WhenAll to load all files in parallel, which can significantly reduce the time taken to stage multiple files, especially if they are large.
-        // Each file is loaded using the StatementLoader, and as each file is successfully loaded, we update the progress to reflect how many files have been staged so far.
-        // Each loaded file is stored in the _pendingStatements dictionary with a unique GUID, allowing us to manage them effectively and provide the necessary information for the preview UI.
-
         var loadTasks = filePaths.Select(async path =>
         {
-            // Check for cancellation before starting file processing
             ct.ThrowIfCancellationRequested();
+            await _concurrencySemaphore.WaitAsync(ct);
 
             var fileId = Guid.NewGuid();
             var fileName = Path.GetFileName(path);
+            var extension = Path.GetExtension(path);
+            IFileParserStrategy strategy = null!;
+            FileStream stream = null!;
 
             try
             {
-                // Load the file asynchronously
-                var result = await _statementLoader.LoadStatementAsync(path, progress: null!, ct);
+                strategy = _strategyFactory(extension);
 
-                result.FileName = fileName; // Store the file name in the StatementLoadResult for reference
+                // Open stream
+                stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, useAsync: true);
 
-                // Safely store the successful workbook in our lock-free RAM registry
-                _pendingStatements.TryAdd(fileId, result);
+                var preview = await strategy.LoadAsync(stream, fileName, ct);
 
-                // Defensive Guard: If the user closed the window while this async load was in-flight,
-                // immediately dispose the newly loaded stream and abort silently.
+                // Override fileId with the one generated by the strategy
+                fileId = preview.Id;
+
+                _activeStrategies.TryAdd(fileId, strategy);
+
                 if (_isDisposed)
                 {
-                    _logger.LogWarning("Manager was disposed while loading '{FileName}'. Disposing stream immediately.", fileName);
-                    result.Dispose();
+                    _logger.LogWarning("Manager was disposed while loading '{FileName}'. Disposing strategy immediately.", fileName);
+                    DiscardFile(fileId);
                     return;
                 }
 
-                var sheetNames = result.Workbook.Worksheets.Select(w => w.Name).ToList();
-                _logger.LogDebug("Successfully staged '{FileName}' ({SheetCount} worksheets found).", fileName, sheetNames.Count);
-
-                // Add to our successful list for the UI grid
-                successes.Add(new PendingFilePreview(fileId, fileName, sheetNames));
+                _logger.LogDebug("Successfully staged '{FileName}'.", fileName);
+                successes.Add(preview);
             }
             catch (OperationCanceledException)
             {
-                // Specifically handle cancellation at the individual task level if needed
+                stream?.Dispose();
+                strategy?.Dispose();
                 DiscardFile(fileId);
                 throw;
             }
             catch (IOException ex)
             {
-                // TIER 2 SINK: Specifically trap OS-level file locks
+                stream?.Dispose();
+                strategy?.Dispose();
                 _logger.LogWarning(ex, "OS file lock encountered on '{FileName}'.", fileName);
-
-                // 1. Create the error payload
                 var error = new FileStagingError(fileId, fileName, ErrorSeverity.Warning,
                     "This file is currently locked by another program (e.g., Excel). Please close it and try again.", ex);
-
-                // 2. Add to your existing batch failures list
                 failures.Add(error);
-
-                // 3. Centralized OS lock release
-                DiscardFile(fileId);
-
-                // 4. NEW: Broadcast the error to the UI instantly via the postman!
                 _broker.Send(new FileStagingErrorMessage(error));
             }
             catch (Exception ex)
             {
-                // TIER 2 SINK: Trap catastrophic/unknown ClosedXML faults
+                stream?.Dispose();
+                strategy?.Dispose();
                 _logger.LogError(ex, "Catastrophic failure staging '{FileName}'.", fileName);
-
                 var error = new FileStagingError(fileId, fileName, ErrorSeverity.Fatal,
                     "An unexpected error occurred while reading the file. It may be corrupted or unsupported.", ex);
-
                 failures.Add(error);
-                DiscardFile(fileId); // Ensure any partially loaded file is cleaned up
-
-                // NEW: Broadcast the error to the UI
                 _broker.Send(new FileStagingErrorMessage(error));
             }
             finally
             {
-                // By putting progress in a 'finally' block, the UI loading bar reliably increments
-                // whether the individual file succeeded OR failed!
+                _concurrencySemaphore.Release();
+
                 int currentCompleted = Interlocked.Increment(ref completedFiles);
                 int currentPercentage = currentCompleted * 100 / totalFiles;
                 string progressMsg = $"Processed {currentCompleted} of {totalFiles} files...";
 
-                // 1. Legacy Progress Support (Optional, can be phased out later)
                 progress?.Report(new LoadingProgress
                 {
                     Percentage = currentPercentage,
                     Message = progressMsg
                 });
 
-                // 2. Broadcast live progress updates instantly to the UI!
                 _broker.Send(new StagingProgressMessage(currentPercentage, progressMsg));
             }
         });
 
-        // Wait for all 5 parallel loading tasks to finish their try/catch blocks
         try
         {
             await Task.WhenAll(loadTasks);
@@ -208,21 +169,16 @@ public class StatementManager : IDisposable
         catch (OperationCanceledException)
         {
             _logger.LogWarning("Staging operation was cancelled. Purging partially loaded files from memory.");
-
-            // Critical Memory Cleanup: Discard any files that successfully loaded before cancellation
             foreach (var success in successes)
             {
                 DiscardFile(success.Id);
             }
-
-            throw; // Rethrow to notify the calling UI/ViewModel
+            throw;
         }
 
         _logger.LogInformation("Staging batch completed. Successes: {SuccessCount}, Failures: {FailureCount}.", successes.Count, failures.Count);
-
         _broker.Send(new StagingBatchCompletedMessage(successes.Count, failures.Count));
 
-        // Return the combined hand-off bundle to the UI ViewModel
         return new StagingBatchResult
         {
             Successes = successes.ToList(),
@@ -230,146 +186,75 @@ public class StatementManager : IDisposable
         };
     }
 
-    /// <summary>
-    /// Phase 2: Retrieves a staged document from memory, executes extraction analysis,
-    /// and initializes the interactive editing session for UI verification.
-    /// </summary>
-    /// <param name="fileId">The unique GUID assigned to the file during StageFilesAsync.</param>
-    /// <param name="targetSheetName">Optional specific sheet name if the workbook has multiple sheets.</param>
-    /// <returns>A StatementPreview DTO containing the 20-row preview grid and detected dictionary fields.</returns>
-    /// Plan: Currently, this method accepts only fileId to process primary sheet, in future I would pass fileId along with worksheet number/id present in each file.
-    /// this would allow the viewmodel to parallely call multiple sheets belonging to one file in batches to process preview of sheets.
     public async Task<StatementPreview> PreviewStagedFileAsync(Guid fileId, string? targetSheetName = null, CancellationToken ct = default)
     {
         ThrowIfDisposed();
         _logger.LogInformation("Generating preview for Staging ID: {FileId}. Target Sheet: '{SheetName}'", fileId, targetSheetName ?? "Default Primary");
 
-        // Ask the factory for a brand new, isolated session for this specific file
-        IStatementExtractor<IXLWorksheet> _statementExtractor = _statementExtractorFactory();
-        IStatementEditSession _statementEditSession = _editSessionFactory();
-
-        // Store the newly created transient session in our dictionary
+        var strategy = GetStrategyOrThrow(fileId);
+        var _statementEditSession = _editSessionFactory();
         _activeSessions[fileId] = _statementEditSession;
 
-        // STEP 1: RETRIEVE STAGED FILE
-        // We retrieve the staged file from the in-memory dictionary using the provided fileId.
-        var stagedFile = GetStagedFileOrThrow(fileId);
-
-        // STEP 2: TARGET DOCUMENT RESOLUTION
-        // If the UI requested a specific worksheet (e.g., from a sheet-selector dropdown),
-        // we resolve it by name. Otherwise, we default to the primary active worksheet.
-        // Note: If your extractor's Analyse method expects the entire XLWorkbook instead of an IXLWorksheet,
-        // you can pass 'stagedFile.Workbook' directly as the 'document' parameter below!
-        // STEP 2: Defensive Target Document Resolution
-        IXLWorksheet targetDocument;
-        if (string.IsNullOrWhiteSpace(targetSheetName))
-        {
-            targetDocument = stagedFile.Worksheet; // Default primary worksheet
-        }
-        else if (!stagedFile.Workbook.Worksheets.TryGetWorksheet(targetSheetName, out targetDocument!))
-        {
-            _logger.LogError("Worksheet resolution failed: Sheet '{SheetName}' not found in file '{FileName}'.", targetSheetName, stagedFile.FileName);
-            throw new InvalidOperationException(
-                $"Worksheet '{targetSheetName}' was not found in workbook '{stagedFile.FileName}'.");
-        }
-
+        await _concurrencySemaphore.WaitAsync(ct);
         try
         {
-            // CRITICAL UPDATE: Offload the CPU-bound extraction to a background thread.
-            // This allows the ViewModel to call this method 5 times in a row without blocking the UI,
-            // letting the ThreadPool crunch the ClosedXML data in true parallel.
             return await Task.Run(async () =>
             {
-                // Check cancellation before starting heavy work
                 ct.ThrowIfCancellationRequested();
 
-                _logger.LogDebug("Executing cell extraction and schema analysis on sheet '{SheetName}' for file '{FileName}'...", targetDocument.Name, stagedFile.FileName);
+                StatementPreview preview = await strategy.GeneratePreviewAsync(targetSheetName ?? string.Empty, ct);
 
-                // STEP 3: EXECUTE IN-MEMORY EXTRACTION ANALYSIS
-                // We call your extractor's Analyse method, passing both the in-memory document AND the FileName string.
-                // Guardrail Compliance: The extractor reads cells from 'targetDocument'. The 'stagedFile.FileName' string
-                // is utilized strictly as metadata (e.g., attaching the source file name to the DTO or hashing)
-                // without ever performing redundant file I/O on disk.
-                // This step emits the 20-row visual grid and the namespaced Dictionary<string, DetectedField> schema.
-                _logger.LogDebug("Executing cell extraction and schema analysis on sheet '{SheetName}' for file '{FileName}'...", targetDocument.Name, stagedFile.FileName);
-                StatementPreview preview = await _statementExtractor.Analyze(targetDocument, stagedFile.FileName, ct: ct);
-
-                // Check cancellation before allocating session memory
                 ct.ThrowIfCancellationRequested();
 
-                // STEP 4: INITIALIZE THE IN-MEMORY EDITING SCRATCHPAD
+                // INITIALIZE THE IN-MEMORY EDITING SCRATCHPAD
                 // Before returning to the UI, we hand off the generated preview DTO to the StatementEditSession.
                 // This session acts as a lightweight "shopping cart" that will hold user column re-mappings,
                 // tag overrides, and row exclusions in memory until explicit commit confirmation.
                 // Per our rules, this initialization executes ZERO SQLite database writes.
-                _logger.LogDebug("Initializing StatementEditSession scratchpad with 0-based coordinate mappings.");
                 _statementEditSession.Initialize(preview);
 
-
-                // STEP 5: RETURN TO UI FOR RENDERING
-                // The Avalonia UI binds to this DTO to render dropdown mappings (using 0-based integer indexing)
-                // and displays warning badges if required core columns were flagged as undetected (-1 index).
                 return preview;
             }, ct);
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("Preview analysis was cancelled for file '{FileName}'.", stagedFile.FileName);
-            DiscardFile(fileId); // Memory cleared!
+            DiscardFile(fileId);
             throw;
         }
         catch (Exception ex)
         {
-            // TIER 2 SINK: Trap extraction blowups, clean up the file lock, and package the error
-            _logger.LogError(ex, "Extraction analysis failed catastrophically for file '{FileName}'.", stagedFile.FileName);
-
-            // Immediately release OS lock since this file is now in an unrecoverable state
             DiscardFile(fileId);
-
-            // NEW: Package and broadcast the error before throwing
-            var error = new FileStagingError(fileId, stagedFile.FileName, ErrorSeverity.Fatal,
-                $"Failed to analyze the document '{stagedFile.FileName}'. The file structure may be severely corrupted.", ex);
-
+            var error = new FileStagingError(fileId, "Unknown", ErrorSeverity.Fatal,
+                $"Failed to analyze the document. The file structure may be severely corrupted.", ex);
             _broker.Send(new FileStagingErrorMessage(error));
-
-            throw new InvalidOperationException($"Failed to analyze the document '{stagedFile.FileName}'. The file structure may be severely corrupted.", ex);
+            throw new InvalidOperationException($"Failed to analyze the document.", ex);
+        }
+        finally
+        {
+            _concurrencySemaphore.Release();
         }
     }
 
-    /// <summary>
-    /// Phase 3: Commits a specific staged file. Dispatches background learning and executes SQLite batch import.
-    /// </summary>
-    public async Task CommitStagedFileAsync(Guid fileId, PreviewTracker confirmedTracker, CancellationToken ct = default)
+    public async Task CommitStagedBatchAsync(Guid fileId, IEnumerable<PreviewTracker> confirmedTrackers, CancellationToken ct = default)
     {
         ThrowIfDisposed();
 
-        var correctionsList = confirmedTracker.ColumnCorrections.ToList();
-        _logger.LogInformation("Committing import for Staging ID: {FileId}. Corrections to learn: {CorrectionCount}", fileId, correctionsList.Count);
+        var strategy = GetStrategyOrThrow(fileId);
 
-        // Ask the factory for a brand new, isolated session for this specific file
-        IStatementImport<IXLWorksheet> _statementImport = _statementImportFactory();
-
-        // Retrieve the existing session that was initialized during Preview
         if (!_activeSessions.TryGetValue(fileId, out IStatementEditSession? _statementEditSession))
         {
             _logger.LogWarning("No active edit session found for Staging ID: {FileId}.", fileId);
             throw new InvalidOperationException("Cannot commit because the edit session was lost or never initialized.");
         }
 
-        // 1. Thread-safe retrieval via helper (throws KeyNotFoundException automatically if missing)
-        var stagedFile = GetStagedFileOrThrow(fileId);
-
         try
         {
-            // 1. DISPATCH NON-BLOCKING BACKGROUND LEARNING TASK
-            // Fires strictly upon user confirmation without delaying the import batch
-            DispatchBackgroundLearningTask(confirmedTracker.ColumnCorrections);
+            foreach (var tracker in confirmedTrackers)
+            {
+                DispatchBackgroundLearningTask(tracker.ColumnCorrections);
+            }
 
-            // 2. EXECUTE DATABASE IMPORT
-            // ExcelStatementImportService applies coordinates and writes to SQLite via ExecuteWithRetryAsync
-            _logger.LogInformation("Committing import for Staging ID: {FileId}. Corrections to learn: {CorrectionCount}", fileId, correctionsList.Count);
-            await _statementImport.ImportConfirmedStatementAsync(stagedFile.Worksheet, confirmedTracker.FinalPreview, ct);
-
+            await strategy.ImportConfirmedBatchAsync(confirmedTrackers, ct);
         }
         catch (OperationCanceledException)
         {
@@ -378,15 +263,12 @@ public class StatementManager : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Database import failed for Staging ID: {FileId} ({FileName}).", fileId, stagedFile.FileName);
+            _logger.LogError(ex, "Database import failed for Staging ID: {FileId}.", fileId);
             throw;
         }
         finally
         {
-            // 4. RELEASE STREAM & REMOVE FROM STAGING
-            // Guarantees workbook streams are disposed and desktop file locks are released, even if the database insert failed!
             DiscardFile(fileId);
-
         }
     }
 
@@ -398,21 +280,12 @@ public class StatementManager : IDisposable
     private void DispatchBackgroundLearningTask(IEnumerable<ColumnMappingCorrection> corrections)
     {
         var correctionsList = corrections.ToList();
-        if (!correctionsList.Any())
-        {
-            _logger.LogDebug("No column mapping corrections detected. Skipping background synonym learning.");
-            return;
-        }
+        if (!correctionsList.Any()) return;
 
-        _logger.LogInformation("Dispatching background self-learning task for {Count} confirmed corrections.", correctionsList.Count);
-
-        // Fire-and-forget background execution
         _ = Task.Run(async () =>
         {
             foreach (var correction in correctionsList)
             {
-                _logger.LogDebug("Learning synonym: Raw='{Raw}' -> Target='{Target}' (Category: {Category})",
-                        correction.RawHeaderName, correction.TargetField, correction.Category);
                 try
                 {
                     // Pass the properties directly to your service method signature:
@@ -428,56 +301,43 @@ public class StatementManager : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    // Non-fatal background failure: Log as warning so it doesn't crash the application or rollback import
-                    _logger.LogWarning(ex, "Background self-learning failed for raw header '{Raw}' mapped to '{Target}' ({Category}).",
-                        correction.RawHeaderName, correction.TargetField, correction.Category);
-                    _logger.LogDebug("Exception details: {Exception}", ex);
+                    _logger.LogWarning(ex, "Background self-learning failed.");
                 }
             }
-
-
         });
     }
 
-    /// <summary>
-    /// Thread-safe retrieval helper using lock-free dictionary lookup.
-    /// </summary>
-    private StatementLoadResult GetStagedFileOrThrow(Guid fileId)
+    private IFileParserStrategy GetStrategyOrThrow(Guid fileId)
     {
         ThrowIfDisposed();
-        if (_pendingStatements.TryGetValue(fileId, out var statement))
+        if (_activeStrategies.TryGetValue(fileId, out var strategy))
         {
-            return statement;
+            return strategy;
         }
 
-        _logger.LogWarning("Lookup failed: Staging ID '{FileId}' was not found in active RAM registry.", fileId);
-        throw new KeyNotFoundException(
-            $"Staged file with ID '{fileId}' was not found. It may have already been committed, discarded, or aborted.");
+        throw new KeyNotFoundException($"Staged file with ID '{fileId}' was not found.");
     }
 
-    /// <summary>
-    /// Thread-safe removal and disposal.
-    /// This method allows users to discard a staged file from memory if they decide not to proceed with it, ensuring that resources are freed up immediately.
-    /// It checks if the file ID exists in the pending statements dictionary, and if so, it disposes of the loaded statement to free up memory and removes it from the dictionary.
-    /// This is crucial for managing memory effectively, especially if the user decides to discard large files that were loaded for preview.
-    /// TryRemove atomically pulls the item from the dictionary without locking other threads.
-    /// </summary>
     public void DiscardFile(Guid fileId)
     {
-        // Clean up the tied edit session
         if (_activeSessions.TryRemove(fileId, out var sessionToDispose))
         {
             sessionToDispose.Clear();
         }
 
-        if (_pendingStatements.TryRemove(fileId, out var statementToDispose))
+        if (_activeStrategies.TryRemove(fileId, out var strategy))
         {
-            _logger.LogInformation("Discarding Staging ID: {FileId} ('{FileName}'). Releasing OS file lock and RAM stream.", fileId, statementToDispose.FileName);
-            statementToDispose.Dispose();
+            strategy.Dispose();
         }
-        else
+    }
+
+    public bool HasStagedFiles => !_activeStrategies.IsEmpty;
+
+    public void DiscardAllFiles()
+    {
+        foreach (var key in _activeStrategies.Keys.ToList())
         {
-            _logger.LogDebug("Attempted to discard Staging ID: {FileId}, but it was already removed or never existed.", fileId);
+            DiscardFile(key);
         }
     }
 
@@ -489,33 +349,17 @@ public class StatementManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Disposes all pending statements when the session ends or the manager is destroyed.
-    /// Prevents memory leaks by ensuring all underlying ClosedXML workbooks and FileStreams are closed.
-    /// </summary>
     public void Dispose()
     {
         if (_isDisposed) return;
         _isDisposed = true;
 
-        _logger.LogInformation("Disposing StatementManager. Cleaning up active staging registry...");
-
-        // Atomically pull all remaining staged items out of the dictionary
-        var keys = _pendingStatements.Keys.ToList();
-        int disposedCount = 0;
-
-        foreach (var key in keys)
+        foreach (var key in _activeStrategies.Keys.ToList())
         {
-            if (_pendingStatements.TryRemove(key, out var statement))
+            if (_activeStrategies.TryRemove(key, out var strategy))
             {
-                statement.Dispose();
-                disposedCount++;
+                strategy.Dispose();
             }
-        }
-
-        if (disposedCount > 0)
-        {
-            _logger.LogInformation("Disposed {Count} orphaned workbook streams during manager shutdown.", disposedCount);
         }
 
         foreach (var session in _activeSessions.Values)
@@ -523,6 +367,7 @@ public class StatementManager : IDisposable
             session.Clear();
         }
         _activeSessions.Clear();
+        _concurrencySemaphore.Dispose();
         GC.SuppressFinalize(this);
     }
 }

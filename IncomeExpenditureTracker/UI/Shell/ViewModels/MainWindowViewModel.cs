@@ -217,8 +217,26 @@ namespace IncomeExpenditureTracker.UI.Shell
             });
         }
 
-        private void OnNavigationRequested(NavigationMessage message)
+        private async void OnNavigationRequested(NavigationMessage message)
         {
+            var statementManager = _serviceProvider.GetService<IncomeExpenditureTracker.Services.StatementManagement.IStatementManager>();
+            if (statementManager != null && statementManager.HasStagedFiles && message.Destination != "Login")
+            {
+                var tcs = new TaskCompletionSource<bool>();
+                Broker.Send(new ShowConfirmationMessage(
+                    "Abandon Import?",
+                    "You have uncommitted files in the Import Queue. Navigating away will discard these files. Are you sure?",
+                    tcs));
+
+                bool confirmed = await tcs.Task;
+                if (!confirmed)
+                {
+                    return; // Halt routing
+                }
+
+                statementManager.DiscardAllFiles();
+            }
+
             NavigateTo(message.Destination);
         }
 

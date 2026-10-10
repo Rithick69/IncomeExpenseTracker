@@ -21,6 +21,7 @@ public class ColumnMappingCorrection
 /// </summary>
 public class PreviewTracker
 {
+    public string SheetName { get; set; } = string.Empty;
     public StatementPreview FinalPreview { get; set; } = new();
     public List<ColumnMappingCorrection> ColumnCorrections { get; set; } = new();
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data; // Added for IDbConnection and IDbTransaction
 using System.Threading.Tasks;
+using System.Threading;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Importing;
@@ -49,10 +50,15 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+
+            var worksheetsMock = new Mock<IXLWorksheets>(); IXLWorksheet outSheet = worksheetMock.Object; worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true); workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             // Empty fields to force fallbacks
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
+
+            var trackers = new List<PreviewTracker> { new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" } };
 
             _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction> { new Transaction { Description = "Test" } }); // Must return > 0 to proceed
@@ -67,7 +73,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
                     });
 
             // Act
-            await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
+            await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers);
 
             // Assert
             _entityMock.Verify(x => x.GetOrCreateEntity("Unknown Entity", It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -86,8 +92,13 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+
+            var worksheetsMock = new Mock<IXLWorksheets>(); IXLWorksheet outSheet = worksheetMock.Object; worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true); workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
+
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
+            var trackers = new List<PreviewTracker> { new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" } };
 
             // Generate 300 transactions to force chunking (BatchSize is 250)
             var transactions = new List<Transaction>();
@@ -110,7 +121,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
 
             // Act & Assert
             await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap));
+                await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers));
         }
 
         /// <summary>
@@ -122,15 +133,22 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
+
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
+            var trackers = new List<PreviewTracker> { new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" } };
 
             // Return empty list
             _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction>());
 
             // Act
-            await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
+            await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers);
 
             // Assert
             _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -144,9 +162,15 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             var previewMap = new StatementPreview { FileName = null!, Fields = new Dictionary<string, DetectedField>() };
+            var trackers = new List<PreviewTracker> { new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" } };
 
             _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction> { new Transaction { Description = "Test" } });
@@ -160,7 +184,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
             var expectedPrefix = "Statement_";
 
             // Act
-            await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
+            await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers);
 
             // Assert
             _batchMock.Verify(x => x.CreateBatch(It.Is<string>(s => s.StartsWith(expectedPrefix)), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -174,12 +198,12 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
-            var worksheetMock = new Mock<IXLWorksheet>();
-            var previewMap = new StatementPreview();
+            var workbookMock = new Mock<IXLWorkbook>();
+            var trackers = new List<PreviewTracker>();
 
             // Act & Assert
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ImportConfirmedStatementAsync(null!, previewMap));
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ImportConfirmedStatementAsync(worksheetMock.Object, null!));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ImportConfirmedBatchAsync(null!, trackers));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ImportConfirmedBatchAsync(workbookMock.Object, null!));
         }
 
         /// <summary>
@@ -192,7 +216,12 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             // Provide a blatantly invalid currency format
             var invalidCurrency = "$$$ GARBAGE $$$";
@@ -203,6 +232,8 @@ namespace IncomeExpenditureTracker.Tests.Logic
                     { "Meta:CURRENCY", new DetectedField { ExtractedValue = invalidCurrency } }
                 }
             };
+
+            var trackers = new List<PreviewTracker> { new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" } };
 
             _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction> { new Transaction { Description = "Test" } }); // Must return > 0 to proceed
@@ -215,7 +246,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
                     });
 
             // Act
-            await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
+            await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers);
 
             // Assert
             // Verify that the AccountService receives the exact garbage string, proving the parser doesn't swallow it.

@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.ImportHub"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="IncomeExpenditureTracker.UI.ImportHub.ImportQueueView"
+             x:DataType="vm:ImportQueueViewModel">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,20">
+            <RadioButton Content="{DynamicResource Locale_Module_ImportQueue_Excel}" IsChecked="{Binding IsExcelSelected}" />
+            <RadioButton Content="{DynamicResource Locale_Module_ImportQueue_Csv}" IsChecked="{Binding IsCsvSelected}" IsEnabled="False" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Classes="Card" DragDrop.AllowDrop="True" Background="{DynamicResource BackgroundSecondary}">
+            <TextBlock Text="{DynamicResource Locale_Module_ImportQueue_DropZone}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextPrimary}" />
+        </Border>
+
+        <ScrollViewer Grid.Row="2" MaxHeight="200" Margin="0,20,0,0">
+            <ItemsControl ItemsSource="{Binding StagedFiles}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding FileName}" Foreground="{DynamicResource TextPrimary}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
