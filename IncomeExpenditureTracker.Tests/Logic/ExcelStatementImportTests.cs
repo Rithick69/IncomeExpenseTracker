@@ -53,7 +53,10 @@ namespace IncomeExpenditureTracker.Tests.Logic
             var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
 
-            var worksheetsMock = new Mock<IXLWorksheets>(); IXLWorksheet outSheet = worksheetMock.Object; worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true); workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             // Empty fields to force fallbacks
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
@@ -95,7 +98,10 @@ namespace IncomeExpenditureTracker.Tests.Logic
             var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
 
-            var worksheetsMock = new Mock<IXLWorksheets>(); IXLWorksheet outSheet = worksheetMock.Object; worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true); workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
             var trackers = new List<PreviewTracker> { new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" } };
@@ -136,8 +142,8 @@ namespace IncomeExpenditureTracker.Tests.Logic
             var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
             var worksheetsMock = new Mock<IXLWorksheets>();
-            IXLWorksheet outSheet = worksheetMock.Object;
-            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true);
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
             workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
@@ -165,8 +171,8 @@ namespace IncomeExpenditureTracker.Tests.Logic
             var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
             var worksheetsMock = new Mock<IXLWorksheets>();
-            IXLWorksheet outSheet = worksheetMock.Object;
-            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true);
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
             workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             var previewMap = new StatementPreview { FileName = null!, Fields = new Dictionary<string, DetectedField>() };
@@ -219,8 +225,8 @@ namespace IncomeExpenditureTracker.Tests.Logic
             var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
             var worksheetsMock = new Mock<IXLWorksheets>();
-            IXLWorksheet outSheet = worksheetMock.Object;
-            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet)).Returns(true);
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
             workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             // Provide a blatantly invalid currency format

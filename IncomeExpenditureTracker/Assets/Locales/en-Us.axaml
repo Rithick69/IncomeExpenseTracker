@@ -12,8 +12,8 @@
     <!--NAVIGATION MENU ITEMS-->
     <system:String x:Key="Locale_Navigation_Menu_Dashboard">Dashboard</system:String>
     <system:String x:Key="Locale_Navigation_Menu_Ledger">Ledger</system:String>
-    <system:String x:Key="Locale_Navigation_Menu_Statement_Import">Import Statements</system:String>
-    <system:String x:Key="Locale_Navigation_Menu_Data_Taxanomy">Data &amp; Taxanomy</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Statement_Import">Import Hub</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Data_Taxonomy">Data &amp; Taxonomy</system:String>
     <system:String x:Key="Locale_Navigation_Menu_Reports">Reports</system:String>
     <system:String x:Key="Locale_Navigation_Menu_Audit_Logs">Audit Logs</system:String>
 
@@ -238,6 +238,9 @@
     <system:String x:Key="Locale_Module_ImportQueue_Excel">Excel (.xlsx)</system:String>
     <system:String x:Key="Locale_Module_ImportQueue_Csv">CSV</system:String>
     <system:String x:Key="Locale_Module_ImportQueue_DropZone">Drag &amp; Drop Bank Statements Here</system:String>
+    <system:String x:Key="Locale_Module_ImportQueue_BrowseFiles">Browse Files</system:String>
+    <system:String x:Key="Locale_Module_ImportQueue_LoadingMessage">Processing files...</system:String>
+    <system:String x:Key="Locale_Module_ImportQueue_StagedFilesTitle">Staged Files</system:String>
 
     <!-- PREVIEW WORKBENCH -->
     <system:String x:Key="Locale_Module_Preview_AccountDetails">Account Details</system:String>

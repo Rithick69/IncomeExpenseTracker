@@ -2,13 +2,13 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Xunit;
 using Moq;
-using IncomeExpenditureTracker.UI.ImportHub.ViewModels;
+using IncomeExpenditureTracker.UI.ImportHub;
 using IncomeExpenditureTracker.Services.StatementManagement;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.UI.Shared;
 
-namespace IncomeExpenditureTracker.Tests.UI.ImportHub;
+namespace IncomeExpenditureTracker.Tests.UI.ViewModels;
 
 public class ImportQueueViewModelTests
 {

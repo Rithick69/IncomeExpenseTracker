@@ -30,15 +30,15 @@ namespace IncomeExpenditureTracker.UI.Shell
 
         /// <summary>
         /// Broadcasts a NavigationMessage to the MainWindowViewModel router.
-        /// The router will resolve a Transient instance of DataManagementViewModel
+        /// The router will resolve a Transient instance of DataTaxonomyViewModel
         /// and seamlessly swap the ContentControl.
         /// </summary>
         [RelayCommand]
-        public void NavigateToDataManagement()
+        public void NavigateToDataTaxonomy()
         {
             // Note: Adjust the payload of NavigationMessage based on how
             // your specific enum or string routing dictionary is set up.
-            _broker.Send(new NavigationMessage("DataManagement"));
+            _broker.Send(new NavigationMessage("DataTaxonomy"));
         }
 
         public override void Dispose()

@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 namespace IncomeExpenditureTracker.Models
 {
@@ -204,6 +205,13 @@ namespace IncomeExpenditureTracker.Models
     /// </summary>
 
     public record NavigationMessage(string Destination, object? Parameter = null);
+
+    /// <summary>
+    /// Sub-routing message for Import Hub internal navigation.
+    /// Triggered when a user manually selects a sheet from the file tree.
+    /// This message is handled ONLY by ImportHubViewModel and does NOT propagate to MainWindowViewModel.
+    /// </summary>
+    public record PreviewSheetMessage(Guid FileId, string FileName, string TargetSheetName);
 
     // -------------------------------------------------------------------------
     // GLOBAL DIALOG & MODAL MESSAGES

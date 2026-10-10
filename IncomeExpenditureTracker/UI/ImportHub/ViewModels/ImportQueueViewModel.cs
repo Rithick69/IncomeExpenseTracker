@@ -28,6 +28,12 @@ public partial class ImportQueueViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isCsvSelected = false;
 
+    [ObservableProperty]
+    private bool _isLoading = false;
+
+    [ObservableProperty]
+    private string _loadingMessage = string.Empty;
+
     public ObservableCollection<PendingFilePreview> StagedFiles { get; } = new();
 
     public ImportQueueViewModel(IStatementManager statementManager, IApplicationBroker broker)
@@ -63,7 +69,20 @@ public partial class ImportQueueViewModel : ViewModelBase
 
         try
         {
-            var result = await _statementManager.StageFilesAsync(paths, new Progress<LoadingProgress>(), CancellationToken.None);
+            IsLoading = true;
+            LoadingMessage = "Processing files...";
+
+            // Wire up live progress reporting to update UI state
+            var progress = new Progress<LoadingProgress>(p =>
+            {
+                // Run on UI thread to update observable properties safely
+                RunOnUIThread(() =>
+                {
+                    LoadingMessage = p.Message;
+                });
+            });
+
+            var result = await _statementManager.StageFilesAsync(paths, progress, CancellationToken.None);
 
             foreach (var success in result.Successes)
             {
@@ -79,6 +98,33 @@ public partial class ImportQueueViewModel : ViewModelBase
         {
             _broker.Send(new ToastNotificationMessage(ex.Message, NotificationType.Error));
         }
+        finally
+        {
+            IsLoading = false;
+            LoadingMessage = string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Handles manual sheet selection from the expandable file tree.
+    /// Broadcasts PreviewSheetMessage (NOT NavigationMessage) to avoid collision with MainWindowViewModel's global routing.
+    /// Only ImportHubViewModel subscribes to this message for internal sub-routing.
+    /// </summary>
+    [RelayCommand]
+    public void SelectSheet(object parameter)
+    {
+        // Parameter is a tuple containing the file ID and sheet name
+        if (parameter is not (Guid fileId, string sheetName))
+            return;
+
+        // Find the file to get the file name
+        var selectedFile = StagedFiles.FirstOrDefault(f => f.Id == fileId);
+        if (selectedFile == null)
+            return;
+
+        // Broadcast a sub-routing message ONLY to ImportHubViewModel.
+        // This does NOT propagate to MainWindowViewModel, preventing the "Unknown route: PreviewSheet" crash.
+        _broker.Send(new PreviewSheetMessage(fileId, selectedFile.FileName, sheetName));
     }
 
     public bool HasUncommittedFiles() => StagedFiles.Any();

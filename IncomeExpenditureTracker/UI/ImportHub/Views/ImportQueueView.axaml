@@ -8,26 +8,91 @@
              x:DataType="vm:ImportQueueViewModel">
 
     <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+        <!-- File Type Selection Radio Buttons -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,20">
             <RadioButton Content="{DynamicResource Locale_Module_ImportQueue_Excel}" IsChecked="{Binding IsExcelSelected}" />
             <RadioButton Content="{DynamicResource Locale_Module_ImportQueue_Csv}" IsChecked="{Binding IsCsvSelected}" IsEnabled="False" />
         </StackPanel>
 
-        <Border Grid.Row="1" Classes="Card" DragDrop.AllowDrop="True" Background="{DynamicResource BackgroundSecondary}">
-            <TextBlock Text="{DynamicResource Locale_Module_ImportQueue_DropZone}"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextPrimary}" />
+        <!-- Drop Zone with Browse Button -->
+        <Border Grid.Row="1"
+                x:Name="DropZoneBorder"
+                Classes="Card"
+                DragDrop.AllowDrop="True"
+                Background="{DynamicResource BackgroundSecondary}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="15">
+                <TextBlock Text="{DynamicResource Locale_Module_ImportQueue_DropZone}"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimary}"
+                           FontSize="16" />
+
+                <!-- Browse Files Button - wired in code-behind -->
+                <Button x:Name="BrowseFilesButton"
+                        Content="{DynamicResource Locale_Module_ImportQueue_BrowseFiles}"
+                        HorizontalAlignment="Center"
+                        Classes="accent" />
+            </StackPanel>
         </Border>
 
-        <ScrollViewer Grid.Row="2" MaxHeight="200" Margin="0,20,0,0">
-            <ItemsControl ItemsSource="{Binding StagedFiles}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <TextBlock Text="{Binding FileName}" Foreground="{DynamicResource TextPrimary}" />
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+        <!-- Loading Indicator and Staged Files List -->
+        <StackPanel Grid.Row="2" Margin="0,20,0,0" Spacing="10">
+
+            <!-- Progress Indicator - Visible only when loading -->
+            <StackPanel IsVisible="{Binding IsLoading}" Spacing="5">
+                <ProgressBar IsIndeterminate="True"
+                             Height="4"
+                             Foreground="{DynamicResource AccentPrimary}" />
+                <TextBlock Text="{Binding LoadingMessage}"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondary}"
+                           FontSize="12" />
+            </StackPanel>
+
+            <!-- Staged Files Expandable Tree -->
+            <Border Classes="Card"
+                    IsVisible="{Binding StagedFiles.Count}"
+                    MaxHeight="300">
+                <ScrollViewer>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="{DynamicResource Locale_Module_ImportQueue_StagedFilesTitle}"
+                                   Foreground="{DynamicResource TextPrimary}"
+                                   FontWeight="SemiBold"
+                                   Margin="10,10,10,5" />
+
+                        <!-- Expandable File List with Sheet Names -->
+                        <ItemsControl ItemsSource="{Binding StagedFiles}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Expander Margin="5,2">
+                                        <!-- File Name as Expander Header -->
+                                        <Expander.Header>
+                                            <TextBlock Text="{Binding FileName}"
+                                                       Foreground="{DynamicResource TextPrimary}"
+                                                       FontWeight="Medium" />
+                                        </Expander.Header>
+
+                                        <!-- Sheet Names as Clickable Buttons -->
+                                        <!-- Tag binds to parent Expander's DataContext.Id (PendingFilePreview.Id) to avoid visual tree traversal -->
+                                        <ItemsControl ItemsSource="{Binding SheetNames}" Margin="20,5,0,5">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="{Binding}"
+                                                            Tag="{Binding $parent[Expander].DataContext.Id}"
+                                                            Classes="link"
+                                                            HorizontalAlignment="Left"
+                                                            FontSize="12"
+                                                            Margin="0,2"
+                                                            Click="OnSheetButtonClick" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Expander>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </StackPanel>
     </Grid>
 </UserControl>

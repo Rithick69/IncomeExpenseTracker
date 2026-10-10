@@ -102,7 +102,7 @@ public static class ServiceRegistration
         // ViewModels are usually Transient: If the user opens a window, we get a fresh Waiter.
         // If they close it, it gets destroyed cleanly without holding onto old data.
         services.AddTransient<MainWindowViewModel>();
-        services.AddTransient<StatementEditViewModel>();
+        services.AddTransient<ImportHubViewModel>();
         services.AddTransient<LoginViewModel>();
         services.AddTransient<RegisterViewModel>();
         services.AddTransient<DashboardViewModel>();
@@ -121,6 +121,10 @@ public static class ServiceRegistration
         services.AddTransient<TagRuleFormViewModel>();
         services.AddTransient<UserSettingFormViewModel>();
         services.AddTransient<MergeFormViewModel>();
+
+        // Import Hub & Sheet Review
+        services.AddTransient<ImportQueueViewModel>();
+        services.AddTransient<SheetPreviewViewModel>();
 
 
         // (Note: FormViewModelBase is an abstract class and cannot be registered in DI)

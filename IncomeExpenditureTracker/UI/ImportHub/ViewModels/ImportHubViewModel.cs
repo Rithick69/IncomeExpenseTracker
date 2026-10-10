@@ -34,8 +34,12 @@ public partial class ImportHubViewModel : ViewModelBase
         // When files are successfully staged, transition to the Preview Workbench
         Broker.Register<StagingBatchCompletedMessage>(this, OnStagingCompleted);
 
+        // Subscribe to PreviewSheetMessage for internal sub-routing (manual sheet selection from file tree).
+        // This prevents collision with MainWindowViewModel's global NavigationMessage routing.
+        Broker.Register<PreviewSheetMessage>(this, OnPreviewSheetRequested);
+
         // Subscribe to navigation messages to return to queue from preview
-        // This allows the preview to navigate back after commit/discard
+        // This allows the preview to navigate back after commit/discard (uses global NavigationMessage "ImportHub")
         Broker.Register<NavigationMessage>(this, OnNavigationRequested);
     }
 
@@ -65,7 +69,23 @@ public partial class ImportHubViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Handles navigation requests (e.g., returning to the ImportHub queue after confirm/discard).
+    /// Handles PreviewSheetMessage for internal sub-routing when user manually selects a sheet.
+    /// This message is broadcast by ImportQueueViewModel and does NOT propagate to MainWindowViewModel.
+    /// </summary>
+    private async void OnPreviewSheetRequested(PreviewSheetMessage message)
+    {
+        // Create and load the preview ViewModel with the selected sheet
+        var previewVm = _serviceProvider.GetRequiredService<SheetPreviewViewModel>();
+        await previewVm.LoadPreviewAsync(message.FileId, message.FileName, message.TargetSheetName);
+
+        // Route to the preview view
+        CurrentContent?.Dispose();
+        CurrentContent = previewVm;
+    }
+
+    /// <summary>
+    /// Handles NavigationMessage for returning to the ImportHub queue after confirm/discard.
+    /// Only processes "ImportHub" destination; all other destinations are ignored to prevent routing conflicts.
     /// </summary>
     private void OnNavigationRequested(NavigationMessage message)
     {

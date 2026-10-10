@@ -14,6 +14,8 @@ using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.UI.Shared;
 using IncomeExpenditureTracker.UI.Gatekeeper;
 using IncomeExpenditureTracker.UI.MasterData;
+using IncomeExpenditureTracker.UI.ImportHub;
+using IncomeExpenditureTracker.Services.StatementManagement;
 
 // =========================================================================
 // ARCHITECTURAL NOTE: Why 'partial'?
@@ -219,7 +221,7 @@ namespace IncomeExpenditureTracker.UI.Shell
 
         private async void OnNavigationRequested(NavigationMessage message)
         {
-            var statementManager = _serviceProvider.GetService<IncomeExpenditureTracker.Services.StatementManagement.IStatementManager>();
+            var statementManager = _serviceProvider.GetRequiredService<IStatementManager>();
             if (statementManager != null && statementManager.HasStagedFiles && message.Destination != "Login")
             {
                 var tcs = new TaskCompletionSource<bool>();
@@ -267,7 +269,7 @@ namespace IncomeExpenditureTracker.UI.Shell
                     "Dashboard" => _serviceProvider.GetRequiredService<DashboardViewModel>(),
 
                     // "Ledger" => _serviceProvider.GetRequiredService<LedgerViewModel>(),
-                    // "StatementImport" => _serviceProvider.GetRequiredService<StatementImportViewModel>(),
+                    "ImportHub" => _serviceProvider.GetRequiredService<ImportHubViewModel>(),
                     "DataTaxonomy" => _serviceProvider.GetRequiredService<DataTaxonomyViewModel>(),
                     // "Reports" => _serviceProvider.GetRequiredService<ReportsViewModel>(),
                     // "AuditLogs" => _serviceProvider.GetRequiredService<AuditLogsViewModel>(),
