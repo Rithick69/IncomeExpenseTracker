@@ -213,6 +213,12 @@ namespace IncomeExpenditureTracker.Models
     /// </summary>
     public record PreviewSheetMessage(Guid FileId, string FileName, string TargetSheetName);
 
+    /// <summary>
+    /// Sub-routing message to return to the File Queue from the Preview screen.
+    /// Handled exclusively by ImportHubViewModel to swap the active view without losing state.
+    /// </summary>
+    public record ReturnToQueueMessage();
+
     // -------------------------------------------------------------------------
     // GLOBAL DIALOG & MODAL MESSAGES
     // -------------------------------------------------------------------------

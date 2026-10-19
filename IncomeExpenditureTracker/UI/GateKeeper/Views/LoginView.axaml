@@ -147,7 +147,7 @@
             <!-- @desc Error Message Display (Shared across all phases) -->
             <TextBlock Grid.Row="2"
                        Text="{Binding ErrorMessage}"
-                       Foreground="#EF4444"
+                       Foreground="{DynamicResource TextDanger}"
                        Margin="0,20,0,0"
                        TextWrapping="Wrap"
                        HorizontalAlignment="Center"

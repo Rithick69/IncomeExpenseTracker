@@ -7,6 +7,8 @@
     <SolidColorBrush x:Key="AccentIndigoHover" Color="#818CF8" />
     <SolidColorBrush x:Key="TextPrimary" Color="#F9FAFB" />
     <SolidColorBrush x:Key="TextSecondary" Color="#9CA3AF" />
+    <SolidColorBrush x:Key="TextDanger" Color="#EF4444" />
     <SolidColorBrush x:Key="BorderSubtle" Color="#374151" />
+    <SolidColorBrush x:Key="RowError" Color="#3A2528" />
     <BoxShadows x:Key="CardShadow">0 4 14 0 #60000000</BoxShadows>
 </ResourceDictionary>

@@ -23,4 +23,6 @@ public interface IImportBatchService
     Task DeleteBatchAsync(int batchId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 
     Task<List<ImportBatch>> GetAllImportBatches(CancellationToken ct = default);
+
+    Task<int> GetIdByFileName(string filename, CancellationToken ct = default);
 }

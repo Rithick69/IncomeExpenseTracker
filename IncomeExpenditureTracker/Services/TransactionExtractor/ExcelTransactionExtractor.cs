@@ -58,6 +58,7 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         public int AmountCol { get; init; }
         public int DebitCol { get; init; }
         public int CreditCol { get; init; }
+        public int TransactionTypeCol { get; init; }
 
         // Fast factory method to resolve dictionary once upfront
         public static TransactionColumnCoordinates FromDictionary(Dictionary<string, DetectedField> fields)
@@ -68,7 +69,8 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 DescCol = GetCol(fields, "Col:DESCRIPTION"),
                 AmountCol = GetCol(fields, "Col:AMOUNT"),
                 DebitCol = GetCol(fields, "Col:DEBIT"),
-                CreditCol = GetCol(fields, "Col:CREDIT")
+                CreditCol = GetCol(fields, "Col:CREDIT"),
+                TransactionTypeCol = GetCol(fields, "Col:TRANSACTIONTYPE")
             };
         }
 
@@ -114,24 +116,20 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         public decimal Credit { get; set; }
 
         public bool IsValid { get; set; }
+        public bool IsTerminal { get; set; } // Signals the loop to break
 
         // UI Metadata
         public ReviewFlags ReviewStatus { get; set; }
         public string RawAmountText { get; set; } = string.Empty;
+        public string TransactionType { get; set; } = string.Empty;
     }
 
     // Common keywords that indicate a balance or total row, which should be ignored during transaction extraction.
-    private static readonly string[] BalanceKeywords =
+    private static readonly string[] TerminalKeywords =
     {
-        "OPENING BALANCE",
-        "CLOSING BALANCE",
-        "BALANCE BROUGHT FORWARD",
-        "BALANCE CARRIED FORWARD",
-        "TOTAL",
-        "SUBTOTAL",
-        "BALANCE B/F",
-        "BALANCE C/F",
-        "GRAND TOTAL"
+        "OPENING BALANCE", "CLOSING BALANCE", "BALANCE BROUGHT FORWARD",
+        "BALANCE CARRIED FORWARD", "TOTAL", "SUBTOTAL", "BALANCE B/F",
+        "BALANCE C/F", "GRAND TOTAL", "END OF STATEMENT", "STATEMENT SUMMARY"
     };
 
     // ------------------------------------------------------------
@@ -196,6 +194,13 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
 
                 var parsedRow = ParseRow(sheetRow, coords);
 
+                // HALT EXTRACTION: The footer has been reached
+                if (parsedRow.IsTerminal)
+                {
+                    _logger.LogInformation("Terminal row encountered at row {Row}. Halting extraction.", row);
+                    break;
+                }
+
                 if (!parsedRow.IsValid)
                 {
                     invalidRowCount++;
@@ -213,7 +218,8 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                     Description = parsedRow.Description,
                     Debit = parsedRow.Debit,
                     Credit = parsedRow.Credit,
-                    Amount = parsedRow.Credit > 0 ? parsedRow.Credit : -parsedRow.Debit
+                    Amount = parsedRow.Credit > 0 ? parsedRow.Credit : -parsedRow.Debit,
+                    TransactionType = parsedRow.TransactionType
                 });
             }
 
@@ -292,6 +298,13 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 // Pass the unified dictionary directly to the row parser
                 var parsedRow = ParseRow(sheetrow, coords);
 
+                // HALT EXTRACTION: The footer has been reached
+                if (parsedRow.IsTerminal)
+                {
+                    _logger.LogInformation("Terminal row encountered at row {Row}. Halting extraction.", row);
+                    break;
+                }
+
                 if (!parsedRow.IsValid)
                 {
                     invalidRowCount++;
@@ -349,21 +362,22 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
 
     // Checks if the description contains keywords that indicate this row is a balance or total row, which should be ignored.
 
-    private bool IsBalanceRow(string description)
+    private bool IsTerminalRow(IXLRow row)
     {
-        if (string.IsNullOrWhiteSpace(description))
-            return false;
-
-        var text = description.ToUpper();
-
-        foreach (var keyword in BalanceKeywords)
+        // Scan the first 5 populated cells. Footers rarely extend beyond this.
+        for (int i = 1; i <= 5; i++)
         {
-            if (text.Contains(keyword))
-                return true;
-        }
+            var text = row.Cell(i).GetString().Trim().ToUpper();
+            if (string.IsNullOrWhiteSpace(text)) continue;
 
+            foreach (var keyword in TerminalKeywords)
+            {
+                if (text.Contains(keyword)) return true;
+            }
+        }
         return false;
     }
+
     // ------------------------------------------------------------
     // Parse ROW
     // ------------------------------------------------------------
@@ -383,6 +397,13 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         try
         {
             var result = new ParsedTransactionRow();
+
+            // FAST-FAIL 1: Is this the end of the statement?
+            if (IsTerminalRow(sheetrow))
+            {
+                result.IsTerminal = true;
+                return result;
+            }
 
             // -------------------------------------------------------------
             // STEP 1: RESOLVE DATE & DESCRIPTION (Mandatory Fields)
@@ -419,10 +440,6 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             // -----------------------------
             var rawDescription = descCell.GetString().Trim();
 
-            // Skip balance rows
-            if (IsBalanceRow(rawDescription))
-                return result;
-
             // Route through the new sanitization helper
             var descCheck = SanitizeDescription(rawDescription);
             result.Description = descCheck.CleanedDescription;
@@ -433,51 +450,94 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             }
 
             // -----------------------------
-            // STEP 4: PARSE AMOUNTS (Single vs. Dual Column Logic)
+            // STEP 4: EXTRACT AMOUNTS (SLIDING WINDOW RECOVERY)
             // -----------------------------
+            int maxGridOffset = 0;
+            AccountParseResult? amountResult = null, debitResult = null, creditResult = null;
 
-            // -----------------------------
-            // CASE 1: SINGLE AMOUNT COLUMN
-            // -----------------------------
             if (coords.AmountCol >= 0)
             {
                 // =========================================================================
-                // CASE 1: SINGLE AMOUNT COLUMN (Negative = Debit, Positive = Credit)
+                // SINGLE AMOUNT COLUMN (FLEXIBLE)
+                // Safe to use sliding window because TransactionType string governs the math.
                 // =========================================================================
-                string rawAmountText = sheetrow.Cell(coords.AmountCol + 1).GetString();
-
-                AccountParseResult parseResult = _strictAccountParser.Parse(
-                    rawAmountText
-                );
-
-                result.RawAmountText = TruncateForDb(parseResult.RawText ?? string.Empty, 100) ?? string.Empty;
-                decimal amount = parseResult.Value; // Defaults to 0m if parsing failed
-
-                // Flag for review if the parser failed OR if the value is literally 0m
-                if (!parseResult.IsClean || amount == 0m)
+                amountResult = RecoverAmountWithSlidingWindow(sheetrow, coords.AmountCol, out maxGridOffset);
+            }
+            else
+            {
+                // =========================================================================
+                // DUAL COLUMNS (STRICT)
+                // Position IS identity. Sliding here causes Debits to steal Credits.
+                // We enforce strict $O(1) coordinates. If it fails, it flags for UI review.
+                // =========================================================================
+                if (coords.DebitCol >= 0)
                 {
-                    result.ReviewStatus |= parseResult.ReviewStatus;
+                    string dText = sheetrow.Cell(coords.DebitCol + 1).GetString();
+                    debitResult = _strictAccountParser.Parse(dText);
+                }
 
-                    // Explicitly flag if the value is 0 (since a successful 0.00 parse wouldn't have flags)
-                    if (amount == 0m)
+                if (coords.CreditCol >= 0)
+                {
+                    string cText = sheetrow.Cell(coords.CreditCol + 1).GetString();
+                    creditResult = _strictAccountParser.Parse(cText);
+                }
+            }
+
+            // -----------------------------
+            //  STEP 5: EXTRACT TRANSACTION TYPE (SLIDING WINDOW RECOVERY)
+            // -----------------------------
+            if (coords.TransactionTypeCol >= 0)
+            {
+                // Pass the discovered grid offset so it doesn't parse garbage left behind by the description
+                string rawType = RecoverTransactionTypeWithSlidingWindow(sheetrow, coords.TransactionTypeCol, maxGridOffset);
+
+                if (!string.IsNullOrWhiteSpace(rawType))
+                {
+                    if (rawType.Contains('<') || rawType.Contains('>'))
                     {
-                        result.ReviewStatus |= ReviewFlags.InvalidAmount;
+                        rawType = rawType.Replace("<", "").Replace(">", "");
                     }
+                    result.TransactionType = TruncateForDb(rawType, 50) ?? string.Empty;
+                }
+            }
 
+            // -----------------------------
+            // STEP 6: APPLY MATHEMATICAL ROUTING (Single vs Dual Column)
+            // -----------------------------
+            if (coords.AmountCol >= 0 && amountResult != null)
+            {
+                // =========================================================================
+                // CASE 1: SINGLE AMOUNT COLUMN
+                // =========================================================================
+                result.RawAmountText = TruncateForDb(amountResult.RawText ?? string.Empty, 100) ?? string.Empty;
+                decimal amount = amountResult.Value;
+
+                if (!amountResult.IsClean || amount == 0m)
+                {
+                    result.ReviewStatus |= amountResult.ReviewStatus;
+                    if (amount == 0m) result.ReviewStatus |= ReviewFlags.InvalidAmount;
                     result.Debit = 0m;
                     result.Credit = 0m;
                 }
                 else
                 {
-                    if (amount < 0)
+                    // Evaluate the explicit TransactionType indicator column if mapped
+                    bool isExplicitDebit = false;
+                    if (!string.IsNullOrWhiteSpace(result.TransactionType))
+                    {
+                        string typeText = result.TransactionType.ToUpper();
+                        if (typeText == "DR" || typeText == "DEBIT" || typeText == "D") isExplicitDebit = true;
+                    }
+
+                    // Route based on explicit indicator OR mathematical sign
+                    if (amount < 0 || isExplicitDebit)
                     {
                         result.Debit = Math.Abs(amount);
                         result.Credit = 0m;
                     }
                     else
                     {
-                        // Safely catches positive amounts AND legitimate $0.00 transactions
-                        result.Credit = amount;
+                        result.Credit = Math.Abs(amount);
                         result.Debit = 0m;
                     }
                 }
@@ -487,29 +547,16 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 // =========================================================================
                 // CASE 2: SEPARATE DEBIT AND CREDIT COLUMNS
                 // =========================================================================
-
-                AccountParseResult? debitResult = coords.DebitCol >= 0
-                    ? _strictAccountParser.Parse(sheetrow.Cell(coords.DebitCol + 1).GetString())
-                    : null;
-
-                AccountParseResult? creditResult = coords.CreditCol >= 0
-                    ? _strictAccountParser.Parse(sheetrow.Cell(coords.CreditCol + 1).GetString())
-                    : null;
-
-                // Check if either column failed strict validation (ignoring empty/blank cells)
                 bool debitFailed = debitResult != null && !debitResult.IsClean && !string.IsNullOrWhiteSpace(debitResult.RawText);
                 bool creditFailed = creditResult != null && !creditResult.IsClean && !string.IsNullOrWhiteSpace(creditResult.RawText);
 
                 decimal debitVal = debitResult != null ? Math.Abs(debitResult.Value) : 0m;
                 decimal creditVal = creditResult != null ? Math.Abs(creditResult.Value) : 0m;
 
-                // Flag if parsing failed, OR if both columns ended up as 0m, OR if both contain money (contradiction)
                 if (debitFailed || creditFailed || (debitVal == 0m && creditVal == 0m) || (debitVal > 0 && creditVal > 0))
                 {
                     result.ReviewStatus |= ReviewFlags.InvalidAmount;
                     result.RawAmountText = TruncateForDb($"Dr: [{debitResult?.RawText}] | Cr: [{creditResult?.RawText}]", 100) ?? string.Empty;
-
-                    // Dump to zero during ambiguity
                     result.Debit = 0m;
                     result.Credit = 0m;
 
@@ -518,11 +565,9 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
                 }
                 else
                 {
-
-                    // Clean, valid transaction
                     result.Debit = debitVal;
                     result.Credit = creditVal;
-
+                    result.TransactionType = debitVal > 0 ? "DR" : "CR";
                 }
             }
 
@@ -538,6 +583,82 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
             _logger.LogError(ex, "[ParseRow] Error parsing transaction row {RowNumber} during extraction.", sheetrow.RowNumber());
             return new ParsedTransactionRow();
         }
+    }
+
+    // ------------------------------------------------------------
+    // SLIDING WINDOW RECOVERY HELPERS
+    // ------------------------------------------------------------
+
+    /// <summary>
+    /// Attempts to parse a monetary value from the primary coordinate.
+    /// If it fails (e.g., due to PDF column shifts pushing text into this cell),
+    /// it slides up to 3 columns to the right to rescue the displaced numeric data.
+    /// </summary>
+    private AccountParseResult? RecoverAmountWithSlidingWindow(IXLRow sheetrow, int baseColIndex, out int appliedOffset)
+    {
+        appliedOffset = 0;
+        if (baseColIndex < 0) return null;
+
+        // 1. Try Primary Coordinate O(1) Fast-Path
+        string primaryText = sheetrow.Cell(baseColIndex + 1).GetString();
+        var primaryResult = _strictAccountParser.Parse(primaryText);
+
+        if (primaryResult.IsClean && primaryResult.Value != 0)
+        {
+            return primaryResult;
+        }
+
+        // 2. Fallback: Sliding Window (+1 to +3 columns)
+        for (int offset = 1; offset <= 3; offset++)
+        {
+            string candidateText = sheetrow.Cell(baseColIndex + 1 + offset).GetString().Trim();
+            if (string.IsNullOrWhiteSpace(candidateText)) continue;
+
+            var candidateResult = _strictAccountParser.Parse(candidateText);
+
+            if (candidateResult.IsClean && candidateResult.Value != 0)
+            {
+                _logger.LogDebug("[SlidingWindow] Rescued shifted amount '{Amount}' at offset +{Offset}", candidateText, offset);
+                appliedOffset = offset;
+                return candidateResult;
+            }
+        }
+
+        // 3. Complete Failure: Return the original failed result so the UI gets the error flags
+        return primaryResult;
+    }
+
+    /// <summary>
+    /// Searches for standard Debit/Credit indicators. Utilizes the offset discovered
+    /// during amount extraction to avoid parsing garbage from split descriptions.
+    /// </summary>
+    private string RecoverTransactionTypeWithSlidingWindow(IXLRow sheetrow, int baseColIndex, int amountOffset)
+    {
+        if (baseColIndex < 0) return string.Empty;
+
+        // Start from the amount offset (if the amount shifted +2, the indicator shifted AT LEAST +2)
+        int startOffset = amountOffset > 0 ? amountOffset : 0;
+
+        for (int offset = startOffset; offset <= 3; offset++)
+        {
+            string rawText = sheetrow.Cell(baseColIndex + 1 + offset).GetString().Trim().ToUpper();
+
+            if (string.IsNullOrWhiteSpace(rawText)) continue;
+
+            // 1. Exact Keyword Match
+            if (rawText == "DR" || rawText == "DEBIT" || rawText == "D" ||
+                rawText == "CR" || rawText == "CREDIT" || rawText == "C")
+            {
+                _logger.LogDebug("[SlidingWindow] Rescued TransactionType '{Type}' at offset +{Offset}", rawText, offset);
+                return rawText;
+            }
+
+            // 2. Fused Cell Rescue (e.g., PDF converter merged "2558.00 DR" into one cell)
+            if (rawText.EndsWith(" DR") || rawText.EndsWith(" DEBIT") || rawText.EndsWith(" D")) return "DR";
+            if (rawText.EndsWith(" CR") || rawText.EndsWith(" CREDIT") || rawText.EndsWith(" C")) return "CR";
+        }
+
+        return string.Empty;
     }
 
     /// <summary>
@@ -603,13 +724,27 @@ public class ExcelTransactionExtractor : ITransactionExtractor<IXLWorksheet>
         if (string.IsNullOrWhiteSpace(text))
             return false;
 
+        // Explicitly support Indian/UK (dd-MM-yyyy) and other common bank formats
+        // 1. Sanitize the string to remove troublesome apostrophes (e.g., "08 Feb '26" -> "08 Feb 26")
+        string cleanText = text.Replace("'", "").Replace(",", "").Trim();
+
+        // 2. Explicitly support formats using the sanitized string
+        string[] customFormats = {
+            "dd-MM-yyyy", "dd/MM/yyyy", "dd.MM.yyyy", "yyyy-MM-dd",
+            "dd-MMM-yyyy", "dd-MMM-yy", "dd MMM yy", "d MMM yy", "dd MM yy"
+        };
+
+        if (DateTime.TryParseExact(cleanText, customFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
+            return true;
+
         // Try parsing with invariant culture first, then fallback to current culture
         // This allows us to handle dates in formats like "MM/dd/yyyy" or "dd/MM/yyyy" depending on the user's locale,
         // while still supporting a standard format in the statements.
-        if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
+
+        if (DateTime.TryParse(cleanText, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
             return true;
 
-        return DateTime.TryParse(text, out date);
+        return DateTime.TryParse(cleanText, out date);
     }
 
     private bool IsValidRow(ParsedTransactionRow t)

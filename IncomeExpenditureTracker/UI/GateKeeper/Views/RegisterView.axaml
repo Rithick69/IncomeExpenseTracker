@@ -89,7 +89,7 @@
 
             <!-- Error Message Display -->
             <TextBlock Text="{Binding ErrorMessage}"
-                       Foreground="#EF4444"
+                       Foreground="{DynamicResource TextDanger}"
                        TextWrapping="Wrap"
                        HorizontalAlignment="Center"
                        TextAlignment="Center"

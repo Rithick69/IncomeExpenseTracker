@@ -27,5 +27,7 @@ public interface IFileParserStrategy : IDisposable
     /// <summary>
     /// Imports a batch of confirmed sheets under a single transaction.
     /// </summary>
-    Task ImportConfirmedBatchAsync(IEnumerable<PreviewTracker> trackers, CancellationToken ct = default);
+    Task ImportConfirmedBatchAsync(PreviewTracker trackers, CancellationToken ct = default);
+
+    Task<StatementPreview> RegeneratePreviewAsync(string sheetName, int headerRow, Dictionary<string, DetectedField> updatedFields, List<string> originalRawHeaders, CancellationToken ct = default);
 }

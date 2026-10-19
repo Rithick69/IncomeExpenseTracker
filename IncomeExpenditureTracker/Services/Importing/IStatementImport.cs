@@ -7,5 +7,5 @@ namespace IncomeExpenditureTracker.Services.Importing;
 
 public interface IStatementImport<in TDocument>
 {
-    Task ImportConfirmedBatchAsync(TDocument document, IEnumerable<PreviewTracker> trackers, CancellationToken ct = default);
+    Task ImportConfirmedBatchAsync(TDocument document, PreviewTracker trackers, CancellationToken ct = default);
 }

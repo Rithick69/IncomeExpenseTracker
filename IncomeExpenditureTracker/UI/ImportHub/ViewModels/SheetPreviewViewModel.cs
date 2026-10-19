@@ -23,79 +23,160 @@ public partial class SheetPreviewViewModel : ViewModelBase
     private Guid _currentFileId;
     private StatementPreview? _originalPreview;
 
-    // =========================================================================
-    // ACCOUNT METADATA (Editable Form Fields)
-    // =========================================================================
+    // INJECTED CHILD VIEWMODEL
+    public AccountMappingViewModel AccountMapping { get; }
+
+    [ObservableProperty] private string _targetSheetName = string.Empty;
+    [ObservableProperty] private string _currentFileName = string.Empty;
+
+    // UI METRICS & VALIDATION
     [ObservableProperty]
-    private string _bankName = string.Empty;
+    [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
+    [NotifyPropertyChangedFor(nameof(ConfidenceScoreText))]
+    private int _confidenceScore;
+    public string ConfidenceScoreText => $"Confidence Score: {ConfidenceScore}%";
+    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty] private string _statusText = "Ready";
+    [ObservableProperty] private string _headerValidationError = string.Empty;
 
-    [ObservableProperty]
-    private string _accountNumber = string.Empty;
+    // True if Score >= 80 AND all typed headers are perfectly valid
+    public bool CanConfirmImport => ConfidenceScore >= 80 && string.IsNullOrEmpty(HeaderValidationError);
 
-    [ObservableProperty]
-    private string _targetSheetName = string.Empty;
+    // Contains real headers AND injected placeholders like "[Column 3 - Blank]"
+    public Dictionary<string, DetectedField> FieldMappings { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    [ObservableProperty]
-    private string _currentFileName = string.Empty;
-
-    // =========================================================================
-    // COLUMN MAPPING STATE (The Dictionary exposed for ComboBox bindings)
-    // =========================================================================
-    // Key: Domain field name (e.g., "Date", "Description", "Debit")
-    // Value: DetectedField containing column index and metadata
-    public Dictionary<string, DetectedField> FieldMappings { get; private set; } = new();
-
-    /// <summary>
-    /// Collection of all raw column headers from the Excel sheet for ComboBox binding.
-    /// Each string represents a possible column header that can be mapped to domain fields.
-    /// </summary>
+    // Binds exclusively to the exact physical headers found in the file
     public ObservableCollection<string> AvailableHeaders { get; } = new();
 
-    // =========================================================================
-    // INDIVIDUAL FIELD MAPPINGS (For XAML ComboBox Bindings)
-    // Avalonia does not support dictionary indexing syntax, so we expose individual properties
-    // =========================================================================
-    [ObservableProperty]
-    private string _selectedDateHeader = string.Empty;
+    // ACCOUNT METADATA
+    [ObservableProperty] private string _bankName = string.Empty;
+    [ObservableProperty] private string _accountNumber = string.Empty;
+    [ObservableProperty] private string _accountType = string.Empty;
+    [ObservableProperty] private string _currency = string.Empty;
+    [ObservableProperty] private string _creditLimit = string.Empty;
 
-    [ObservableProperty]
-    private string _selectedDescriptionHeader = string.Empty;
+    // COLUMN MAPPINGS
+    [ObservableProperty] private string _selectedDateHeader = string.Empty;
+    [ObservableProperty] private string _selectedDescriptionHeader = string.Empty;
+    [ObservableProperty] private string _selectedDebitHeader = string.Empty;
+    [ObservableProperty] private string _selectedCreditHeader = string.Empty;
+    [ObservableProperty] private string _selectedAmountHeader = string.Empty;
+    [ObservableProperty] private string _selectedTransactionTypeHeader = string.Empty;
 
-    [ObservableProperty]
-    private string _selectedDebitHeader = string.Empty;
-
-    [ObservableProperty]
-    private string _selectedCreditHeader = string.Empty;
-
-    [ObservableProperty]
-    private string _selectedAmountHeader = string.Empty;
-
-    // Track user corrections for synonym learning
-    private readonly List<ColumnMappingCorrection> _corrections = new();
-
-    // =========================================================================
-    // TRANSACTION PREVIEW GRID (The DataGrid ItemsSource)
-    // =========================================================================
+    // EXCLUSIVE UI TOGGLES (Debit/Credit OR Amount/TxType)
+    [ObservableProperty] private bool _isAmountMappingEnabled = true;
+    [ObservableProperty] private bool _isSplitMappingEnabled = true;
     public ObservableCollection<TransactionPreviewRow> TransactionRows { get; } = new();
 
-    [ObservableProperty]
-    private bool _isBusy;
+    // =========================================================================
+    // REACTIVE DROPDOWN HOOKS (Community Toolkit Source Generators)
+    // These fire automatically whenever the user changes a ComboBox in the UI.
+    // =========================================================================
+    partial void OnSelectedDateHeaderChanged(string value) => EvaluateMappingToggles();
+    partial void OnSelectedDescriptionHeaderChanged(string value) => EvaluateMappingToggles();
+    partial void OnSelectedDebitHeaderChanged(string value) => EvaluateMappingToggles();
+    partial void OnSelectedCreditHeaderChanged(string value) => EvaluateMappingToggles();
+    partial void OnSelectedAmountHeaderChanged(string value) => EvaluateMappingToggles();
+    partial void OnSelectedTransactionTypeHeaderChanged(string value) => EvaluateMappingToggles();
 
-    [ObservableProperty]
-    private string _statusText = "Ready";
+    [RelayCommand]
+    private void ClearSelectedDateHeader()
+    {
+        SelectedDateHeader = string.Empty;
+    }
+    [RelayCommand]
+    private void ClearSelectedDebitHeader()
+    {
+        SelectedDebitHeader = string.Empty;
+    }
+    [RelayCommand]
+    private void ClearSelectedCreditHeader()
+    {
+        SelectedCreditHeader = string.Empty;
+    }
+    [RelayCommand]
+    private void ClearSelectedAmountHeader()
+    {
+        SelectedAmountHeader = string.Empty;
+    }
+    [RelayCommand]
+    private void ClearSelectedDescHeader()
+    {
+        SelectedDescriptionHeader = string.Empty;
+    }
+    [RelayCommand]
+    private void ClearSelectedTransactionTypeHeader()
+    {
+        SelectedTransactionTypeHeader = string.Empty;
+    }
+
 
     // =========================================================================
     // CONSTRUCTOR
     // =========================================================================
-    public SheetPreviewViewModel(IStatementManager statementManager, IApplicationBroker broker)
+    public SheetPreviewViewModel(IStatementManager statementManager, IApplicationBroker broker, AccountMappingViewModel accountMapping)
         : base(broker)
     {
         _statementManager = statementManager ?? throw new ArgumentNullException(nameof(statementManager));
+        AccountMapping = accountMapping ?? throw new ArgumentNullException(nameof(accountMapping));
     }
 
     // =========================================================================
     // PUBLIC METHODS (Called by Parent ImportHubViewModel)
     // =========================================================================
+
+    private void EvaluateMappingToggles()
+    {
+        bool hasSplit = !string.IsNullOrEmpty(SelectedDebitHeader) || !string.IsNullOrEmpty(SelectedCreditHeader);
+        bool hasAmount = !string.IsNullOrEmpty(SelectedAmountHeader) || !string.IsNullOrEmpty(SelectedTransactionTypeHeader);
+
+        if (hasSplit)
+        {
+            IsAmountMappingEnabled = false;
+            IsSplitMappingEnabled = true;
+
+            // Optionally clear the hidden fields so they don't get processed
+            SelectedAmountHeader = string.Empty;
+            SelectedTransactionTypeHeader = string.Empty;
+        }
+        else if (hasAmount)
+        {
+            IsSplitMappingEnabled = false;
+            IsAmountMappingEnabled = true;
+            SelectedDebitHeader = string.Empty;
+            SelectedCreditHeader = string.Empty;
+        }
+        else
+        {
+            IsAmountMappingEnabled = true;
+            IsSplitMappingEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Enforces the hard rule that user-typed headers MUST exist in the physical sheet.
+    /// </summary>
+    private void ValidateHeaders()
+    {
+        var selectedHeaders = new[]
+        {
+            SelectedDateHeader, SelectedDescriptionHeader, SelectedDebitHeader,
+            SelectedCreditHeader, SelectedAmountHeader, SelectedTransactionTypeHeader
+        };
+
+        foreach (var header in selectedHeaders)
+        {
+            // Case-insensitive, space-insensitive check
+            if (!string.IsNullOrWhiteSpace(header) &&
+                !AvailableHeaders.Any(h => string.Equals(h?.Trim(), header.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                HeaderValidationError = $"Error: Column '{header}' does not exist in the sheet.";
+                return;
+            }
+        }
+
+        HeaderValidationError = string.Empty;
+    }
 
     /// <summary>
     /// Loads the preview for a staged file and populates the form + grid.
@@ -114,80 +195,38 @@ public partial class SheetPreviewViewModel : ViewModelBase
             // Retrieve the extraction from StatementManager
             _originalPreview = await _statementManager.PreviewStagedFileAsync(fileId, targetSheet);
 
-            // Populate Account Metadata from DetectedFields
-            if (_originalPreview.Fields.TryGetValue("EntityName", out var bankField))
-            {
-                BankName = bankField.ExtractedValue;
-            }
+            // 1. Initialize dropdown data for the child ViewModel
+            await AccountMapping.InitializeAsync();
 
-            if (_originalPreview.Fields.TryGetValue("AccountNumber", out var accountField))
-            {
-                AccountNumber = accountField.ExtractedValue;
-            }
+            // 2. Pass the extracted fields dictionary to the child ViewModel to parse
+            AccountMapping.LoadFromPreview(_originalPreview.Fields);
 
+            ConfidenceScore = _originalPreview.ConfidenceScore;
             TargetSheetName = targetSheet ?? _originalPreview.FileName;
-
-            // Copy the Fields dictionary for UI binding (ComboBoxes will mutate this)
-            FieldMappings = new Dictionary<string, DetectedField>(_originalPreview.Fields, StringComparer.OrdinalIgnoreCase);
+            FieldMappings = new Dictionary<string, DetectedField>(_originalPreview.Fields, StringComparer.OrdinalIgnoreCase); ;
 
             // Populate AvailableHeaders from the detected fields (raw column names)
             // This provides the ComboBox options for column mapping
             AvailableHeaders.Clear();
-            var uniqueHeaders = _originalPreview.Fields.Values
-                .Where(f => !string.IsNullOrWhiteSpace(f.ColumnName))
-                .Select(f => f.ColumnName)
-                .Distinct()
-                .OrderBy(h => h);
-            foreach (var header in uniqueHeaders)
+            if (_originalPreview.RawHeaders != null)
             {
-                AvailableHeaders.Add(header);
-            }
-
-            // Populate the individual observable properties for XAML binding
-            // These bridge the dictionary to simple bindable properties
-            // Using the public property setter to trigger INotifyPropertyChanged
-            if (FieldMappings.TryGetValue("Date", out var dateField))
-            {
-                SelectedDateHeader = dateField.ColumnName;
-            }
-
-            if (FieldMappings.TryGetValue("Description", out var descField))
-            {
-                SelectedDescriptionHeader = descField.ColumnName;
-            }
-
-            if (FieldMappings.TryGetValue("Debit", out var debitField))
-            {
-                SelectedDebitHeader = debitField.ColumnName;
-            }
-
-            if (FieldMappings.TryGetValue("Credit", out var creditField))
-            {
-                SelectedCreditHeader = creditField.ColumnName;
-            }
-
-            if (FieldMappings.TryGetValue("Amount", out var amountField))
-            {
-                SelectedAmountHeader = amountField.ColumnName;
-            }
-
-            // Build the transaction preview rows for the DataGrid
-            TransactionRows.Clear();
-            foreach (var txn in _originalPreview.PreviewTransactions)
-            {
-                // Calculate ReviewFlags based on transaction data integrity
-                var flags = CalculateReviewFlags(txn);
-                TransactionRows.Add(new TransactionPreviewRow
+                foreach (var header in _originalPreview.RawHeaders)
                 {
-                    Date = txn.Date,
-                    Description = txn.Description,
-                    Debit = txn.Debit,
-                    Credit = txn.Credit,
-                    Amount = txn.Amount,
-                    ReviewStatus = flags
-                });
+                    AvailableHeaders.Add(header);
+                }
             }
 
+            // Initialize Dropdown Selections
+            if (FieldMappings.TryGetValue("Col:DATE", out var dField)) SelectedDateHeader = dField.ColumnName;
+            if (FieldMappings.TryGetValue("Col:DESCRIPTION", out var descField)) SelectedDescriptionHeader = descField.ColumnName;
+            if (FieldMappings.TryGetValue("Col:DEBIT", out var debField)) SelectedDebitHeader = debField.ColumnName;
+            if (FieldMappings.TryGetValue("Col:CREDIT", out var credField)) SelectedCreditHeader = credField.ColumnName;
+            if (FieldMappings.TryGetValue("Col:AMOUNT", out var amField)) SelectedAmountHeader = amField.ColumnName;
+            if (FieldMappings.TryGetValue("Col:TRANSACTIONTYPE", out var typeField)) SelectedTransactionTypeHeader = typeField.ColumnName;
+
+            UpdateTransactionGrid(_originalPreview.PreviewTransactions);
+            EvaluateMappingToggles();
+            ValidateHeaders();
             StatusText = $"Preview loaded. {TransactionRows.Count} transactions found.";
         }
         catch (Exception ex)
@@ -198,6 +237,119 @@ public partial class SheetPreviewViewModel : ViewModelBase
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    public async Task RegeneratePreviewAsync()
+    {
+        if (IsBusy || _currentFileId == Guid.Empty || _originalPreview == null) return;
+
+        IsBusy = true;
+        StatusText = "Regenerating preview...";
+
+        try
+        {
+            // Sync user's edits from the child ViewModel back into FieldMappings
+            AccountMapping.ApplyToMappings(FieldMappings);
+
+            // 2. Resolve Dropdowns to Integer Coordinates
+            UpdateMapping("Col:DATE", SelectedDateHeader);
+            UpdateMapping("Col:DESCRIPTION", SelectedDescriptionHeader);
+            UpdateMapping("Col:DEBIT", SelectedDebitHeader);
+            UpdateMapping("Col:CREDIT", SelectedCreditHeader);
+            UpdateMapping("Col:AMOUNT", SelectedAmountHeader);
+            UpdateMapping("Col:TRANSACTIONTYPE", SelectedTransactionTypeHeader);
+
+            // 3. Call Backend Re-Extraction
+            var newPreview = await _statementManager.RegeneratePreviewAsync(
+                _currentFileId,
+                TargetSheetName,
+                _originalPreview.HeaderRow,
+                FieldMappings,
+                AvailableHeaders.ToList()
+            );
+
+            // 4. Refresh UI
+            ConfidenceScore = newPreview.ConfidenceScore;
+            UpdateTransactionGrid(newPreview.PreviewTransactions);
+
+            Broker.Send(new ToastNotificationMessage(ToastType.Success, "Preview regenerated successfully."));
+            StatusText = "Regeneration complete.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Regeneration failed: {ex.Message}";
+            Broker.Send(new ToastNotificationMessage(ToastType.Error, $"Regeneration Error: {ex.Message}"));
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void UpdateMapping(string fieldKey, string selectedHeader)
+    {
+        if (string.IsNullOrWhiteSpace(selectedHeader)) return;
+
+        // Case-insensitive find to get the correct physical index
+        var matchedHeader = AvailableHeaders.FirstOrDefault(h => string.Equals(h?.Trim(), selectedHeader.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        if (matchedHeader != null)
+        {
+
+            // O(1) resolution: The index in AvailableHeaders perfectly matches the physical Excel column index!
+            int newIndex = AvailableHeaders.IndexOf(matchedHeader);
+            if (newIndex >= 0)
+            {
+                if (!FieldMappings.TryGetValue(fieldKey, out var field))
+                {
+                    field = new DetectedField { SuggestedField = fieldKey.Replace("Col:", ""), ColumnIndex = -1 };
+                    FieldMappings[fieldKey] = field;
+                }
+
+                bool isPlaceholder = !string.IsNullOrWhiteSpace(field.ColumnName) &&
+                     field.ColumnName.StartsWith("[Column ") &&
+                     field.ColumnName.EndsWith(" - Blank]");
+
+                // Push the user's manual correction directly into the centralized Edit Session
+                if (field.ColumnIndex != newIndex && !isPlaceholder)
+                {
+                    try
+                    {
+                        var session = _statementManager.GetEditSession(_currentFileId);
+                        // Pass the newly matched user header to the tracking system
+                        session.UpdateColumnMapping(fieldKey, matchedHeader, newIndex, "TRANSACTION");
+                    }
+                    catch (Exception)
+                    {
+                        // Fail silently if session dropped; UI gracefully recovers
+                    }
+                }
+
+                field.ColumnName = matchedHeader;
+                field.ColumnIndex = newIndex;
+                field.IsUserVerified = true;
+                field.ConfidenceScore = 100;
+            }
+        }
+    }
+
+    private void UpdateTransactionGrid(List<TransactionPreview> transactions)
+    {
+        TransactionRows.Clear();
+        foreach (var txn in transactions)
+        {
+            TransactionRows.Add(new TransactionPreviewRow
+            {
+                Date = txn.Date,
+                Description = txn.Description,
+                Debit = txn.Debit,
+                Credit = txn.Credit,
+                Amount = txn.Amount,
+                ReviewStatus = CalculateReviewFlags(txn),
+                TransactionType = txn.TransactionType
+            });
         }
     }
 
@@ -229,55 +381,6 @@ public partial class SheetPreviewViewModel : ViewModelBase
         return flags;
     }
 
-    // =========================================================================
-    // COMMANDS (UI Buttons)
-    // =========================================================================
-
-    /// <summary>
-    /// Called when the user updates a column mapping in the UI ComboBox.
-    /// Tracks the change for synonym learning.
-    /// This is invoked directly from UI events, not as a command binding.
-    /// </summary>
-    public void OnColumnMappingChanged(string fieldName, int newColumnIndex)
-    {
-        if (!FieldMappings.TryGetValue(fieldName, out var field))
-        {
-            return;
-        }
-
-        // Only track if the user actually changed it from the original
-        if (_originalPreview?.Fields.TryGetValue(fieldName, out var originalField) == true &&
-            originalField.ColumnIndex != newColumnIndex)
-        {
-            // Remove any previous correction for this field
-            _corrections.RemoveAll(c => c.TargetField == fieldName);
-
-            // Add new correction
-            _corrections.Add(new ColumnMappingCorrection
-            {
-                TargetField = fieldName,
-                RawHeaderName = originalField.ColumnName,
-                NewColumnIndex = newColumnIndex,
-                Category = DetermineFieldCategory(fieldName)
-            });
-        }
-
-        // Update the current mapping
-        field.ColumnIndex = newColumnIndex;
-        field.IsUserVerified = true;
-    }
-
-    /// <summary>
-    /// Determines the category for synonym learning (TRANSACTION vs METADATA).
-    /// </summary>
-    private string DetermineFieldCategory(string fieldName)
-    {
-        var transactionFields = new[] { "Date", "Description", "Debit", "Credit", "Amount" };
-        return transactionFields.Contains(fieldName, StringComparer.OrdinalIgnoreCase)
-            ? "TRANSACTION"
-            : "METADATA";
-    }
-
     /// <summary>
     /// Confirms the import and commits to database under a single transaction.
     /// </summary>
@@ -294,50 +397,40 @@ public partial class SheetPreviewViewModel : ViewModelBase
 
         try
         {
-            // Update the preview with user-edited metadata
-            if (FieldMappings.TryGetValue("EntityName", out var bankField))
-            {
-                bankField.ExtractedValue = BankName;
-                bankField.IsUserVerified = true;
-            }
+            AccountMapping.ApplyToMappings(FieldMappings);
 
-            if (FieldMappings.TryGetValue("AccountNumber", out var accountField))
-            {
-                accountField.ExtractedValue = AccountNumber;
-                accountField.IsUserVerified = true;
-            }
+            // Force sync the latest dropdown choices into the Edit Session
+            UpdateMapping("Col:DATE", SelectedDateHeader);
+            UpdateMapping("Col:DESCRIPTION", SelectedDescriptionHeader);
+            UpdateMapping("Col:DEBIT", SelectedDebitHeader);
+            UpdateMapping("Col:CREDIT", SelectedCreditHeader);
+            UpdateMapping("Col:AMOUNT", SelectedAmountHeader);
+            UpdateMapping("Col:TRANSACTIONTYPE", SelectedTransactionTypeHeader);
 
-            // Build the PreviewTracker for commit
-            var tracker = new PreviewTracker
-            {
-                SheetName = TargetSheetName,
-                FinalPreview = new StatementPreview
-                {
-                    FileName = CurrentFileName,
-                    Fields = FieldMappings,
-                    HeaderRow = _originalPreview.HeaderRow,
-                    PreviewTransactions = _originalPreview.PreviewTransactions,
-                    ConfidenceScore = _originalPreview.ConfidenceScore
-                },
-                ColumnCorrections = _corrections
-            };
+            // Ask the Edit Session to bundle all deduplicated corrections for us
+            var session = _statementManager.GetEditSession(_currentFileId);
+            var tracker = session.ConfirmAndPrepareForImport();
 
-            // Master Transaction: Commit all sheets under a single SQLite transaction token
-            await _statementManager.CommitStagedBatchAsync(_currentFileId, new[] { tracker });
+            // Overlay final UI states onto the tracker before sending to backend
+            tracker.SheetName = TargetSheetName;
+            tracker.FinalPreview.FileName = CurrentFileName;
+            tracker.FinalPreview.Fields = FieldMappings;
+            tracker.FinalPreview.HeaderRow = _originalPreview.HeaderRow;
+            tracker.FinalPreview.PreviewTransactions = _originalPreview.PreviewTransactions;
+            tracker.FinalPreview.ConfidenceScore = ConfidenceScore;
 
-            StatusText = "Import successful!";
-            Broker.Send(new ToastNotificationMessage($"Successfully imported {TransactionRows.Count} transactions.", NotificationType.Success));
-
-            // Notify parent to return to queue state
-            Broker.Send(new NavigationMessage("ImportHub"));
-
-            // Clear state
+            await _statementManager.CommitStagedBatchAsync(_currentFileId, tracker);
+            Broker.Send(new ToastNotificationMessage(ToastType.Success, $"Successfully imported {TransactionRows.Count} transactions."));
+            // Clear the state FIRST so the UI's teardown event doesn't think a file is pending.
             ClearState();
+
+            // Use the targeted queue message instead of a hard reload to preserve the other staged files.
+            Broker.Send(new ReturnToQueueMessage());
         }
         catch (Exception ex)
         {
             StatusText = $"Import failed: {ex.Message}";
-            Broker.Send(new ToastNotificationMessage($"Import Error: {ex.Message}", NotificationType.Error));
+            Broker.Send(new ToastNotificationMessage(ToastType.Error, $"Import Error: {ex.Message}"));
         }
         finally
         {
@@ -345,19 +438,40 @@ public partial class SheetPreviewViewModel : ViewModelBase
         }
     }
 
+    // Safe routing back to the Queue WITHOUT deleting the file from memory
+    // [RelayCommand]
+    // public void NavigateBack()
+    // {
+    //     Broker.Send(new NavigationMessage("ImportHub"));
+    // }
+
+
     /// <summary>
-    /// Discards the current preview and returns to the queue.
+    /// Abandons the current preview state and returns to the queue.
+    /// The file remains safely staged in memory.
     /// </summary>
     [RelayCommand]
-    public void DiscardPreview()
+    public async Task RequestDiscardPreview()
     {
-        if (_currentFileId != Guid.Empty)
-        {
-            _statementManager.DiscardFile(_currentFileId);
-            StatusText = "Preview discarded.";
-            Broker.Send(new ToastNotificationMessage("Preview discarded.", NotificationType.Info));
-            ClearState();
-        }
+        var confirmation = new TaskCompletionSource<bool>();
+        Broker.Send(new ShowConfirmationMessage(
+            "Abandon Preview?",
+            "The file will remain in your queue, but all manual mappings will be lost.",
+            confirmation
+        ));
+
+        if (await confirmation.Task)
+            ConfirmDiscardPreview();
+    }
+
+    /// <summary>
+    /// Actually abandons the preview (runs when the user clicks 'Yes' in the dialog).
+    /// </summary>
+    private void ConfirmDiscardPreview()
+    {
+        Broker.Send(new ToastNotificationMessage("Preview abandoned. File remains in queue.", NotificationType.Info));
+        ClearState();
+        Broker.Send(new ReturnToQueueMessage());
     }
 
     // =========================================================================
@@ -368,18 +482,10 @@ public partial class SheetPreviewViewModel : ViewModelBase
     {
         _currentFileId = Guid.Empty;
         _originalPreview = null;
-        BankName = string.Empty;
-        AccountNumber = string.Empty;
-        TargetSheetName = string.Empty;
-        CurrentFileName = string.Empty;
+        BankName = string.Empty; AccountNumber = string.Empty; AccountType = string.Empty;
+        Currency = string.Empty; CreditLimit = string.Empty; TargetSheetName = string.Empty;
         FieldMappings.Clear();
-        _corrections.Clear();
         TransactionRows.Clear();
-        SelectedDateHeader = string.Empty;
-        SelectedDescriptionHeader = string.Empty;
-        SelectedDebitHeader = string.Empty;
-        SelectedCreditHeader = string.Empty;
-        SelectedAmountHeader = string.Empty;
     }
 }
 
@@ -395,4 +501,6 @@ public class TransactionPreviewRow
     public decimal Credit { get; set; }
     public decimal Amount { get; set; }
     public ReviewFlags ReviewStatus { get; set; }
+
+    public string TransactionType { get; set; } = string.Empty;
 }

@@ -118,12 +118,12 @@ public class ImportBatchService : IImportBatchService, IDisposable
                 );
 
                 // Executed as <long> to prevent Dapper InvalidCastExceptions with SQLite 64-bit rowids
-                var batchId = await connection.ExecuteScalarAsync<long>(cmd);
+                var batchId = await connection.ExecuteScalarAsync<int>(cmd);
 
                 _logger.LogInformation("Created new ImportBatch ID {BatchId} for file '{FileName}' (Source: '{Source}').", batchId, fileName, source);
 
                 InvalidateCache();
-                return (int)batchId;
+                return batchId;
             }, conn, tx, ct);
         }
         catch (OperationCanceledException)
@@ -229,6 +229,32 @@ public class ImportBatchService : IImportBatchService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to retrieve import batch records.");
+
+            throw;
+        }
+    }
+
+    public async Task<int> GetIdByFileName(string filename, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        try
+        {
+            return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        const string sql = "SELECT 1 FROM ImportBatches WHERE FileName = @FileName LIMIT 1";
+                        var cmd = new CommandDefinition(
+                            sql,
+                            new { FileName = filename },
+                            cancellationToken: cancelToken
+                        );
+                        var Id = await c.ExecuteScalarAsync<int>(cmd);
+                        return Id;
+                    }, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve import batch ID for Filename {filename}.", filename);
 
             throw;
         }

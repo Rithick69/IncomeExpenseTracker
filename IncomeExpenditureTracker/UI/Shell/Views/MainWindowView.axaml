@@ -170,7 +170,7 @@
                                Foreground="{DynamicResource TextSecondary}"
                                SelectionBrush="{DynamicResource AccentIndigo}" />
 
-                    <Grid ColumnDefinitions="*, *" Margin="0,20,0,0">
+                    <Grid ColumnDefinitions="*, *" Margin="0,20,0,0" HorizontalAlignment="Right">
                         <Button Grid.Column="0"
                                 Content="Confirm"
                                 Command="{Binding ConfirmDialogCommand}"

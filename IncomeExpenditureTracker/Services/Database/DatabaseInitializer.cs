@@ -219,7 +219,6 @@ public class DatabaseInitializer : IDatabaseInitializer
                     Source TEXT,
                     Credit REAL,
                     Debit REAL,
-                    TransactionType TEXT,
                     ImportBatchId INTEGER,
                     TagId INTEGER,
                     PayeeId INTEGER,

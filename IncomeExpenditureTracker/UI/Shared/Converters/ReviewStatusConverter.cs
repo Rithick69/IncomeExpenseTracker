@@ -20,13 +20,23 @@ namespace IncomeExpenditureTracker.UI.Shared.Converters
             // Bitwise check: If value is a ReviewFlags enum and has any flags set (not None)
             if (value is ReviewFlags flags && flags != ReviewFlags.None)
             {
-                // Highlight with BackgroundSecondary if there's any error flag set
-                if (Application.Current != null && Application.Current.TryGetResource("BackgroundSecondary", null, out var resource))
+                // Resolve RowError as an application resource; DynamicResource markup
+                // syntax cannot be parsed as a Color here.
+                if (Application.Current != null && Application.Current.TryGetResource("RowError", null, out var resource))
                 {
-                    return resource;
+                    if (resource is IBrush brush)
+                    {
+                        return brush;
+                    }
+
+                    if (resource is Color color)
+                    {
+                        return new SolidColorBrush(color);
+                    }
                 }
-                // Fallback dark red tint for error highlighting
-                return new SolidColorBrush(Color.Parse("#4A2020"));
+
+                // Fallback: RowError is not defined.
+                return new SolidColorBrush(Color.Parse("#3A2528"));
             }
 
             // No errors: return null for transparent/default background

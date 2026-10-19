@@ -125,6 +125,7 @@ public static class ServiceRegistration
         // Import Hub & Sheet Review
         services.AddTransient<ImportQueueViewModel>();
         services.AddTransient<SheetPreviewViewModel>();
+        services.AddTransient<AccountMappingViewModel>();
 
 
         // (Note: FormViewModelBase is an abstract class and cannot be registered in DI)

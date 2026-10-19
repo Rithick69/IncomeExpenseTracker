@@ -32,6 +32,13 @@
         <Setter Property="TextBlock.Foreground" Value="#FFFFFF"/>
     </Style>
 
+    <Style Selector="Button.Secondary">
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="16,10"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+
     <!-- UI COMPONENT: TEXTBOX & COMBOBOX (Form Inputs) -->
     <Style Selector="TextBox, ComboBox, DropDownButton">
         <Setter Property="CornerRadius" Value="6"/>

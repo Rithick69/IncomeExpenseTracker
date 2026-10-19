@@ -41,6 +41,21 @@ public partial class ImportQueueViewModel : ViewModelBase
     {
         _statementManager = statementManager;
         _broker = broker;
+
+        // Restore already staged files if the user navigated "Back" from the Preview screen
+        RestoreStagedFiles();
+    }
+
+    private void RestoreStagedFiles()
+    {
+        if (_statementManager.HasStagedFiles)
+        {
+            var files = _statementManager.GetStagedFiles();
+            foreach (var f in files)
+            {
+                StagedFiles.Add(f);
+            }
+        }
     }
 
     /// <summary>
@@ -122,19 +137,45 @@ public partial class ImportQueueViewModel : ViewModelBase
         if (selectedFile == null)
             return;
 
+        Console.WriteLine($"User selected sheet '{sheetName}' for file '{selectedFile.FileName}' (ID: {fileId}).");
+
         // Broadcast a sub-routing message ONLY to ImportHubViewModel.
         // This does NOT propagate to MainWindowViewModel, preventing the "Unknown route: PreviewSheet" crash.
         _broker.Send(new PreviewSheetMessage(fileId, selectedFile.FileName, sheetName));
     }
 
-    public bool HasUncommittedFiles() => StagedFiles.Any();
-
-    public void DiscardAllFiles()
+    /// <summary>
+    /// Deletes a specific staged file from memory and the UI.
+    /// </summary>
+    [RelayCommand]
+    public void DeleteFile(Guid fileId)
     {
-        foreach (var file in StagedFiles)
+        var file = StagedFiles.FirstOrDefault(f => f.Id == fileId);
+        if (file != null)
+        {
+            _statementManager.DiscardFile(fileId);
+            StagedFiles.Remove(file);
+            _broker.Send(new ToastNotificationMessage($"Removed {file.FileName} from queue.", NotificationType.Info));
+        }
+    }
+
+    /// <summary>
+    /// Clears all staged files from memory and the UI.
+    /// </summary>
+    [RelayCommand]
+    public void DeleteAllFiles()
+    {
+        if (!StagedFiles.Any()) return;
+
+        // Use .ToList() to prevent collection modified exceptions during enumeration
+        foreach (var file in StagedFiles.ToList())
         {
             _statementManager.DiscardFile(file.Id);
         }
+
         StagedFiles.Clear();
+        _broker.Send(new ToastNotificationMessage("Cleared all staged files.", NotificationType.Info));
     }
+
+    public bool HasUncommittedFiles() => StagedFiles.Any();
 }

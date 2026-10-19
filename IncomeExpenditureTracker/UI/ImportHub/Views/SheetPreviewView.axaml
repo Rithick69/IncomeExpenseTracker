@@ -4,7 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.ImportHub"
              xmlns:conv="clr-namespace:IncomeExpenditureTracker.UI.Shared.Converters"
-             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
+             mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="850"
              x:Class="IncomeExpenditureTracker.UI.ImportHub.SheetPreviewView"
              x:DataType="vm:SheetPreviewViewModel">
 
@@ -12,206 +12,634 @@
         <conv:ReviewStatusConverter x:Key="ReviewStatusConverter" />
     </UserControl.Resources>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20">
+    <!-- FIXED LAYOUT: Grid constrains width to the Window, no infinite horizontal scrolling -->
+    <Grid ColumnDefinitions="380,*" Margin="20">
 
-        <!-- ROW 0: Account Details Form -->
-        <Border Grid.Row="0" Classes="Card" Padding="20" Margin="0,0,0,20">
-            <StackPanel Spacing="15">
-                <TextBlock Text="{DynamicResource Locale_Module_Preview_AccountDetails}"
-                           FontSize="18"
-                           FontWeight="Bold"
-                           Foreground="{DynamicResource TextPrimary}" />
+        <!-- ========================================== -->
+        <!-- LEFT COLUMN: THE CONTROL PANEL             -->
+        <!-- ========================================== -->
+        <!-- This panel scrolls independently vertically -->
+        <ScrollViewer Grid.Column="0" Margin="0,0,20,0" Padding="0,0,10,0">
+            <StackPanel Spacing="20">
 
-                <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*" RowDefinitions="Auto">
-                    <TextBlock Grid.Column="0" Text="{DynamicResource Locale_Module_Preview_BankName}"
-                               VerticalAlignment="Center" Margin="0,0,10,0"
-                               Foreground="{DynamicResource TextPrimary}" />
-                    <TextBox Grid.Column="1" Text="{Binding BankName}"
-                             Watermark="{DynamicResource Locale_Module_Preview_BankWatermark}"
-                             Margin="0,0,20,0" />
+                <!-- Card 1: Account Details -->
+                <Border Classes="Card" Padding="15">
+                    <StackPanel Spacing="12" DataContext="{Binding AccountMapping}">
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_AccountDetails}" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" />
 
-                    <TextBlock Grid.Column="2" Text="{DynamicResource Locale_Module_Preview_AccountNumber}"
-                               VerticalAlignment="Center" Margin="0,0,10,0"
-                               Foreground="{DynamicResource TextPrimary}" />
-                    <TextBox Grid.Column="3" Text="{Binding AccountNumber}"
-                             Watermark="{DynamicResource Locale_Module_Preview_AccountWatermark}"
-                             Margin="0,0,20,0" />
+                        <!-- Bank / Entity Name -->
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_EntityName}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                        <!-- <ComboBox IsEditable="True" Text="{Binding EntityName}" ItemsSource="{Binding AvailableEntityNames}" HorizontalAlignment="Stretch" PlaceholderText="Select or type institution..." /> -->
+                        <Grid>
+                            <ComboBox
+                                x:Name="EntityFieldComboBox"
+                                IsEditable="True"
+                                Text="{Binding EntityName, Mode=TwoWay}"
+                                PlaceholderText="{DynamicResource Locale_Module_Preview_EntityPlaceholder}"
+                                ItemsSource="{Binding AvailableEntityNames}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
 
-                    <TextBlock Grid.Column="4" Text="{DynamicResource Locale_Module_Preview_TargetSheet}"
-                               VerticalAlignment="Center" Margin="0,0,10,0"
-                               Foreground="{DynamicResource TextPrimary}" />
-                    <TextBox Grid.Column="5" Text="{Binding TargetSheetName}"
-                             IsReadOnly="True"
-                             Background="{DynamicResource BackgroundSecondary}" />
-                </Grid>
+                            <!-- Divider before the dropdown arrow -->
+                            <Border
+                                Width="1"
+                                HorizontalAlignment="Right"
+                                Margin="0,5,32,5"
+                                Background="{DynamicResource ComboBoxBorderBrush}"
+                                IsHitTestVisible="False" />
+
+                            <!-- Clear button inside the editable area -->
+                            <Button
+                                Width="28"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Stretch"
+                                Margin="0,1,34,1"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Focusable="False"
+                                ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                IsVisible="{Binding EntityName,
+                                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                Command="{Binding ClearEntityFieldCommand}">
+
+                                <TextBlock
+                                    Text="{DynamicResource Locale_Common_Cancel}"
+                                    FontSize="18"
+                                    Foreground="{DynamicResource TextSecondary}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center" />
+                            </Button>
+                        </Grid>
+
+                        <!-- Account Number -->
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_AccountNumber}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                        <!-- <ComboBox IsEditable="True" Text="{Binding AccountNumber}" ItemsSource="{Binding AvailableAccountNumbers}" IsEnabled="{Binding IsAccountNumberEnabled}" HorizontalAlignment="Stretch" PlaceholderText="Select or type account number..." /> -->
+                        <Grid>
+                            <ComboBox
+                                x:Name="AccountNumFieldComboBox"
+                                IsEditable="True"
+                                Text="{Binding AccountNumber, Mode=TwoWay}"
+                                PlaceholderText="{DynamicResource Locale_Module_Preview_AccountNumPlaceholder}"
+                                IsEnabled="{Binding IsAccountNumberEnabled}"
+                                ItemsSource="{Binding AvailableAccountNumbers}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                            <!-- Divider before the dropdown arrow -->
+                            <Border
+                                Width="1"
+                                HorizontalAlignment="Right"
+                                Margin="0,5,32,5"
+                                Background="{DynamicResource ComboBoxBorderBrush}"
+                                IsHitTestVisible="False" />
+
+                            <!-- Clear button inside the editable area -->
+                            <Button
+                                Width="28"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Stretch"
+                                Margin="0,1,34,1"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Focusable="False"
+                                ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                IsVisible="{Binding AccountNumber,
+                                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                Command="{Binding ClearAccountNumFieldCommand}">
+
+                                <TextBlock
+                                    Text="{DynamicResource Locale_Common_Cancel}"
+                                    FontSize="18"
+                                    Foreground="{DynamicResource TextSecondary}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center" />
+                            </Button>
+                        </Grid>
+
+                        <!-- Card Number -->
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_CardNumber}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                        <!-- <ComboBox IsEditable="True" Text="{Binding CardNumber}" ItemsSource="{Binding AvailableCardNumbers}" IsEnabled="{Binding IsCardNumberEnabled}" HorizontalAlignment="Stretch" PlaceholderText="Select or type card number..." /> -->
+                        <Grid>
+                            <ComboBox
+                                x:Name="CardNumFieldComboBox"
+                                IsEditable="True"
+                                Text="{Binding CardNumber, Mode=TwoWay}"
+                                PlaceholderText="{DynamicResource Locale_Module_Preview_CardNumPlaceholder}"
+                                IsEnabled="{Binding IsCardNumberEnabled}"
+                                ItemsSource="{Binding AvailableCardNumbers}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                            <!-- Divider before the dropdown arrow -->
+                            <Border
+                                Width="1"
+                                HorizontalAlignment="Right"
+                                Margin="0,5,32,5"
+                                Background="{DynamicResource ComboBoxBorderBrush}"
+                                IsHitTestVisible="False" />
+
+                            <!-- Clear button inside the editable area -->
+                            <Button
+                                Width="28"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Stretch"
+                                Margin="0,1,34,1"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Focusable="False"
+                                ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                IsVisible="{Binding CardNumber,
+                                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                Command="{Binding ClearCardNumFieldCommand}">
+
+                                <TextBlock
+                                    Text="{DynamicResource Locale_Common_Cancel}"
+                                    FontSize="18"
+                                    Foreground="{DynamicResource TextSecondary}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center" />
+                            </Button>
+                        </Grid>
+
+                        <!-- Account Type -->
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_AccountType}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                        <!-- <ComboBox IsEditable="True" Text="{Binding AccountType}" ItemsSource="{Binding AvailableAccountTypes}" HorizontalAlignment="Stretch" PlaceholderText="Select or type account type..." /> -->
+                        <Grid>
+                            <ComboBox
+                                x:Name="AccountTypeFieldComboBox"
+                                IsEditable="True"
+                                Text="{Binding AccountType, Mode=TwoWay}"
+                                PlaceholderText="{DynamicResource Locale_Module_Preview_AccountTypePlaceholder}"
+                                ItemsSource="{Binding AvailableAccountTypes}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                            <!-- Divider before the dropdown arrow -->
+                            <Border
+                                Width="1"
+                                HorizontalAlignment="Right"
+                                Margin="0,5,32,5"
+                                Background="{DynamicResource ComboBoxBorderBrush}"
+                                IsHitTestVisible="False" />
+
+                            <!-- Clear button inside the editable area -->
+                            <Button
+                                Width="28"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Stretch"
+                                Margin="0,1,34,1"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Focusable="False"
+                                ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                IsVisible="{Binding AccountType,
+                                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                Command="{Binding ClearAccountTypeFieldCommand}">
+
+                                <TextBlock
+                                    Text="{DynamicResource Locale_Common_Cancel}"
+                                    FontSize="18"
+                                    Foreground="{DynamicResource TextSecondary}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center" />
+                            </Button>
+                        </Grid>
+
+                        <!-- Currency -->
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_Currency}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                        <!-- <ComboBox IsEditable="True" Text="{Binding Currency}" ItemsSource="{Binding AvailableCurrencies}" HorizontalAlignment="Stretch" PlaceholderText="Select currency..." /> -->
+                        <Grid>
+                            <ComboBox
+                                x:Name="CurrencyFieldComboBox"
+                                IsEditable="True"
+                                Text="{Binding Currency, Mode=TwoWay}"
+                                PlaceholderText="{DynamicResource Locale_Module_Preview_CurrencyPlaceholder}"
+                                ItemsSource="{Binding AvailableCurrencies}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                            <!-- Divider before the dropdown arrow -->
+                            <Border
+                                Width="1"
+                                HorizontalAlignment="Right"
+                                Margin="0,5,32,5"
+                                Background="{DynamicResource ComboBoxBorderBrush}"
+                                IsHitTestVisible="False" />
+
+                            <!-- Clear button inside the editable area -->
+                            <Button
+                                Width="28"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Stretch"
+                                Margin="0,1,34,1"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Focusable="False"
+                                ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                IsVisible="{Binding Currency,
+                                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                Command="{Binding ClearCurrencyFieldCommand}">
+
+                                <TextBlock
+                                    Text="{DynamicResource Locale_Common_Cancel}"
+                                    FontSize="18"
+                                    Foreground="{DynamicResource TextSecondary}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center" />
+                            </Button>
+                        </Grid>
+
+                        <!-- Credit Limit -->
+                        <StackPanel IsVisible="{Binding IsCreditLimitVisible}" Spacing="12">
+                            <TextBlock Text="{DynamicResource Locale_Module_Preview_CreditLimit}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                            <TextBox Text="{Binding CreditLimit}" Watermark="{DynamicResource Locale_Module_Preview_CreditLimitPlaceholder}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Card 2: Column Mappings -->
+                <Border Classes="Card" Padding="15">
+                    <StackPanel Spacing="12">
+                        <Grid RowDefinitions="Auto,Auto" RowSpacing="8">
+                            <TextBlock
+                                Grid.Row="0"
+                                Text="{DynamicResource Locale_Module_Preview_ColumnMapping}"
+                                FontSize="16" FontWeight="Bold"
+                                Foreground="{DynamicResource TextPrimary}"
+                                VerticalAlignment="Center"
+                                TextWrapping="Wrap" />
+
+                            <Border Grid.Row="1" Background="{DynamicResource BackgroundSecondary}" CornerRadius="4" Padding="8,4" HorizontalAlignment="Right">
+                                <TextBlock Text="{Binding ConfidenceScoreText}" Foreground="{DynamicResource AccentIndigo}" FontWeight="Bold" FontSize="12" />
+                            </Border>
+                        </Grid>
+
+                        <TextBlock Text="{Binding HeaderValidationError}" Foreground="Red" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HeaderValidationError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Date}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,5,0,-8"/>
+                        <Grid>
+                            <ComboBox
+                                x:Name="DateHeaderComboBox"
+                                IsEditable="True"
+                                Text="{Binding SelectedDateHeader, Mode=TwoWay}"
+                                ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                            <!-- Divider before the dropdown arrow -->
+                            <Border
+                                Width="1"
+                                HorizontalAlignment="Right"
+                                Margin="0,5,32,5"
+                                Background="{DynamicResource ComboBoxBorderBrush}"
+                                IsHitTestVisible="False" />
+
+                            <!-- Clear button inside the editable area -->
+                            <Button
+                                Width="28"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Stretch"
+                                Margin="0,1,34,1"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Focusable="False"
+                                ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                IsVisible="{Binding SelectedDateHeader,
+                                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                Command="{Binding ClearSelectedDateHeaderCommand}">
+
+                                <TextBlock
+                                    Text="{DynamicResource Locale_Common_Cancel}"
+                                    FontSize="18"
+                                    Foreground="{DynamicResource TextSecondary}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center" />
+                            </Button>
+                        </Grid>
+
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Description}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                        <!-- <ComboBox IsEditable="True" Text="{Binding SelectedDescriptionHeader}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" /> -->
+                        <Grid>
+                            <ComboBox
+                                x:Name="DescHeaderComboBox"
+                                IsEditable="True"
+                                Text="{Binding SelectedDescriptionHeader, Mode=TwoWay}"
+                                ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                            <!-- Divider before the dropdown arrow -->
+                            <Border
+                                Width="1"
+                                HorizontalAlignment="Right"
+                                Margin="0,5,32,5"
+                                Background="{DynamicResource ComboBoxBorderBrush}"
+                                IsHitTestVisible="False" />
+
+                            <!-- Clear button inside the editable area -->
+                            <Button
+                                Width="28"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Stretch"
+                                Margin="0,1,34,1"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Focusable="False"
+                                ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                IsVisible="{Binding SelectedDescriptionHeader,
+                                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                Command="{Binding ClearSelectedDescHeaderCommand}">
+
+                                <TextBlock
+                                    Text="{DynamicResource Locale_Common_Cancel}"
+                                    FontSize="18"
+                                    Foreground="{DynamicResource TextSecondary}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center" />
+                            </Button>
+                        </Grid>
+                        <!-- EXCLUSIVITY HELPER TEXT -->
+                        <Border Background="{DynamicResource BackgroundSecondary}" Padding="10" CornerRadius="4" Margin="0,5">
+                            <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_HelperText}" Foreground="{DynamicResource TextSecondary}" FontSize="11" TextWrapping="Wrap"/>
+                        </Border>
+
+                        <!-- SPLIT COLUMNS -->
+                        <StackPanel Spacing="12" IsVisible="{Binding IsSplitMappingEnabled}">
+                            <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Debit}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                            <!-- <ComboBox IsEditable="True" Text="{Binding SelectedDebitHeader}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" /> -->
+                            <Grid>
+                                <ComboBox
+                                    x:Name="DebitHeaderComboBox"
+                                    IsEditable="True"
+                                    Text="{Binding SelectedDebitHeader, Mode=TwoWay}"
+                                    ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                                <!-- Divider before the dropdown arrow -->
+                                <Border
+                                    Width="1"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,5,32,5"
+                                    Background="{DynamicResource ComboBoxBorderBrush}"
+                                    IsHitTestVisible="False" />
+
+                                <!-- Clear button inside the editable area -->
+                                <Button
+                                    Width="28"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Stretch"
+                                    Margin="0,1,34,1"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Focusable="False"
+                                    ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                    IsVisible="{Binding SelectedDebitHeader,
+                                        Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                    Command="{Binding ClearSelectedDebitHeaderCommand}">
+
+                                    <TextBlock
+                                        Text="{DynamicResource Locale_Common_Cancel}"
+                                        FontSize="18"
+                                        Foreground="{DynamicResource TextSecondary}"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+
+                            <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Credit}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                            <!-- <ComboBox IsEditable="True" Text="{Binding SelectedCreditHeader}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" /> -->
+                            <Grid>
+                                <ComboBox
+                                    x:Name="CreditHeaderComboBox"
+                                    IsEditable="True"
+                                    Text="{Binding SelectedCreditHeader, Mode=TwoWay}"
+                                    ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                                <!-- Divider before the dropdown arrow -->
+                                <Border
+                                    Width="1"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,5,32,5"
+                                    Background="{DynamicResource ComboBoxBorderBrush}"
+                                    IsHitTestVisible="False" />
+
+                                <!-- Clear button inside the editable area -->
+                                <Button
+                                    Width="28"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Stretch"
+                                    Margin="0,1,34,1"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Focusable="False"
+                                    ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                    IsVisible="{Binding SelectedCreditHeader,
+                                        Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                    Command="{Binding ClearSelectedCreditHeaderCommand}">
+
+                                    <TextBlock
+                                        Text="{DynamicResource Locale_Common_Cancel}"
+                                        FontSize="18"
+                                        Foreground="{DynamicResource TextSecondary}"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- SINGLE COLUMNS -->
+                        <StackPanel Spacing="12" IsVisible="{Binding IsAmountMappingEnabled}">
+                            <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Amount}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                            <!-- <ComboBox IsEditable="True" Text="{Binding SelectedAmountHeader}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" /> -->
+                            <Grid>
+                                <ComboBox
+                                    x:Name="AmountHeaderComboBox"
+                                    IsEditable="True"
+                                    Text="{Binding SelectedAmountHeader, Mode=TwoWay}"
+                                    ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                                <!-- Divider before the dropdown arrow -->
+                                <Border
+                                    Width="1"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,5,32,5"
+                                    Background="{DynamicResource ComboBoxBorderBrush}"
+                                    IsHitTestVisible="False" />
+
+                                <!-- Clear button inside the editable area -->
+                                <Button
+                                    Width="28"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Stretch"
+                                    Margin="0,1,34,1"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Focusable="False"
+                                    ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                    IsVisible="{Binding SelectedAmountHeader,
+                                        Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                    Command="{Binding ClearSelectedAmountHeaderCommand}">
+
+                                    <TextBlock
+                                        Text="{DynamicResource Locale_Common_Cancel}"
+                                        FontSize="18"
+                                        Foreground="{DynamicResource TextSecondary}"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+
+                            <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_TransactionType}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,0,-8"/>
+                            <!-- <ComboBox IsEditable="True" Text="{Binding SelectedTransactionTypeHeader}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" /> -->
+                            <Grid>
+                                <ComboBox
+                                    x:Name="TransactionTypeHeaderComboBox"
+                                    IsEditable="True"
+                                    Text="{Binding SelectedTransactionTypeHeader, Mode=TwoWay}"
+                                    ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="10,6,36,6" />
+
+                                <!-- Divider before the dropdown arrow -->
+                                <Border
+                                    Width="1"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,5,32,5"
+                                    Background="{DynamicResource ComboBoxBorderBrush}"
+                                    IsHitTestVisible="False" />
+
+                                <!-- Clear button inside the editable area -->
+                                <Button
+                                    Width="28"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Stretch"
+                                    Margin="0,1,34,1"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Focusable="False"
+                                    ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}"
+                                    IsVisible="{Binding SelectedTransactionTypeHeader,
+                                        Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                    Command="{Binding ClearSelectedTransactionTypeHeaderCommand}">
+
+                                    <TextBlock
+                                        Text="{DynamicResource Locale_Common_Cancel}"
+                                        FontSize="18"
+                                        Foreground="{DynamicResource TextSecondary}"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- REGENERATE BUTTON -->
+                        <Button Content="{DynamicResource Locale_Module_ImportHub_RegeneratePreview}" Command="{Binding RegeneratePreviewCommand}" Classes="Primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,15,0,0"/>
+                    </StackPanel>
+                </Border>
             </StackPanel>
-        </Border>
+        </ScrollViewer>
 
-        <!-- ROW 1: Column Mapping Header -->
-        <TextBlock Grid.Row="1"
-                   Text="{DynamicResource Locale_Module_Preview_ColumnMapping}"
-                   FontSize="16"
-                   FontWeight="SemiBold"
-                   Margin="0,0,0,10"
-                   Foreground="{DynamicResource TextPrimary}" />
+        <!-- ========================================== -->
+        <!-- RIGHT COLUMN: THE DATA VIEWER              -->
+        <!-- ========================================== -->
+        <!-- Fixed Grid allows DataGrid to calculate width properly -->
+        <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
 
-        <!-- ROW 2: Transaction Preview DataGrid -->
-        <Border Grid.Row="2" Classes="Card" Padding="10">
-            <DataGrid ItemsSource="{Binding TransactionRows}"
-                      AutoGenerateColumns="False"
-                      IsReadOnly="True"
-                      GridLinesVisibility="All"
-                      CanUserReorderColumns="False"
-                      CanUserResizeColumns="True"
-                      FontFeatures="tnum">
+            <Border Grid.Row="0" Classes="Card" Background="{DynamicResource BackgroundSecondary}" Padding="15" Margin="0,0,0,15">
+                <StackPanel Orientation="Vertical" Spacing="8">
+                    <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_HelperTextUnique}"
+                            Foreground="{DynamicResource TextPrimary}"
+                            TextWrapping="Wrap"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Stretch" />
+                    <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_HelperTextError}"
+                            Foreground="{DynamicResource TextPrimary}"
+                            TextWrapping="Wrap"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Stretch" />
+                </StackPanel>
+            </Border>
 
-               <!-- Date Column with Header ComboBox Mapping -->
-               <DataGrid.Columns>
-                   <DataGridTemplateColumn Width="120">
-                       <DataGridTemplateColumn.HeaderTemplate>
-                           <DataTemplate x:CompileBindings="False">
-                               <StackPanel>
-                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Date}"
-                                              FontWeight="SemiBold"
-                                              Margin="0,0,0,5" />
-                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             SelectedItem="{Binding DataContext.SelectedDateHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             MinWidth="100" />
-                               </StackPanel>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.HeaderTemplate>
-                       <DataGridTemplateColumn.CellTemplate>
-                           <DataTemplate>
-                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
-                                       Padding="8,4">
-                                   <TextBlock Text="{Binding Date, StringFormat='{}{0:dd-MMM-yyyy}'}"
-                                              VerticalAlignment="Center" />
-                               </Border>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.CellTemplate>
-                   </DataGridTemplateColumn>
+            <!-- TABS -->
+            <TabControl Grid.Row="1">
+                <TabItem Header="Parsed Results">
+                    <Border Classes="Card" Padding="10" Margin="0,10,0,0">
+                        <!-- DataGrid natively handles vertical scrolling -->
+                        <DataGrid ItemsSource="{Binding TransactionRows}"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  GridLinesVisibility="All" CanUserResizeColumns="True">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_Module_Preview_Header_Date}" Width="140">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}" Padding="8,4">
+                                                <TextBlock Text="{Binding Date, StringFormat='{}{0:dd-MMM-yyyy}'}" VerticalAlignment="Center" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_Module_Preview_Header_Description}" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}" Padding="8,4">
+                                                <TextBlock Text="{Binding Description}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_Module_Preview_Header_Debit}" Width="130">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}" Padding="8,4">
+                                                <TextBlock Text="{Binding Debit, StringFormat='{}{0:N2}'}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_Module_Preview_Header_Credit}" Width="130">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}" Padding="8,4">
+                                                <TextBlock Text="{Binding Credit, StringFormat='{}{0:N2}'}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_Module_Preview_Header_Amount}" Width="130">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}" Padding="8,4">
+                                                <TextBlock Text="{Binding Amount, StringFormat='{}{0:N2}'}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
 
-                   <!-- Description Column with Header ComboBox Mapping -->
-                   <DataGridTemplateColumn Width="*">
-                       <DataGridTemplateColumn.HeaderTemplate>
-                           <DataTemplate x:CompileBindings="False">
-                               <StackPanel>
-                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Description}"
-                                              FontWeight="SemiBold"
-                                              Margin="0,0,0,5" />
-                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             SelectedItem="{Binding DataContext.SelectedDescriptionHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             MinWidth="100" />
-                               </StackPanel>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.HeaderTemplate>
-                       <DataGridTemplateColumn.CellTemplate>
-                           <DataTemplate>
-                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
-                                       Padding="8,4">
-                                   <TextBlock Text="{Binding Description}"
-                                              VerticalAlignment="Center"
-                                              TextTrimming="CharacterEllipsis" />
-                               </Border>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.CellTemplate>
-                   </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_Module_Preview_Header_TransactionType}" Width="130">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}" Padding="8,4">
+                                                <TextBlock Text="{Binding TransactionType}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                </TabItem>
+            </TabControl>
 
-                   <!-- Debit Column with Header ComboBox Mapping -->
-                   <DataGridTemplateColumn Width="120">
-                       <DataGridTemplateColumn.HeaderTemplate>
-                           <DataTemplate x:CompileBindings="False">
-                               <StackPanel>
-                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Debit}"
-                                              FontWeight="SemiBold"
-                                              Margin="0,0,0,5" />
-                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             SelectedItem="{Binding DataContext.SelectedDebitHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             MinWidth="100" />
-                               </StackPanel>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.HeaderTemplate>
-                       <DataGridTemplateColumn.CellTemplate>
-                           <DataTemplate>
-                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
-                                       Padding="8,4">
-                                   <TextBlock Text="{Binding Debit, StringFormat='{}{0:N2}'}"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Right"
-                                              FontFeatures="tnum" />
-                               </Border>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.CellTemplate>
-                   </DataGridTemplateColumn>
-
-                   <!-- Credit Column with Header ComboBox Mapping -->
-                   <DataGridTemplateColumn Width="120">
-                       <DataGridTemplateColumn.HeaderTemplate>
-                           <DataTemplate x:CompileBindings="False">
-                               <StackPanel>
-                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Credit}"
-                                              FontWeight="SemiBold"
-                                              Margin="0,0,0,5" />
-                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             SelectedItem="{Binding DataContext.SelectedCreditHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             MinWidth="100" />
-                               </StackPanel>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.HeaderTemplate>
-                       <DataGridTemplateColumn.CellTemplate>
-                           <DataTemplate>
-                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
-                                       Padding="8,4">
-                                   <TextBlock Text="{Binding Credit, StringFormat='{}{0:N2}'}"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Right"
-                                              FontFeatures="tnum" />
-                               </Border>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.CellTemplate>
-                   </DataGridTemplateColumn>
-
-                   <!-- Amount Column with Header ComboBox Mapping -->
-                   <DataGridTemplateColumn Width="120">
-                       <DataGridTemplateColumn.HeaderTemplate>
-                           <DataTemplate x:CompileBindings="False">
-                               <StackPanel>
-                                   <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_Amount}"
-                                              FontWeight="SemiBold"
-                                              Margin="0,0,0,5" />
-                                   <ComboBox ItemsSource="{Binding DataContext.AvailableHeaders, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             SelectedItem="{Binding DataContext.SelectedAmountHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                             MinWidth="100" />
-                               </StackPanel>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.HeaderTemplate>
-                       <DataGridTemplateColumn.CellTemplate>
-                           <DataTemplate>
-                               <Border Background="{Binding ReviewStatus, Converter={StaticResource ReviewStatusConverter}}"
-                                       Padding="8,4">
-                                   <TextBlock Text="{Binding Amount, StringFormat='{}{0:N2}'}"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Right"
-                                              FontFeatures="tnum" />
-                               </Border>
-                           </DataTemplate>
-                       </DataGridTemplateColumn.CellTemplate>
-                   </DataGridTemplateColumn>
-               </DataGrid.Columns>
-            </DataGrid>
-        </Border>
-
-        <!-- ROW 3: Action Buttons -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" Margin="0,20,0,0">
-            <Button Content="{DynamicResource Locale_Module_ImportHub_Discard}"
-                    Command="{Binding DiscardPreviewCommand}"
+            <!-- ACTION BUTTONS -->
+            <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" Margin="0,20,0,0">
+                <Button Grid.Column="0"
+                    Content="{DynamicResource Locale_Module_ImportHub_Discard}"
+                    Command="{Binding RequestDiscardPreviewCommand}"
                     Background="{DynamicResource BackgroundSecondary}"
-                    Padding="20,10" />
+                    Foreground="{DynamicResource TextPrimary}"
+                    Padding="20,10"
+                    CornerRadius="6"
+                    Cursor="Hand" />
 
-            <Button Content="{DynamicResource Locale_Module_ImportHub_Confirm}"
-                    Command="{Binding ConfirmImportCommand}"
-                    Classes="Primary"
-                    Padding="20,10" />
-        </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="15" VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_ScoreRule}" Foreground="Red" FontWeight="Bold" VerticalAlignment="Center" IsVisible="{Binding !CanConfirmImport}" />
+                    <Button Content="{DynamicResource Locale_Module_ImportHub_Confirm}" Command="{Binding ConfirmImportCommand}" Classes="Primary" Padding="20,10" />
+                </StackPanel>
+            </Grid>
+        </Grid>
     </Grid>
 </UserControl>

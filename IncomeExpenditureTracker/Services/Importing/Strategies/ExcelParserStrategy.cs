@@ -33,7 +33,12 @@ public class ExcelParserStrategy : IFileParserStrategy
 
         _workbook = await Task.Run(() => new XLWorkbook(stream), ct);
 
-        var sheetNames = _workbook.Worksheets.Select(w => w.Name).ToList();
+        // Strictly filter out empty sheets to prevent useless UI entries
+        var sheetNames = _workbook.Worksheets
+            .Where(w => w.LastCellUsed() != null)
+            .Select(w => w.Name)
+            .ToList();
+
         return new PendingFilePreview(_fileId, fileName, sheetNames);
     }
 
@@ -41,15 +46,52 @@ public class ExcelParserStrategy : IFileParserStrategy
     {
         if (_workbook == null) throw new InvalidOperationException("Workbook not loaded");
 
-        if (!_workbook.Worksheets.TryGetWorksheet(sheetName, out var worksheet))
+        IXLWorksheet? worksheet = null;
+
+        Console.WriteLine($"Requested sheet name: '{sheetName}'");
+
+        // BUG FIX: Handle auto-routing where sheetName is null or empty
+        if (string.IsNullOrWhiteSpace(sheetName))
         {
-            throw new ArgumentException($"Sheet {sheetName} not found");
+            // Default to the first sheet that actually has data
+            worksheet = _workbook.Worksheets.FirstOrDefault(w => w.LastCellUsed() != null)
+                        ?? _workbook.Worksheets.FirstOrDefault();
+            Console.WriteLine($"Auto-selected sheet: '{worksheet?.Name}'");
+
+            if (worksheet == null)
+            {
+                throw new InvalidOperationException("The workbook contains no valid worksheets.");
+            }
+        }
+        else
+        {
+            Console.WriteLine($"Attempting to find sheet: '{sheetName}'");
+            // Try to get the specific sheet requested by the user
+            if (!_workbook.Worksheets.TryGetWorksheet(sheetName, out worksheet))
+            {
+                throw new ArgumentException($"Sheet '{sheetName}' not found in the workbook.");
+            }
         }
 
+        Console.WriteLine($"Using sheet: '{worksheet.Name}' for analysis.");
+
+        // Now safely pass the resolved worksheet to the extractor
         return await _extractor.Analyze(worksheet, _fileName, ct: ct);
     }
 
-    public async Task ImportConfirmedBatchAsync(IEnumerable<PreviewTracker> trackers, CancellationToken ct = default)
+    public async Task<StatementPreview> RegeneratePreviewAsync(string sheetName, int headerRow, Dictionary<string, DetectedField> updatedFields, List<string> originalRawHeaders, CancellationToken ct = default)
+    {
+        if (_workbook == null) throw new InvalidOperationException("Workbook not loaded");
+
+        // Safely resolve the worksheet
+        var worksheet = string.IsNullOrWhiteSpace(sheetName)
+            ? (_workbook.Worksheets.FirstOrDefault(w => w.LastCellUsed() != null) ?? _workbook.Worksheets.First())
+            : _workbook.Worksheets.Worksheet(sheetName);
+
+        return await _extractor.ReExtractAsync(worksheet, _fileName, headerRow, updatedFields, originalRawHeaders, ct);
+    }
+
+    public async Task ImportConfirmedBatchAsync(PreviewTracker trackers, CancellationToken ct = default)
     {
         if (_workbook == null) throw new InvalidOperationException("Workbook not loaded");
 

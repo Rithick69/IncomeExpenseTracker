@@ -349,7 +349,7 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
 
                 if (parts.Length > 1)
                 {
-                    var candidate = parts[1].Trim();
+                    var candidate = parts[1].Trim().TrimStart('-', ' ', '>', '='); // Remove leading characters that are often used in bank statements
 
                     // Only return if the right side of the separator actually contains a value
                     if (!string.IsNullOrWhiteSpace(candidate))
@@ -361,7 +361,7 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
         // Pattern 2: value in next column
         var rightCell = worksheet.Cell(row, col + 1).GetString();
         if (!string.IsNullOrWhiteSpace(rightCell))
-            return rightCell.Trim();
+            return rightCell.Trim().TrimStart('-', ' ', '>', '='); // Remove leading characters that are often used in bank statements
 
         // Pattern 3: value in next row
         var bottomCell = worksheet.Cell(row + 1, col).GetString();

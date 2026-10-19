@@ -142,7 +142,7 @@ public partial class ImportQueueView : UserControl
         // Extract data safely and directly from the Button properties (no visual tree traversal)
         if (sender is Button button &&
             button.Tag is Guid fileId &&
-            button.Content is string sheetName &&
+            button.DataContext is string sheetName &&
             DataContext is ImportQueueViewModel viewModel)
         {
             // Create tuple parameter and execute command

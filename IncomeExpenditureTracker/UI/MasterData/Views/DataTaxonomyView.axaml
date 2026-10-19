@@ -62,14 +62,14 @@
                                 <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
-                                            <Button Command="{Binding #RootControl.DataContext.UpdatePayeeCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="{DynamicResource Locale_DataTaxonomy_Common_Update}">
-                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" />
+                                            <Button Command="{Binding #RootControl.DataContext.UpdatePayeeCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipUpdate}">
+                                                <TextBlock Text="{DynamicResource Locale_Common_Update}" Foreground="{DynamicResource AccentIndigo}" />
                                             </Button>
-                                            <Button Command="{Binding #RootControl.DataContext.MergePayeeCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="{DynamicResource Locale_DataTaxonomy_Common_Merge}">
-                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Merge}" Foreground="{DynamicResource AccentIndigo}" />
+                                            <Button Command="{Binding #RootControl.DataContext.MergePayeeCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipMerge}">
+                                                <TextBlock Text="{DynamicResource Locale_Common_Merge}" Foreground="{DynamicResource AccentIndigo}" />
                                             </Button>
-                                            <Button Command="{Binding #RootControl.DataContext.DeletePayeeCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="{DynamicResource Locale_DataTaxonomy_Common_Delete}">
-                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" />
+                                            <Button Command="{Binding #RootControl.DataContext.DeletePayeeCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipDelete}">
+                                                <TextBlock Text="{DynamicResource Locale_Common_Delete}" Foreground="{DynamicResource TextSecondary}" />
                                             </Button>
                                         </StackPanel>
                                     </DataTemplate>
@@ -159,10 +159,10 @@
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
                                             <Button Command="{Binding #RootControl.DataContext.UpdateTagCommand}" CommandParameter="{Binding}" Background="Transparent">
-                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" />
+                                                <TextBlock Text="{DynamicResource Locale_Common_Update}" Foreground="{DynamicResource AccentIndigo}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipUpdate}" />
                                             </Button>
                                             <Button Command="{Binding #RootControl.DataContext.DeleteTagCommand}" CommandParameter="{Binding}" Background="Transparent">
-                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" />
+                                                <TextBlock Text="{DynamicResource Locale_Common_Delete}" Foreground="{DynamicResource TextSecondary}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipDelete}" />
                                             </Button>
                                         </StackPanel>
                                     </DataTemplate>
@@ -192,10 +192,10 @@
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
                                             <Button Command="{Binding #RootControl.DataContext.UpdateCategoryCommand}" CommandParameter="{Binding}" Background="Transparent">
-                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" />
+                                                <TextBlock Text="{DynamicResource Locale_Common_Update}" Foreground="{DynamicResource AccentIndigo}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipUpdate}" />
                                             </Button>
                                             <Button Command="{Binding #RootControl.DataContext.DeleteCategoryCommand}" CommandParameter="{Binding}" Background="Transparent">
-                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" />
+                                                <TextBlock Text="{DynamicResource Locale_Common_Delete}" Foreground="{DynamicResource TextSecondary}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipDelete}" />
                                             </Button>
                                         </StackPanel>
                                     </DataTemplate>
@@ -257,8 +257,8 @@
                                 <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
-                                            <Button Command="{Binding #RootControl.DataContext.UpdateSubCategoryCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
-                                            <Button Command="{Binding #RootControl.DataContext.DeleteSubCategoryCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateSubCategoryCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Update}" Foreground="{DynamicResource AccentIndigo}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipUpdate}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteSubCategoryCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Delete}" Foreground="{DynamicResource TextSecondary}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipDelete}" /></Button>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn>
@@ -297,8 +297,8 @@
                                 <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
-                                            <Button Command="{Binding #RootControl.DataContext.UpdateAccountCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
-                                            <Button Command="{Binding #RootControl.DataContext.DeleteAccountCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateAccountCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Update}" Foreground="{DynamicResource AccentIndigo}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipUpdate}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteAccountCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Delete}" Foreground="{DynamicResource TextSecondary}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipDelete}" /></Button>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn>
@@ -327,9 +327,9 @@
                                 <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
-                                            <Button Command="{Binding #RootControl.DataContext.UpdateEntityCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
-                                            <Button Command="{Binding #RootControl.DataContext.MergeEntityCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Merge}" Foreground="{DynamicResource AccentIndigo}" /></Button>
-                                            <Button Command="{Binding #RootControl.DataContext.DeleteEntityCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateEntityCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Update}" Foreground="{DynamicResource AccentIndigo}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipUpdate}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.MergeEntityCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Merge}" Foreground="{DynamicResource AccentIndigo}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipMerge}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteEntityCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Delete}" Foreground="{DynamicResource TextSecondary}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipDelete}" /></Button>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn>
@@ -391,8 +391,8 @@
                                 <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
-                                            <Button Command="{Binding #RootControl.DataContext.UpdateTagRuleCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
-                                            <Button Command="{Binding #RootControl.DataContext.DeleteTagRuleCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateTagRuleCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Update}" Foreground="{DynamicResource AccentIndigo}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipUpdate}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteTagRuleCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Delete}" Foreground="{DynamicResource TextSecondary}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipDelete}" /></Button>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn>
@@ -457,8 +457,8 @@
                                 <DataGridTemplateColumn Header="{DynamicResource Locale_DataTaxonomy_Grid_Actions}">
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
-                                            <Button Command="{Binding #RootControl.DataContext.UpdateSynonymCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" /></Button>
-                                            <Button Command="{Binding #RootControl.DataContext.DeleteSynonymCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="{DynamicResource TextSecondary}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.UpdateSynonymCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Update}" Foreground="{DynamicResource AccentIndigo}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipUpdate}" /></Button>
+                                            <Button Command="{Binding #RootControl.DataContext.DeleteSynonymCommand}" CommandParameter="{Binding}" Background="Transparent"><TextBlock Text="{DynamicResource Locale_Common_Delete}" Foreground="{DynamicResource TextSecondary}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipDelete}" /></Button>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn>
@@ -489,7 +489,7 @@
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
                                             <!-- ONLY Revert (Delete) is allowed for Batches -->
                                             <Button Command="{Binding #RootControl.DataContext.RevertBatchCommand}" CommandParameter="{Binding}" Background="Transparent" ToolTip.Tip="Revert entire import batch">
-                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Delete}" Foreground="#EF4444" /> <!-- Red warning color -->
+                                                <TextBlock Text="{DynamicResource Locale_Common_Delete}" Foreground="{DynamicResource TextDanger}" /> <!-- Red warning color -->
                                             </Button>
                                         </StackPanel>
                                     </DataTemplate>
@@ -517,7 +517,7 @@
                                         <StackPanel Orientation="Horizontal" Spacing="16" Margin="8,0">
                                             <!-- ONLY Update is allowed for core Settings to prevent app breaking -->
                                             <Button Command="{Binding #RootControl.DataContext.UpdateUserSettingCommand}" CommandParameter="{Binding}" Background="Transparent">
-                                                <TextBlock Text="{DynamicResource Locale_DataTaxonomy_Common_Update}" Foreground="{DynamicResource AccentIndigo}" />
+                                                <TextBlock Text="{DynamicResource Locale_Common_Update}" Foreground="{DynamicResource AccentIndigo}" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipUpdate}" />
                                             </Button>
                                         </StackPanel>
                                     </DataTemplate>

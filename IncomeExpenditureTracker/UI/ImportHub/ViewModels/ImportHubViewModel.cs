@@ -40,7 +40,7 @@ public partial class ImportHubViewModel : ViewModelBase
 
         // Subscribe to navigation messages to return to queue from preview
         // This allows the preview to navigate back after commit/discard (uses global NavigationMessage "ImportHub")
-        Broker.Register<NavigationMessage>(this, OnNavigationRequested);
+        Broker.Register<ReturnToQueueMessage>(this, OnReturnToQueue);
     }
 
     /// <summary>
@@ -84,20 +84,15 @@ public partial class ImportHubViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Handles NavigationMessage for returning to the ImportHub queue after confirm/discard.
+    /// Handles ReturnToQueueMessage for returning to the ImportHub queue after confirm/discard.
     /// Only processes "ImportHub" destination; all other destinations are ignored to prevent routing conflicts.
     /// </summary>
-    private void OnNavigationRequested(NavigationMessage message)
+    private void OnReturnToQueue(ReturnToQueueMessage message)
     {
-        if (message.Destination == "ImportHub")
-        {
-            // Return to the queue view
-            CurrentContent?.Dispose();
-
-            // Create a fresh queue instance
-            _queueViewModel = _serviceProvider.GetRequiredService<ImportQueueViewModel>();
-            CurrentContent = _queueViewModel;
-        }
+        // Dispose of the preview and load a fresh Queue view
+        CurrentContent?.Dispose();
+        _queueViewModel = _serviceProvider.GetRequiredService<ImportQueueViewModel>();
+        CurrentContent = _queueViewModel;
     }
 
     public override void Dispose()

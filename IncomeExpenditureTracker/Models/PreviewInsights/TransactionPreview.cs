@@ -12,4 +12,6 @@ public class TransactionPreview
     public decimal Credit { get; set; }
 
     public decimal Amount { get; set; }
+
+    public string TransactionType { get; set; } = ""; // e.g., "DR", "CR", "D", "C", "DEBIT", "CREDIT"
 }

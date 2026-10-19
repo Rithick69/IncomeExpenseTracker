@@ -50,6 +50,9 @@ public sealed class ConfidenceService : IConfidenceService
         if (singleAmountScore > 0)
         {
             totalScore += singleAmountScore;
+
+            // NEW: Add a confidence boost if the single amount column is accompanied by a Transaction Type indicator (Dr/Cr)
+            totalScore += EvaluateField(unifiedFields, new[] { "Col:TRANSACTIONTYPE", "TransactionType" }, 5);
         }
         else
         {

@@ -101,14 +101,14 @@ public class TransactionService : ITransactionService, IDisposable
                 INSERT INTO Transactions
                 (
                     Date, AccountId, Description, Source,
-                    Credit, Debit, TransactionType, ImportBatchId,
+                    Credit, Debit, ImportBatchId,
                     TagId, PayeeId, TransactionHash, CreatedDate,
                     ReviewStatus, RawAmountText
                 )
                 VALUES
                 (
                     @Date, @AccountId, @Description, @Source,
-                    @Credit, @Debit, @TransactionType, @ImportBatchId,
+                    @Credit, @Debit, @ImportBatchId,
                     @TagId, @PayeeId, @TransactionHash, @CreatedDate,
                     @ReviewStatus, @RawAmountText
                 );";
@@ -117,6 +117,7 @@ public class TransactionService : ITransactionService, IDisposable
             {
                 var cmd = new CommandDefinition(
                     sql,
+                    transactions,
                     transaction: tx,
                     cancellationToken: ct
                 );
@@ -129,6 +130,7 @@ public class TransactionService : ITransactionService, IDisposable
                 {
                     var cmd = new CommandDefinition(
                         sql,
+                        transactions,
                         transaction: tx,
                         cancellationToken: cancelToken
                     );

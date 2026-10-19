@@ -46,14 +46,6 @@ public class Transaction
     // Example: UPI payments, investments, withdrawals.
     public decimal Debit { get; set; }
 
-    // Indicates whether the transaction came from
-    // a bank account or a credit card statement.
-    //
-    // Example values:
-    // "Bank"
-    // "Credit"
-    public string TransactionType { get; set; } = "";
-
     public int? ImportBatchId { get; set; }
 
     // Reference to the tag assigned by the rule engine.

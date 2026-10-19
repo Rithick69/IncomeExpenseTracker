@@ -8,7 +8,7 @@ public interface IStatementEditSession
     /// <summary>
     /// Seeds the edit session with the object returned by ExcelStatementExtractor.
     /// </summary>
-    void Initialize(StatementPreview preview);
+    void Initialize(StatementPreview preview, bool preserveCorrections);
 
     /// <summary>
     /// Returns the live, currently-edited preview for UI binding.
