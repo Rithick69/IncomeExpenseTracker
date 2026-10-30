@@ -22,6 +22,14 @@ public interface IAccountService
     Task UpdateAccount(Account account, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
     Task DeleteAccount(int accountId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
 
+    Task<List<string>> SearchAccountNumbersAsync(string query, CancellationToken ct = default);
+    Task<List<string>> SearchCardNumbersAsync(string query, CancellationToken ct = default);
+    Task<List<string>> GetDistinctCurrenciesAsync(CancellationToken ct = default);
+    Task<List<string>> GetDistinctAccountTypesAsync(CancellationToken ct = default);
+    // Add these to IAccountService
+    Task<Account?> GetAccountByNumberAsync(string accountNumber, CancellationToken ct = default);
+    Task<Account?> GetAccountByCardNumberAsync(string cardNumber, CancellationToken ct = default);
+
     /// <summary>
     /// Evaluates if the Account has any imported Transactions to enforce structural hard blocks.
     /// </summary>

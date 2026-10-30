@@ -24,6 +24,8 @@ public class StatementPreview
     // Captures the exact physical text of the Excel header row for UI Dropdowns
     public List<string> RawHeaders { get; set; } = new();
 
+    public List<List<string>> RawHeaderRows { get; set; } = new();
+
     // // The UI binds its error grid/badges directly to this sink!
     // public StatementErrorSink Diagnostics { get; set; } = new();
 

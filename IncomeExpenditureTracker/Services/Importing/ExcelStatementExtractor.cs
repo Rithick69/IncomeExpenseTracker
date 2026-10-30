@@ -57,6 +57,9 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 fileName,
                 forceReload);
 
+            // Capture Raw Context for the UI
+            var rawHeaderRows = ExtractRawHeaderRows(worksheet);
+
             // 1. Detect account & entity metadata (Returns Dictionary<string, DetectedField>)
             var metadataFields = await _fieldMapper.DetectAccountDetails(worksheet, forceReload, ct);
 
@@ -84,10 +87,6 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
 
             // 3. Detect column coordinates (Returns Dictionary<string, DetectedField>)
             var columnFields = await _fieldMapper.DetectColumns(worksheet, headerRow, forceReload, ct);
-            _logger.LogInformation(
-                "Detected {ColumnCount} mapped columns for file '{FileName}'.",
-                columnFields?.Count ?? 0,
-                fileName);
 
             if (columnFields == null)
             {
@@ -116,7 +115,6 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
             // =========================================================================
             if (previewTransactions.Count == 0 && headerRow >= 0)
             {
-                _logger.LogWarning("Extraction yielded 0 rows. Activating raw fallback physical scoop for file '{FileName}'.", fileName);
 
                 // headerRow is 0-based. The first data row is headerRow + 2.
                 int firstDataRow = headerRow + 2;
@@ -185,7 +183,8 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 PreviewTransactions = previewTransactions,
                 ConfidenceScore = confidence,
                 RequiresVerification = confidence < 80 || !previewTransactions.Any(),
-                RawHeaders = rawHeaders
+                RawHeaders = rawHeaders,
+                RawHeaderRows = rawHeaderRows
             };
         }
         catch (OperationCanceledException)
@@ -204,7 +203,9 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 HeaderSignature = string.Empty,
                 PreviewTransactions = new List<TransactionPreview>(),
                 ConfidenceScore = 0,
-                RequiresVerification = true
+                RequiresVerification = true,
+                RawHeaders = new List<string>(),
+                RawHeaderRows = new List<List<string>>()
             };
         }
     }
@@ -212,64 +213,119 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
     // 2. ADD THIS NEW METHOD:
     public async Task<StatementPreview> ReExtractAsync(IXLWorksheet worksheet, string fileName, int headerRow, Dictionary<string, DetectedField> updatedFields, List<string> originalRawHeaders, CancellationToken ct = default)
     {
-        ct.ThrowIfCancellationRequested();
-
-        // 1. Re-run the transaction extraction using the USER'S updated dictionary
-        var previewTransactions = _transactionExtractor
-            .ExtractPreview(worksheet, headerRow, updatedFields, ct)
-            .Take(20)
-            .ToList();
-
-        // 2. The 20-Row Fallback Guarantee (In case the user mapped garbage columns)
-        if (previewTransactions.Count == 0 && headerRow >= 0)
+        try
         {
-            int firstDataRow = headerRow + 2;
-            var lastRowUsed = worksheet.LastRowUsed()?.RowNumber() ?? firstDataRow;
-            int rowsToGrab = Math.Min(20, lastRowUsed - firstDataRow + 1);
+            ct.ThrowIfCancellationRequested();
 
-            for (int i = 0; i < rowsToGrab; i++)
+            // Re-fetch the raw grid so it persists across UI regenerations
+            var rawHeaderRows = ExtractRawHeaderRows(worksheet);
+
+            // Phase 2: Intercept the updated fields and execute the targeted metadata search
+            await _fieldMapper.ReExtractAccountDetailsAsync(worksheet, updatedFields, ct);
+
+            // 1. Re-run the transaction extraction using the USER'S updated dictionary
+            var previewTransactions = _transactionExtractor
+                .ExtractPreview(worksheet, headerRow, updatedFields, ct)
+                .Take(20)
+                .ToList();
+
+            // 2. The 20-Row Fallback Guarantee (In case the user mapped garbage columns)
+            if (previewTransactions.Count == 0 && headerRow >= 0)
             {
-                var row = worksheet.Row(firstDataRow + i);
-                if (row.IsEmpty()) continue;
+                int firstDataRow = headerRow + 2;
+                var lastRowUsed = worksheet.LastRowUsed()?.RowNumber() ?? firstDataRow;
+                int rowsToGrab = Math.Min(20, lastRowUsed - firstDataRow + 1);
 
-                previewTransactions.Add(new TransactionPreview
+                for (int i = 0; i < rowsToGrab; i++)
                 {
-                    Date = default,
-                    Description = $"[RAW DATA] {row.Cell(1).GetString()} | {row.Cell(2).GetString()} | {row.Cell(3).GetString()}",
-                    Debit = 0,
-                    Credit = 0,
-                    Amount = 0,
-                    TransactionType = "Unknown"
-                });
+                    var row = worksheet.Row(firstDataRow + i);
+                    if (row.IsEmpty()) continue;
+
+                    previewTransactions.Add(new TransactionPreview
+                    {
+                        Date = default,
+                        Description = $"[RAW DATA] {row.Cell(1).GetString()} | {row.Cell(2).GetString()} | {row.Cell(3).GetString()}",
+                        Debit = 0,
+                        Credit = 0,
+                        Amount = 0,
+                        TransactionType = "Unknown"
+                    });
+                }
             }
-        }
 
-        // 3. Recalculate Confidence based on the new rows
-        var confidence = _confidenceService.CalculateConfidence(updatedFields, previewTransactions);
+            // 3. Recalculate Confidence based on the new rows
+            var confidence = _confidenceService.CalculateConfidence(updatedFields, previewTransactions);
 
-        // 4. Dynamically extract the Entity Name from the user's updated dictionary
-        // We check both the raw domain name and the "Meta:" prefixed version for safety.
-        string entityName = "UNKNOWN_ENTITY";
-        if (updatedFields.TryGetValue("Meta:ENTITY_NAME", out var metaField) ||
-            updatedFields.TryGetValue("EntityName", out metaField))
-        {
-            if (!string.IsNullOrWhiteSpace(metaField.ExtractedValue))
+            // 4. Dynamically extract the Entity Name from the user's updated dictionary
+            // We check both the raw domain name and the "Meta:" prefixed version for safety.
+            string entityName = "UNKNOWN_ENTITY";
+            if (updatedFields.TryGetValue("Meta:ENTITY_NAME", out var metaField) ||
+                updatedFields.TryGetValue("EntityName", out metaField))
             {
-                entityName = metaField.ExtractedValue;
+                if (!string.IsNullOrWhiteSpace(metaField.ExtractedValue))
+                {
+                    entityName = metaField.ExtractedValue;
+                }
             }
-        }
 
-        return new StatementPreview
+            return new StatementPreview
+            {
+                FileName = fileName,
+                HeaderRow = headerRow,
+                Fields = updatedFields,
+                HeaderSignature = GenerateHeaderSignature(entityName, updatedFields),
+                PreviewTransactions = previewTransactions,
+                ConfidenceScore = confidence,
+                RequiresVerification = confidence < 80 || !previewTransactions.Any(),
+                RawHeaders = originalRawHeaders, // Preserve the dropdown options!
+                RawHeaderRows = rawHeaderRows
+            };
+        }
+        catch (OperationCanceledException)
         {
-            FileName = fileName,
-            HeaderRow = headerRow,
-            Fields = updatedFields,
-            HeaderSignature = GenerateHeaderSignature(entityName, updatedFields),
-            PreviewTransactions = previewTransactions,
-            ConfidenceScore = confidence,
-            RequiresVerification = confidence < 80 || !previewTransactions.Any(),
-            RawHeaders = originalRawHeaders // Preserve the dropdown options!
-        };
+            _logger.LogWarning("Statement regeneration was safely cancelled for file '{FileName}'.", fileName);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fatal error while regenerating statement preview for file '{FileName}'.", fileName);
+
+            // MACRO-LEVEL: Return a safe default instead of crashing, preserving the user's staged file
+            return new StatementPreview
+            {
+                FileName = fileName,
+                HeaderRow = headerRow, // Keep the old header row if possible
+                Fields = updatedFields, // Keep their dictionary mapping
+                HeaderSignature = string.Empty,
+                PreviewTransactions = new List<TransactionPreview>(), // Empty grid signals the failure
+                ConfidenceScore = 0,
+                RequiresVerification = true,
+                RawHeaders = originalRawHeaders,
+                RawHeaderRows = new List<List<string>>()
+            };
+        }
+    }
+
+    // ------------------------------------------------------------
+    // HELPER: EXTRACT RAW HEADER ROWS (Phase 1)
+    // Grabs a constrained 20x20 visual representation of the sheet
+    // ------------------------------------------------------------
+    private List<List<string>> ExtractRawHeaderRows(IXLWorksheet worksheet)
+    {
+        var rawHeaderRows = new List<List<string>>();
+        int maxRawRows = Math.Min(20, worksheet.LastRowUsed()?.RowNumber() ?? 20);
+        int maxRawCols = Math.Min(20, worksheet.LastColumnUsed()?.ColumnNumber() ?? 10);
+
+        for (int r = 1; r <= maxRawRows; r++)
+        {
+            var rowData = new List<string>();
+            for (int c = 1; c <= maxRawCols; c++)
+            {
+                rowData.Add(worksheet.Cell(r, c).GetString()); // Preserves spaces for merged cells
+            }
+            rawHeaderRows.Add(rowData);
+        }
+        return rawHeaderRows;
     }
 
     // Generates a simple signature string based on the detected header names and their positions.

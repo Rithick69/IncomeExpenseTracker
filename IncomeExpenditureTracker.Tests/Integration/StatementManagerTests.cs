@@ -68,11 +68,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockBroker = new Mock<IApplicationBroker>();
             var mockSynonymService = new Mock<ISynonymService>();
+            var mockImportBatchService = new Mock<IImportBatchService>();
 
             var manager = new StatementManager(
                 ext => mockStrategy.Object,
                 () => mockEditSession.Object,
                 mockSynonymService.Object,
+                mockImportBatchService.Object,
                 _logger,
                 mockBroker.Object
             );
@@ -94,7 +96,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
         }
 
         // =================================================================================
-        // NEW PHASE 5 TEST: Proves the Broker actively delivers error messages to the UI!
+        // Proves the Broker actively delivers error messages to the UI!
         // =================================================================================
         [Fact]
         public async Task StageFilesAsync_WhenFileIsLocked_ShouldPublishErrorMessage()
@@ -108,11 +110,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 .ThrowsAsync(new IOException("Locked by Excel"));
 
             var mockBroker = new Mock<IApplicationBroker>(); // Our fake postman
+            var mockImportBatchService = new Mock<IImportBatchService>();
 
             var manager = new StatementManager(
                 ext => mockStrategy.Object,
                 () => new Mock<IStatementEditSession>().Object,
                 new Mock<ISynonymService>().Object,
+                mockImportBatchService.Object,
                 _logger,
                 mockBroker.Object
             );
@@ -143,6 +147,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             var mockStrategy = new Mock<IFileParserStrategy>();
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockBroker = new Mock<IApplicationBroker>();
+            var mockImportBatchService = new Mock<IImportBatchService>();
 
             var mockSynonymService = new Mock<ISynonymService>();
             mockSynonymService
@@ -153,6 +158,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 ext => mockStrategy.Object,
                 () => mockEditSession.Object,
                 mockSynonymService.Object,
+                mockImportBatchService.Object,
                 _logger,
                 mockBroker.Object
             );
@@ -179,16 +185,14 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 }
             };
 
-            var trackers = new List<PreviewTracker> { confirmedTracker };
-
             // Simulate the UI requesting a preview, which initializes our edit session in the dictionary
             await manager.PreviewStagedFileAsync(stagedFileId, null, CancellationToken.None);
 
             // Act
-            await manager.CommitStagedBatchAsync(stagedFileId, trackers, CancellationToken.None);
+            await manager.CommitStagedBatchAsync(stagedFileId, confirmedTracker, CancellationToken.None);
 
             // Assert 1: Verify Import was called (Synchronous, so we check immediately)
-            mockStrategy.Verify(i => i.ImportConfirmedBatchAsync(trackers, It.IsAny<CancellationToken>()), Times.Once);
+            mockStrategy.Verify(i => i.ImportConfirmedBatchAsync(confirmedTracker, It.IsAny<CancellationToken>()), Times.Once);
 
             // Assert 2: Polling Wait for the Fire-and-Forget Background Thread
             // We give the thread pool up to 3 seconds to execute, checking every 50ms.
@@ -248,11 +252,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockBroker = new Mock<IApplicationBroker>();
+            var mockImportBatchService = new Mock<IImportBatchService>();
 
             var manager = new StatementManager(
                 ext => mockStrategy.Object,
                 () => mockEditSession.Object,
                 new Mock<ISynonymService>().Object,
+                mockImportBatchService.Object,
                 _logger,
                 mockBroker.Object
             );
@@ -290,11 +296,13 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             var mockEditSession = new Mock<IStatementEditSession>();
             var mockBroker = new Mock<IApplicationBroker>();
+            var mockImportBatchService = new Mock<IImportBatchService>();
 
             var manager = new StatementManager(
                 ext => mockStrategy.Object,
                 () => mockEditSession.Object,
                 new Mock<ISynonymService>().Object,
+                mockImportBatchService.Object,
                 _logger,
                 mockBroker.Object
             );
@@ -325,6 +333,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 ext => new Mock<IFileParserStrategy>().Object,
                 () => new Mock<IStatementEditSession>().Object,
                 new Mock<ISynonymService>().Object,
+                new Mock<IImportBatchService>().Object,
                 _logger,
                 new Mock<IApplicationBroker>().Object
             );
@@ -350,6 +359,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 ext => new Mock<IFileParserStrategy>().Object,
                 () => new Mock<IStatementEditSession>().Object,
                 new Mock<ISynonymService>().Object,
+                new Mock<IImportBatchService>().Object,
                 _logger,
                 new Mock<IApplicationBroker>().Object
             );
@@ -377,6 +387,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 ext => mockStrategy.Object,
                 () => new Mock<IStatementEditSession>().Object,
                 new Mock<ISynonymService>().Object,
+                new Mock<IImportBatchService>().Object,
                 _logger,
                 new Mock<IApplicationBroker>().Object
             );
@@ -409,6 +420,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
                 ext => mockStrategy.Object,
                 () => new Mock<IStatementEditSession>().Object,
                 new Mock<ISynonymService>().Object,
+                new Mock<IImportBatchService>().Object,
                 _logger,
                 new Mock<IApplicationBroker>().Object
             );
@@ -422,6 +434,154 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Act & Assert
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 async () => await manager.PreviewStagedFileAsync(stagedFileId, null, cts.Token));
+        }
+
+        // =================================================================================
+        // NEW TESTS: Phase 8 & Architecture Guardrail Tests
+        // =================================================================================
+
+        [Fact]
+        public async Task StageFilesAsync_Completes_BroadcastsBatchCompletedMessage()
+        {
+            // =================================================================================
+            // OBJECTIVE: Ensure the SPA Router transitions views automatically.
+            // DECISION: Verify StagingBatchCompletedMessage is fired exactly once.
+            // =================================================================================
+            string validFile = ExcelStatementGenerator.GenerateValidStatement(2);
+            _tempFilesToCleanup.Add(validFile);
+
+            var mockStrategy = new Mock<IFileParserStrategy>();
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), Path.GetFileName(validFile), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new PendingFilePreview(Guid.NewGuid(), Path.GetFileName(validFile), new List<string>()));
+
+            var mockBroker = new Mock<IApplicationBroker>();
+            var manager = new StatementManager(
+                ext => mockStrategy.Object,
+                () => new Mock<IStatementEditSession>().Object,
+                new Mock<ISynonymService>().Object,
+                new Mock<IImportBatchService>().Object,
+                _logger,
+                mockBroker.Object
+            );
+
+            await manager.StageFilesAsync(new List<string> { validFile }, null!, CancellationToken.None);
+
+            mockBroker.Verify(b => b.Send(It.Is<StagingBatchCompletedMessage>(m => m.TotalSuccess == 1 && m.TotalFailures == 0)), Times.Once);
+        }
+
+        [Fact]
+        public async Task DiscardAllFiles_ReleasesAllOSLocksAndClearsState()
+        {
+            // =================================================================================
+            // OBJECTIVE: Test the SPA Abandonment Guard.
+            // DECISION: Stage a file, call DiscardAllFiles, ensure HasStagedFiles = false and Dispose is called.
+            // =================================================================================
+            string validFile = ExcelStatementGenerator.GenerateValidStatement(2);
+            _tempFilesToCleanup.Add(validFile);
+
+            var mockStrategy = new Mock<IFileParserStrategy>();
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new PendingFilePreview(Guid.NewGuid(), Path.GetFileName(validFile), new List<string>()));
+
+            var manager = new StatementManager(
+                ext => mockStrategy.Object,
+                () => new Mock<IStatementEditSession>().Object,
+                new Mock<ISynonymService>().Object,
+                new Mock<IImportBatchService>().Object,
+                _logger,
+                new Mock<IApplicationBroker>().Object
+            );
+
+            await manager.StageFilesAsync(new List<string> { validFile }, null!, CancellationToken.None);
+            Assert.True(manager.HasStagedFiles);
+
+            manager.DiscardAllFiles();
+
+            Assert.False(manager.HasStagedFiles);
+            mockStrategy.Verify(s => s.Dispose(), Times.Once);
+        }
+
+        [Fact]
+        public async Task RegeneratePreviewAsync_UpdatesEditSessionState()
+        {
+            // =================================================================================
+            // OBJECTIVE: Test targeted metadata regeneration without DB writes.
+            // DECISION: Verify the new preview replaces the old one but preserves user corrections.
+            // =================================================================================
+            string validFile = ExcelStatementGenerator.GenerateValidStatement(2);
+            _tempFilesToCleanup.Add(validFile);
+
+            var mockStrategy = new Mock<IFileParserStrategy>();
+            var preview = new PendingFilePreview(Guid.NewGuid(), Path.GetFileName(validFile), new List<string>());
+
+            mockStrategy.Setup(s => s.LoadAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(preview);
+
+            mockStrategy.Setup(s => s.GeneratePreviewAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new StatementPreview());
+
+            var regeneratedPreview = new StatementPreview();
+            mockStrategy.Setup(s => s.RegeneratePreviewAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(regeneratedPreview);
+
+            var mockEditSession = new Mock<IStatementEditSession>();
+
+            var manager = new StatementManager(
+                ext => mockStrategy.Object,
+                () => mockEditSession.Object,
+                new Mock<ISynonymService>().Object,
+                new Mock<IImportBatchService>().Object,
+                _logger,
+                new Mock<IApplicationBroker>().Object
+            );
+
+            var stagingResult = await manager.StageFilesAsync(new List<string> { validFile }, null!, CancellationToken.None);
+            Guid fileId = stagingResult.Successes.First().Id;
+
+            await manager.PreviewStagedFileAsync(fileId, null, CancellationToken.None);
+
+            // Act
+            await manager.RegeneratePreviewAsync(fileId, "Sheet1", 1, new Dictionary<string, DetectedField>(), new List<string>(), CancellationToken.None);
+
+            // Assert: verify initialize was called again with preserveCorrections = true
+            mockEditSession.Verify(s => s.Initialize(regeneratedPreview, true), Times.Once);
+        }
+
+        [Fact]
+        public async Task StageFilesAsync_WhenFileIsDuplicate_RejectsAndBroadcastsError()
+        {
+            // =================================================================================
+            // OBJECTIVE: Test IImportBatchService DB duplication block.
+            // NOTE: This will fail until the block in StatementManager.cs is uncommented!
+            // =================================================================================
+            string validFile = ExcelStatementGenerator.GenerateValidStatement(2);
+            _tempFilesToCleanup.Add(validFile);
+
+            var mockImportBatchService = new Mock<IImportBatchService>();
+            mockImportBatchService.Setup(s => s.GetIdByFileName(Path.GetFileName(validFile), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(99);
+
+            var mockBroker = new Mock<IApplicationBroker>();
+            var mockStrategy = new Mock<IFileParserStrategy>();
+
+            var manager = new StatementManager(
+                ext => mockStrategy.Object,
+                () => new Mock<IStatementEditSession>().Object,
+                new Mock<ISynonymService>().Object,
+                mockImportBatchService.Object,
+                _logger,
+                mockBroker.Object
+            );
+
+            // Act
+            var result = await manager.StageFilesAsync(new List<string> { validFile }, null!, CancellationToken.None);
+
+            // Assert
+            Assert.Single(result.Failures);
+            Assert.Contains("already been processed", result.Failures.First().Message);
+
+            mockBroker.Verify(b => b.Send(It.Is<FileStagingErrorMessage>(m => m.Error.Severity == ErrorSeverity.Fatal)), Times.Once);
+            mockStrategy.Verify(s => s.LoadAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         public void Dispose()

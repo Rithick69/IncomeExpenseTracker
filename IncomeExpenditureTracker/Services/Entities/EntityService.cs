@@ -34,6 +34,8 @@ public class EntityService : IEntityService, IDisposable
 
     private readonly ConcurrentDictionary<string, Lazy<Task<List<Entity>>>> _entityListCache = new();
 
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<string>>>> _searchEntityNameCache = new(StringComparer.OrdinalIgnoreCase);
+
     public EntityService(IDatabaseService database, ILogger<EntityService> logger, IApplicationBroker broker)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
@@ -48,6 +50,47 @@ public class EntityService : IEntityService, IDisposable
         // to prevent Profile A's data from appearing in Profile B's UI.
         // -------------------------------------------------------------------------
         _broker.Register<ProfileSwappedMessage>(this, (message) => InvalidateCache());
+    }
+
+    public async Task<List<string>> SearchEntityNamesAsync(string query, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var cacheKey = query?.Trim() ?? string.Empty;
+
+        try
+        {
+            var cachedLazy = _searchEntityNameCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<string>>>(async () =>
+            {
+                try
+                {
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        const string sql = @"
+                            SELECT DISTINCT Name
+                            FROM Entities
+                            WHERE Name LIKE @Query
+                            ORDER BY Name LIMIT 50;";
+
+                        var cmd = new CommandDefinition(sql, new { Query = $"%{cacheKey}%" }, cancellationToken: cancelToken);
+                        var results = await c.QueryAsync<string>(cmd);
+                        return results.ToList();
+                    }, ct);
+                }
+                catch
+                {
+                    _searchEntityNameCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to search entity names for query '{Query}'.", cacheKey);
+            throw;
+        }
     }
 
     // ------------------------------------------------------------
@@ -353,6 +396,7 @@ public class EntityService : IEntityService, IDisposable
     {
         _entityIdCache.Clear();
         _entityListCache.Clear();
+        _searchEntityNameCache.Clear();
         _logger.LogInformation("Evicted EntityService RAM cache due to data mutation.");
     }
 

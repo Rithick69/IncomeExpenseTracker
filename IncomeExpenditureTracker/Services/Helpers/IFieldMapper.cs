@@ -14,4 +14,6 @@ public interface IFieldMapper<TDocument>
 
     // Detects account details from the given Excel worksheet.
     Task<Dictionary<string, DetectedField>> DetectAccountDetails(TDocument document, bool forceReload = false, CancellationToken ct = default);
+
+    Task ReExtractAccountDetailsAsync(TDocument worksheet, Dictionary<string, DetectedField> fields, CancellationToken ct = default);
 }

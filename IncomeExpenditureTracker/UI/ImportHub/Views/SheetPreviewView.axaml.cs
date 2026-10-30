@@ -18,11 +18,6 @@ namespace IncomeExpenditureTracker.UI.ImportHub
             //         e.Handled = true;
             //     }
             // }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-            PreventComboBoxWheelSelection(EntityFieldComboBox);
-            PreventComboBoxWheelSelection(AccountNumFieldComboBox);
-            PreventComboBoxWheelSelection(CardNumFieldComboBox);
-            PreventComboBoxWheelSelection(AccountTypeFieldComboBox);
-            PreventComboBoxWheelSelection(CurrencyFieldComboBox);
 
             PreventComboBoxWheelSelection(DateHeaderComboBox);
             PreventComboBoxWheelSelection(DescHeaderComboBox);

@@ -1,0 +1,106 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.ImportHub"
+             x:Class="IncomeExpenditureTracker.UI.ImportHub.AccountDetailsView"
+             x:DataType="vm:SheetPreviewViewModel">
+
+    <ScrollViewer Padding="15">
+        <StackPanel Spacing="25" MaxWidth="800" HorizontalAlignment="Left">
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="Target Account Validation" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                <TextBlock Text="Confirm the destination account for these transactions. Data entered here determines where the imported records will be saved." Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <!-- OPTIONAL: AI TRAINING SECTION (Placed intentionally ABOVE the main account form) -->
+            <Expander IsExpanded="{Binding IsAiTrainingExpanded}">
+
+                <!-- Custom Header with dynamic Highlight Badge -->
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="Advanced: Teach AI for Next Time" FontWeight="SemiBold" VerticalAlignment="Center" />
+
+                        <!-- This badge only appears if the engine failed AND the user hasn't opened this tab yet -->
+                        <Border Background="{DynamicResource AccentIndigo}"
+                                CornerRadius="10" Padding="8,2"
+                                IsVisible="{Binding SuggestAiTraining}">
+                            <TextBlock Text="Recommended" Foreground="White" FontSize="10" FontWeight="Bold" VerticalAlignment="Center"/>
+                        </Border>
+                    </StackPanel>
+                </Expander.Header>
+
+                <StackPanel Spacing="15" Margin="10,15,10,10">
+                    <TextBlock Text="If the AI missed your details, type the exact text labels used in your raw Excel statement below. The engine will learn these formats for your next import." TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" FontSize="12" />
+
+                    <Grid ColumnDefinitions="1*,1*,1*" RowDefinitions="Auto,Auto" RowSpacing="15" ColumnSpacing="15">
+                        <StackPanel Grid.Row="0" Grid.Column="0">
+                            <TextBlock Text="Bank Label (e.g. 'Bank:')" FontSize="11" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding SelectedEntityNameLabel}" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="0" Grid.Column="1">
+                            <TextBlock Text="Account Label (e.g. 'A/C No:')" FontSize="11" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding SelectedAccountNumberLabel}" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="0" Grid.Column="2">
+                            <TextBlock Text="Card Label (e.g. 'Card:')" FontSize="11" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding SelectedCardNumberLabel}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Grid.Column="0">
+                            <TextBlock Text="Type Label (e.g. 'Acct Type:')" FontSize="11" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding SelectedAccountTypeLabel}" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Grid.Column="1">
+                            <TextBlock Text="Currency Label (e.g. 'Curr:')" FontSize="11" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding SelectedCurrencyLabel}" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Expander>
+
+            <!-- PRIMARY FORM: REQUIRED DATA -->
+            <Border Classes="Card" Padding="25" Background="{DynamicResource BackgroundSecondary}">
+                <Grid ColumnDefinitions="1*, 1*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="20" ColumnSpacing="20">
+
+                    <!-- Entity / Bank -->
+                    <StackPanel Grid.Row="0" Grid.Column="0">
+                        <TextBlock Text="Institution / Bank Name" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <AutoCompleteBox Text="{Binding AccountMapping.EntityName}" ItemsSource="{Binding AccountMapping.AvailableEntityNames}" FilterMode="None" Watermark="e.g. HDFC Bank" />
+                    </StackPanel>
+
+                    <!-- Account Number -->
+                    <StackPanel Grid.Row="0" Grid.Column="1">
+                        <TextBlock Text="Account Number" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <AutoCompleteBox Text="{Binding AccountMapping.AccountNumber}" ItemsSource="{Binding AccountMapping.AvailableAccountNumbers}" FilterMode="None" IsEnabled="{Binding AccountMapping.IsAccountNumberEnabled}" Watermark="Search by number..." />
+                    </StackPanel>
+
+                    <!-- Card Number -->
+                    <StackPanel Grid.Row="1" Grid.Column="0">
+                        <TextBlock Text="Card Number (If Applicable)" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <AutoCompleteBox Text="{Binding AccountMapping.CardNumber}" ItemsSource="{Binding AccountMapping.AvailableCardNumbers}" FilterMode="None" IsEnabled="{Binding AccountMapping.IsCardNumberEnabled}" Watermark="Last 4 digits..." />
+                    </StackPanel>
+
+                    <!-- Credit Limit -->
+                    <StackPanel Grid.Row="1" Grid.Column="1" IsVisible="{Binding AccountMapping.IsCreditLimitVisible}">
+                        <TextBlock Text="Credit Limit" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <TextBox Text="{Binding AccountMapping.CreditLimit}" Watermark="0.00" />
+                    </StackPanel>
+
+                    <!-- Account Type -->
+                    <StackPanel Grid.Row="2" Grid.Column="0">
+                        <TextBlock Text="Account Type" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <ComboBox SelectedItem="{Binding AccountMapping.AccountType}" ItemsSource="{Binding AccountMapping.AvailableAccountTypes}" HorizontalAlignment="Stretch" PlaceholderText="Select Type" />
+                    </StackPanel>
+
+                    <!-- Currency -->
+                    <StackPanel Grid.Row="2" Grid.Column="1">
+                        <TextBlock Text="Statement Currency" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <ComboBox SelectedItem="{Binding AccountMapping.Currency}" ItemsSource="{Binding AccountMapping.AvailableCurrencies}" HorizontalAlignment="Stretch" PlaceholderText="Select Currency" />
+                    </StackPanel>
+
+                </Grid>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

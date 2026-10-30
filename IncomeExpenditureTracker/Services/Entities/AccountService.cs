@@ -40,6 +40,13 @@ public class AccountService : IAccountService, IDisposable
 
     private readonly ConcurrentDictionary<string, Lazy<Task<List<Account>>>> _accountListCache = new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<string>>>> _searchAccNumCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<string>>>> _searchCardNumCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<string>>>> _distinctCurrenciesCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<string>>>> _distinctAccTypesCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<Account?>>> _accByNumCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<Account?>>> _accByCardNumCache = new(StringComparer.OrdinalIgnoreCase);
+
     public AccountService(IDatabaseService database, ILogger<AccountService> logger, IApplicationBroker broker)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
@@ -53,6 +60,234 @@ public class AccountService : IAccountService, IDisposable
         // to prevent Profile A's data from appearing in Profile B's UI.
         // -------------------------------------------------------------------------
         _broker.Register<ProfileSwappedMessage>(this, (message) => InvalidateCache());
+    }
+
+    public async Task<List<string>> SearchAccountNumbersAsync(string query, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var cacheKey = query?.Trim() ?? string.Empty;
+
+        try
+        {
+            var cachedLazy = _searchAccNumCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<string>>>(async () =>
+            {
+                try
+                {
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        const string sql = @"
+                            SELECT DISTINCT AccountNumber
+                            FROM Accounts
+                            WHERE AccountNumber LIKE @Query
+                            ORDER BY AccountNumber LIMIT 50;";
+
+                        var cmd = new CommandDefinition(sql, new { Query = $"%{cacheKey}%" }, cancellationToken: cancelToken);
+                        var results = await c.QueryAsync<string>(cmd);
+                        return results.ToList();
+                    }, ct);
+                }
+                catch
+                {
+                    _searchAccNumCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to search account numbers for query '{Query}'.", cacheKey);
+            throw;
+        }
+    }
+
+    public async Task<List<string>> SearchCardNumbersAsync(string query, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var cacheKey = query?.Trim() ?? string.Empty;
+
+        try
+        {
+            var cachedLazy = _searchCardNumCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<string>>>(async () =>
+            {
+                try
+                {
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        const string sql = @"
+                            SELECT DISTINCT CardNumber
+                            FROM Accounts
+                            WHERE CardNumber LIKE @Query
+                            ORDER BY CardNumber LIMIT 50;";
+
+                        var cmd = new CommandDefinition(sql, new { Query = $"%{cacheKey}%" }, cancellationToken: cancelToken);
+                        var results = await c.QueryAsync<string>(cmd);
+                        return results.ToList();
+                    }, ct);
+                }
+                catch
+                {
+                    _searchCardNumCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to search card numbers for query '{Query}'.", cacheKey);
+            throw;
+        }
+    }
+
+    public async Task<List<string>> GetDistinctCurrenciesAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        const string cacheKey = "ALL_CURRENCIES";
+
+        try
+        {
+            var cachedLazy = _distinctCurrenciesCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<string>>>(async () =>
+            {
+                try
+                {
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        const string sql = "SELECT DISTINCT Currency FROM Accounts WHERE Currency IS NOT NULL AND Currency != '' ORDER BY Currency ASC;";
+                        var cmd = new CommandDefinition(sql, cancellationToken: cancelToken);
+                        var results = await c.QueryAsync<string>(cmd);
+                        return results.ToList();
+                    }, ct);
+                }
+                catch
+                {
+                    _distinctCurrenciesCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve distinct currencies.");
+            throw;
+        }
+    }
+
+    public async Task<List<string>> GetDistinctAccountTypesAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        const string cacheKey = "ALL_ACCOUNT_TYPES";
+
+        try
+        {
+            var cachedLazy = _distinctAccTypesCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<string>>>(async () =>
+            {
+                try
+                {
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        const string sql = "SELECT DISTINCT AccountType FROM Accounts WHERE AccountType IS NOT NULL AND AccountType != '' ORDER BY AccountType ASC;";
+                        var cmd = new CommandDefinition(sql, cancellationToken: cancelToken);
+                        var results = await c.QueryAsync<string>(cmd);
+                        return results.ToList();
+                    }, ct);
+                }
+                catch
+                {
+                    _distinctAccTypesCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve distinct account types.");
+            throw;
+        }
+    }
+
+    public async Task<Account?> GetAccountByNumberAsync(string accountNumber, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(accountNumber)) return null;
+
+        var cacheKey = accountNumber.Trim();
+
+        try
+        {
+            var cachedLazy = _accByNumCache.GetOrAdd(cacheKey, _ => new Lazy<Task<Account?>>(async () =>
+            {
+                try
+                {
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        const string sql = "SELECT * FROM Accounts WHERE AccountNumber = @AccountNumber LIMIT 1;";
+                        var cmd = new CommandDefinition(sql, new { AccountNumber = cacheKey }, cancellationToken: cancelToken);
+                        return await c.QueryFirstOrDefaultAsync<Account>(cmd);
+                    }, ct);
+                }
+                catch
+                {
+                    _accByNumCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch account by number: {AccountNumber}", cacheKey);
+            throw;
+        }
+    }
+
+    public async Task<Account?> GetAccountByCardNumberAsync(string cardNumber, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(cardNumber)) return null;
+
+        var cacheKey = cardNumber.Trim();
+
+        try
+        {
+            var cachedLazy = _accByCardNumCache.GetOrAdd(cacheKey, _ => new Lazy<Task<Account?>>(async () =>
+            {
+                try
+                {
+                    return await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
+                    {
+                        const string sql = "SELECT * FROM Accounts WHERE CardNumber = @CardNumber LIMIT 1;";
+                        var cmd = new CommandDefinition(sql, new { CardNumber = cacheKey }, cancellationToken: cancelToken);
+                        return await c.QueryFirstOrDefaultAsync<Account>(cmd);
+                    }, ct);
+                }
+                catch
+                {
+                    _accByCardNumCache.TryRemove(cacheKey, out var _);
+                    throw;
+                }
+            }, LazyThreadSafetyMode.ExecutionAndPublication));
+
+            return await cachedLazy.Value;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch account by card number: {CardNumber}", cacheKey);
+            throw;
+        }
     }
 
     // ------------------------------------------------------------
@@ -525,6 +760,12 @@ public class AccountService : IAccountService, IDisposable
         _accountIdCache.Clear();
         _entityAccountsCache.Clear();
         _accountListCache.Clear();
+        _searchAccNumCache.Clear();
+        _searchCardNumCache.Clear();
+        _distinctCurrenciesCache.Clear();
+        _distinctAccTypesCache.Clear();
+        _accByNumCache.Clear();
+        _accByCardNumCache.Clear();
         _logger.LogInformation("Evicted AccountService RAM cache due to data mutation.");
     }
 

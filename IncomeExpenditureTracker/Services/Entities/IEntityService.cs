@@ -15,6 +15,7 @@ public interface IEntityService
     Task<List<Entity>> GetAllEntities(CancellationToken ct = default);
     Task UpdateEntity(Entity entity, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
     Task DeleteEntity(int entityId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
+    Task<List<string>> SearchEntityNamesAsync(string query, CancellationToken ct = default);
 
     /// <summary>
     /// Evaluates if the Entity has any linked Accounts to enforce structural hard blocks.

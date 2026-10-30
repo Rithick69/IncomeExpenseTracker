@@ -105,21 +105,21 @@ public class StatementManager : IStatementManager
             try
             {
                 // 1. CHECK FOR DUPLICATES FIRST
-                // bool isDuplicate = await _importBatchService.GetIdByFileName(fileName, ct) > 0;
+                bool isDuplicate = await _importBatchService.GetIdByFileName(fileName, ct) > 0;
 
-                // if (isDuplicate)
-                // {
-                //     var errorMsg = $"An import file named '{fileName}' has already been processed.";
-                //     _logger.LogWarning(errorMsg);
+                if (isDuplicate)
+                {
+                    var errorMsg = $"An import file named '{fileName}' has already been processed.";
+                    _logger.LogWarning(errorMsg);
 
-                //     var error = new FileStagingError(fileId, fileName, ErrorSeverity.Fatal, errorMsg, null);
-                //     failures.Add(error);
+                    var error = new FileStagingError(fileId, fileName, ErrorSeverity.Fatal, errorMsg, null);
+                    failures.Add(error);
 
-                //     // Broadcast both a file-specific error and a general UI toast notification
-                //     _broker.Send(new FileStagingErrorMessage(error));
+                    // Broadcast both a file-specific error and a general UI toast notification
+                    _broker.Send(new FileStagingErrorMessage(error));
 
-                //     return; // Skip loading this duplicate file, let it count as a failure natively
-                // }
+                    return; // Skip loading this duplicate file, let it count as a failure natively
+                }
 
 
                 strategy = _strategyFactory(extension);

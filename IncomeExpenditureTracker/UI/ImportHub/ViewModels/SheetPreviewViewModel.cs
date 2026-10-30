@@ -48,6 +48,17 @@ public partial class SheetPreviewViewModel : ViewModelBase
     // Binds exclusively to the exact physical headers found in the file
     public ObservableCollection<string> AvailableHeaders { get; } = new();
 
+    // PHASE 3: RAW CONTEXT
+    [ObservableProperty] private ObservableCollection<List<string>> _rawHeaderRows = new();
+
+    // PHASE 3: METADATA LABELS (Structural targets for the AI)
+    [ObservableProperty] private string _selectedEntityNameLabel = string.Empty;
+    [ObservableProperty] private string _selectedAccountNumberLabel = string.Empty;
+    [ObservableProperty] private string _selectedAccountTypeLabel = string.Empty;
+    [ObservableProperty] private string _selectedCurrencyLabel = string.Empty;
+    [ObservableProperty] private string _selectedCreditLimitLabel = string.Empty;
+    [ObservableProperty] private string _selectedCardNumberLabel = string.Empty;
+
     // ACCOUNT METADATA
     [ObservableProperty] private string _bankName = string.Empty;
     [ObservableProperty] private string _accountNumber = string.Empty;
@@ -67,6 +78,45 @@ public partial class SheetPreviewViewModel : ViewModelBase
     [ObservableProperty] private bool _isAmountMappingEnabled = true;
     [ObservableProperty] private bool _isSplitMappingEnabled = true;
     public ObservableCollection<TransactionPreviewRow> TransactionRows { get; } = new();
+
+    // Add this near your other ObservableProperties
+    [ObservableProperty] private int _selectedTabIndex = 0;
+
+    // Determines if the Helper Banner should show on the Account Details tab
+    [ObservableProperty] private bool _hasMissingMetadata;
+
+    // Add these properties to SheetPreviewViewModel.cs
+    [ObservableProperty] private bool _isRawPreviewVisible;
+    [RelayCommand]
+    private void ToggleRawPreview()
+    {
+        IsRawPreviewVisible = !IsRawPreviewVisible;
+    }
+
+    // Add these command methods anywhere in the class
+    [RelayCommand]
+    private void NextTab() => SelectedTabIndex = 1;
+
+    [RelayCommand]
+    private void PreviousTab() => SelectedTabIndex = 0;
+
+    // Add these near your other ObservableProperties
+    [ObservableProperty] private bool _suggestAiTraining;
+    [ObservableProperty] private bool _isAiTrainingExpanded;
+
+    // Internal state to remember they acknowledged it for this session
+    private bool _hasUserAcknowledgedAiTraining = false;
+
+    // Reacts instantly when the user clicks the Expander in the UI
+    partial void OnIsAiTrainingExpandedChanged(bool value)
+    {
+        // If they opened it, and the suggestion was active, turn it off forever.
+        if (value && SuggestAiTraining)
+        {
+            SuggestAiTraining = false;
+            _hasUserAcknowledgedAiTraining = true;
+        }
+    }
 
     // =========================================================================
     // REACTIVE DROPDOWN HOOKS (Community Toolkit Source Generators)
@@ -201,6 +251,16 @@ public partial class SheetPreviewViewModel : ViewModelBase
             // 2. Pass the extracted fields dictionary to the child ViewModel to parse
             AccountMapping.LoadFromPreview(_originalPreview.Fields);
 
+            // Populate the Raw Excel View
+            RawHeaderRows.Clear();
+            if (_originalPreview.RawHeaderRows != null)
+            {
+                foreach (var row in _originalPreview.RawHeaderRows)
+                {
+                    RawHeaderRows.Add(row);
+                }
+            }
+
             ConfidenceScore = _originalPreview.ConfidenceScore;
             TargetSheetName = targetSheet ?? _originalPreview.FileName;
             FieldMappings = new Dictionary<string, DetectedField>(_originalPreview.Fields, StringComparer.OrdinalIgnoreCase); ;
@@ -224,9 +284,25 @@ public partial class SheetPreviewViewModel : ViewModelBase
             if (FieldMappings.TryGetValue("Col:AMOUNT", out var amField)) SelectedAmountHeader = amField.ColumnName;
             if (FieldMappings.TryGetValue("Col:TRANSACTIONTYPE", out var typeField)) SelectedTransactionTypeHeader = typeField.ColumnName;
 
+            // Initialize the UI Labels if the AI detected them
+            if (FieldMappings.TryGetValue("Meta:ENTITY_NAME", out var eField)) SelectedEntityNameLabel = eField.ColumnName;
+            if (FieldMappings.TryGetValue("Meta:ACCOUNT_NUMBER", out var aField)) SelectedAccountNumberLabel = aField.ColumnName;
+            if (FieldMappings.TryGetValue("Meta:ACCOUNT_TYPE", out var tField)) SelectedAccountTypeLabel = tField.ColumnName;
+            if (FieldMappings.TryGetValue("Meta:CURRENCY", out var cField)) SelectedCurrencyLabel = cField.ColumnName;
+            if (FieldMappings.TryGetValue("Meta:CREDIT_LIMIT", out var clField)) SelectedCreditLimitLabel = clField.ColumnName;
+            if (FieldMappings.TryGetValue("Meta:CARD_NUMBER", out var cnField)) SelectedCardNumberLabel = cnField.ColumnName;
+
             UpdateTransactionGrid(_originalPreview.PreviewTransactions);
             EvaluateMappingToggles();
             ValidateHeaders();
+
+            // Evaluate if the missing metadata banner should be shown
+            HasMissingMetadata = string.IsNullOrWhiteSpace(SelectedAccountNumberLabel) ||
+                                 string.IsNullOrWhiteSpace(SelectedEntityNameLabel);
+
+            // Only show the AI training highlight if data is missing AND they haven't acknowledged it yet
+            SuggestAiTraining = HasMissingMetadata && !_hasUserAcknowledgedAiTraining;
+
             StatusText = $"Preview loaded. {TransactionRows.Count} transactions found.";
         }
         catch (Exception ex)
@@ -253,7 +329,15 @@ public partial class SheetPreviewViewModel : ViewModelBase
             // Sync user's edits from the child ViewModel back into FieldMappings
             AccountMapping.ApplyToMappings(FieldMappings);
 
-            // 2. Resolve Dropdowns to Integer Coordinates
+            // PHASE 3: Sync manually typed labels into the dictionary for targeted search
+            UpdateMetadataLabel("Meta:ENTITY_NAME", SelectedEntityNameLabel);
+            UpdateMetadataLabel("Meta:ACCOUNT_NUMBER", SelectedAccountNumberLabel);
+            UpdateMetadataLabel("Meta:ACCOUNT_TYPE", SelectedAccountTypeLabel);
+            UpdateMetadataLabel("Meta:CURRENCY", SelectedCurrencyLabel);
+            UpdateMetadataLabel("Meta:CREDIT_LIMIT", SelectedCreditLimitLabel);
+            UpdateMetadataLabel("Meta:CARD_NUMBER", SelectedCardNumberLabel);
+
+            // Resolve Dropdowns to Integer Coordinates
             UpdateMapping("Col:DATE", SelectedDateHeader);
             UpdateMapping("Col:DESCRIPTION", SelectedDescriptionHeader);
             UpdateMapping("Col:DEBIT", SelectedDebitHeader);
@@ -261,7 +345,7 @@ public partial class SheetPreviewViewModel : ViewModelBase
             UpdateMapping("Col:AMOUNT", SelectedAmountHeader);
             UpdateMapping("Col:TRANSACTIONTYPE", SelectedTransactionTypeHeader);
 
-            // 3. Call Backend Re-Extraction
+            // Call Backend Re-Extraction
             var newPreview = await _statementManager.RegeneratePreviewAsync(
                 _currentFileId,
                 TargetSheetName,
@@ -270,11 +354,19 @@ public partial class SheetPreviewViewModel : ViewModelBase
                 AvailableHeaders.ToList()
             );
 
-            // 4. Refresh UI
+            // Refresh UI
             ConfidenceScore = newPreview.ConfidenceScore;
             UpdateTransactionGrid(newPreview.PreviewTransactions);
 
             Broker.Send(new ToastNotificationMessage(ToastType.Success, "Preview regenerated successfully."));
+
+            // Evaluate if the missing metadata banner should be shown
+            HasMissingMetadata = string.IsNullOrWhiteSpace(SelectedAccountNumberLabel) ||
+                                 string.IsNullOrWhiteSpace(SelectedEntityNameLabel);
+
+            // Only show the AI training highlight if data is missing AND they haven't acknowledged it yet
+            SuggestAiTraining = HasMissingMetadata && !_hasUserAcknowledgedAiTraining;
+
             StatusText = "Regeneration complete.";
         }
         catch (Exception ex)
@@ -285,6 +377,21 @@ public partial class SheetPreviewViewModel : ViewModelBase
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    private void UpdateMetadataLabel(string fieldKey, string userTypedLabel)
+    {
+        if (!FieldMappings.TryGetValue(fieldKey, out var field))
+        {
+            field = new DetectedField { SuggestedField = fieldKey.Replace("Meta:", ""), ColumnIndex = -1 };
+            FieldMappings[fieldKey] = field;
+        }
+
+        // Only update if the user actually typed something
+        if (!string.IsNullOrWhiteSpace(userTypedLabel))
+        {
+            field.ColumnName = userTypedLabel.Trim();
         }
     }
 
@@ -409,6 +516,31 @@ public partial class SheetPreviewViewModel : ViewModelBase
 
             // Ask the Edit Session to bundle all deduplicated corrections for us
             var session = _statementManager.GetEditSession(_currentFileId);
+
+            // ================================================================
+            // PUSH MANUAL LABELS TO THE LEARNING ENGINE
+            // Passing -1 tells SynonymService to learn the string itself,
+            // bypassing physical column coordinate tracking.
+            // ================================================================
+            if (!string.IsNullOrWhiteSpace(SelectedEntityNameLabel))
+                session.UpdateColumnMapping("Meta:ENTITY_NAME", SelectedEntityNameLabel, -1, "METADATA");
+
+            if (!string.IsNullOrWhiteSpace(SelectedAccountNumberLabel))
+                session.UpdateColumnMapping("Meta:ACCOUNT_NUMBER", SelectedAccountNumberLabel, -1, "METADATA");
+
+            if (!string.IsNullOrWhiteSpace(SelectedCardNumberLabel))
+                session.UpdateColumnMapping("Meta:CARD_NUMBER", SelectedCardNumberLabel, -1, "METADATA");
+
+            if (!string.IsNullOrWhiteSpace(SelectedAccountTypeLabel))
+                session.UpdateColumnMapping("Meta:ACCOUNT_TYPE", SelectedAccountTypeLabel, -1, "METADATA");
+
+            if (!string.IsNullOrWhiteSpace(SelectedCurrencyLabel))
+                session.UpdateColumnMapping("Meta:CURRENCY", SelectedCurrencyLabel, -1, "METADATA");
+
+            if (!string.IsNullOrWhiteSpace(SelectedCreditLimitLabel))
+                session.UpdateColumnMapping("Meta:CREDIT_LIMIT", SelectedCreditLimitLabel, -1, "METADATA");
+            // ================================================================
+
             var tracker = session.ConfirmAndPrepareForImport();
 
             // Overlay final UI states onto the tracker before sending to backend
@@ -482,10 +614,10 @@ public partial class SheetPreviewViewModel : ViewModelBase
     {
         _currentFileId = Guid.Empty;
         _originalPreview = null;
-        BankName = string.Empty; AccountNumber = string.Empty; AccountType = string.Empty;
-        Currency = string.Empty; CreditLimit = string.Empty; TargetSheetName = string.Empty;
         FieldMappings.Clear();
         TransactionRows.Clear();
+        _hasUserAcknowledgedAiTraining = false;
+        IsAiTrainingExpanded = false;
     }
 }
 
