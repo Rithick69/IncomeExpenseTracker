@@ -87,8 +87,9 @@ namespace IncomeExpenditureTracker.UI.Shell
 
         // 2. Global Progress Bar State
         // Bound to a progress bar at the bottom of the main window for background tasks
+        // Changed to int? (nullable) to allow the UI to hide when set to null
         [ObservableProperty]
-        private int _loadingPercentage;
+        private int? _loadingPercentage;
 
         [ObservableProperty]
         private string _loadingStatus = "Ready";
@@ -395,10 +396,32 @@ namespace IncomeExpenditureTracker.UI.Shell
             });
         }
 
-        private void OnStagingCompleted(StagingBatchCompletedMessage message)
+        // private void OnStagingCompleted(StagingBatchCompletedMessage message)
+        // {
+        //     RunOnUIThread(() =>
+        //     {
+        //         if (message.TotalSuccess > 0)
+        //         {
+        //             var alert = new ToastAlert(
+        //                 $"✅ Successfully staged {message.TotalSuccess} file(s).",
+        //                 NotificationType.Success);
+
+        //             Toasts.Add(alert);
+        //             _ = RemoveToastAfterDelayAsync(alert.Id, TimeSpan.FromSeconds(5));
+        //         }
+
+        //         LoadingStatus = "Staging Complete!";
+        //     });
+        // }
+
+        private async void OnStagingCompleted(StagingBatchCompletedMessage message)
         {
+            // 1. Instantly show the 100% success state
             RunOnUIThread(() =>
             {
+                LoadingPercentage = 100;
+                LoadingStatus = "Staging Complete!";
+
                 if (message.TotalSuccess > 0)
                 {
                     var alert = new ToastAlert(
@@ -408,8 +431,15 @@ namespace IncomeExpenditureTracker.UI.Shell
                     Toasts.Add(alert);
                     _ = RemoveToastAfterDelayAsync(alert.Id, TimeSpan.FromSeconds(5));
                 }
+            });
 
-                LoadingStatus = "Staging Complete!";
+            // 2. Wait 1.5 seconds so the user can read the success text
+            await Task.Delay(1500);
+
+            // 3. Reset the percentage to null to collapse the global UI bar
+            RunOnUIThread(() =>
+            {
+                LoadingPercentage = null;
             });
         }
 
