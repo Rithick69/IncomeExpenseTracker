@@ -299,29 +299,37 @@
     <system:String x:Key="Locale_Module_Preview_AccountValidation_Subtitle">Confirm the destination account for these transactions. Data entered here determines where the imported records will be saved.</system:String>
     <system:String x:Key="Locale_Module_Preview_AiTraining_Title">Advanced: Teach AI for Next Time</system:String>
     <system:String x:Key="Locale_Module_Preview_AiTraining_Recommended">Recommended</system:String>
-    <system:String x:Key="Locale_Module_Preview_AiTraining_Description">If the AI missed your details, type the exact text labels used in your raw Excel statement below. The engine will learn these formats for your next import.</system:String>
-    <system:String x:Key="Locale_Module_Preview_AiTraining_BankLabel">Bank Label (e.g. 'Bank:')</system:String>
-    <system:String x:Key="Locale_Module_Preview_AiTraining_AccountLabel">Account Label (e.g. 'A/C No:')</system:String>
-    <system:String x:Key="Locale_Module_Preview_AiTraining_CardLabel">Card Label (e.g. 'Card:')</system:String>
-    <system:String x:Key="Locale_Module_Preview_AiTraining_TypeLabel">Type Label (e.g. 'Acct Type:')</system:String>
+    <system:String x:Key="Locale_Module_Preview_AiTraining_DescTitle">Optional AI Training: </system:String>
+    <system:String x:Key="Locale_Module_Preview_AiTraining_Description_1">If your raw Excel sheet contains text labels (like 'A/C No:'), type them below so the engine learns them for next time. </system:String>
+    <system:String x:Key="Locale_Module_Preview_AiTraining_Description_2">If your sheet doesn't have these labels, simply leave these fields blank. Missing labels will NOT lower your confidence score.</system:String>
+    <system:String x:Key="Locale_Module_Preview_AiTraining_BankLabel">Insituition Label (e.g. 'Bank:')</system:String>
+    <system:String x:Key="Locale_Module_Preview_AiTraining_AccountLabel">Account No. Label (e.g. 'A/C No:')</system:String>
+    <system:String x:Key="Locale_Module_Preview_AiTraining_CardLabel">Card No. Label (e.g. 'Card No:')</system:String>
+    <system:String x:Key="Locale_Module_Preview_AiTraining_TypeLabel">Type Label (e.g. 'Acct Type:') (Optional)</system:String>
     <system:String x:Key="Locale_Module_Preview_AiTraining_CurrencyLabel">Currency Label (e.g. 'Curr:')</system:String>
 
     <!-- Account Details View: Form Labels & Watermarks -->
-    <system:String x:Key="Locale_Module_Preview_Form_BankName">Institution / Bank Name</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_HelperText_1">These values determine where your transactions are saved and heavily influence your Confidence Score. You must provide at least one identifier (</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_HelperText_2">Account Number</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_HelperText_3"> OR </system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_HelperText_4">Card Number</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_HelperText_5">).</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_BankName">Institution / Bank Name (Optional)</system:String>
     <system:String x:Key="Locale_Module_Preview_Form_BankName_Watermark">e.g. HDFC Bank</system:String>
-    <system:String x:Key="Locale_Module_Preview_Form_AccountNumber">Account Number</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_AccountNumber">Account Number (Required: Account No. OR Card No.)</system:String>
     <system:String x:Key="Locale_Module_Preview_Form_AccountNumber_Watermark">Search by number...</system:String>
-    <system:String x:Key="Locale_Module_Preview_Form_CardNumber">Card Number (If Applicable)</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_CardNumber">Card Number (Required: Account No. OR Card No.)</system:String>
     <system:String x:Key="Locale_Module_Preview_Form_CardNumber_Watermark">Last 4 digits...</system:String>
-    <system:String x:Key="Locale_Module_Preview_Form_CreditLimit">Credit Limit</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_CreditLimit">Credit Limit (Optional)</system:String>
     <system:String x:Key="Locale_Module_Preview_Form_CreditLimit_Watermark">0.00</system:String>
-    <system:String x:Key="Locale_Module_Preview_Form_AccountType">Account Type</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_AccountType">Account Type (Optional)</system:String>
     <system:String x:Key="Locale_Module_Preview_Form_AccountType_Placeholder">Select Type</system:String>
-    <system:String x:Key="Locale_Module_Preview_Form_Currency">Statement Currency</system:String>
+    <system:String x:Key="Locale_Module_Preview_Form_Currency">Statement Currency (Optional)</system:String>
     <system:String x:Key="Locale_Module_Preview_Form_Currency_Placeholder">Select Currency</system:String>
 
     <!-- Sheet Preview View: Headers, Tabs & Buttons -->
     <system:String x:Key="Locale_Module_Preview_Header_ViewRawExcel">View Raw Excel</system:String>
+    <system:String x:Key="Locale_Module_Preview_Header_ScoreToolTip">How is this scored?&#x0a;• Required Values: Bank Name + (Account OR Card No)&#x0a;• Required Columns: Date, Description, and Amounts&#x0a;• Transaction Quality: Clean formatting yields higher scores&#x0a;&#x0a;Note: AI Training Labels do NOT impact this score.</system:String>
     <system:String x:Key="Locale_Module_Preview_Tab_AccountDetails">Account Details</system:String>
     <system:String x:Key="Locale_Module_Preview_Tab_StatementPreview">Statement Preview</system:String>
     <system:String x:Key="Locale_Module_Preview_Footer_Previous">&#x2190; Previous</system:String>

@@ -37,6 +37,12 @@ public partial class AccountMappingViewModel : ViewModelBase
     [ObservableProperty] private string _currency = string.Empty;
     [ObservableProperty] private string _creditLimit = string.Empty;
 
+    // UI ERROR HIGHLIGHT STATES
+    [ObservableProperty] private bool _isEntityNameInvalid;
+    [ObservableProperty] private bool _isAccountNumberInvalid;
+    [ObservableProperty] private bool _isCardNumberInvalid;
+    [ObservableProperty] private bool _isCreditLimitInvalid;
+
     // UI States
     [ObservableProperty] private bool _isCreditLimitVisible;
     [ObservableProperty] private bool _isAccountNumberEnabled = true;
@@ -74,6 +80,30 @@ public partial class AccountMappingViewModel : ViewModelBase
             var userCurrency = await _userSettingsService.GetSettingAsync("BaseCurrency");
             if (!string.IsNullOrWhiteSpace(userCurrency)) AvailableCurrencies.Add(userCurrency);
         }
+    }
+
+    [RelayCommand]
+    private void ClearEntityName() { EntityName = string.Empty; IsEntityNameInvalid = false; }
+
+    [RelayCommand]
+    private void ClearAccountNumber() { AccountNumber = string.Empty; IsAccountNumberInvalid = false; }
+
+    [RelayCommand]
+    private void ClearCardNumber() { CardNumber = string.Empty; IsCardNumberInvalid = false; }
+
+    [RelayCommand]
+    private void ClearCreditLimit() { CreditLimit = string.Empty; IsCreditLimitInvalid = false; }
+
+    [RelayCommand]
+    private void ClearAccountType()
+    {
+        AccountType = string.Empty;
+    }
+
+    [RelayCommand]
+    private void ClearCurrency()
+    {
+        Currency = string.Empty;
     }
 
     // =========================================================================

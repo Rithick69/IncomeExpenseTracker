@@ -39,8 +39,10 @@ public partial class SheetPreviewViewModel : ViewModelBase
     [ObservableProperty] private string _statusText = "Ready";
     [ObservableProperty] private string _headerValidationError = string.Empty;
 
-    // True if Score >= 80 AND all typed headers are perfectly valid
-    public bool CanConfirmImport => ConfidenceScore >= 80 && string.IsNullOrEmpty(HeaderValidationError);
+    // True if Score >= 80 AND all typed headers are perfectly valid AND an Account or Card number exists
+    public bool CanConfirmImport => ConfidenceScore >= 80
+        && string.IsNullOrEmpty(HeaderValidationError)
+        && (!string.IsNullOrWhiteSpace(AccountMapping.AccountNumber) || !string.IsNullOrWhiteSpace(AccountMapping.CardNumber));
 
     // Contains real headers AND injected placeholders like "[Column 3 - Blank]"
     public Dictionary<string, DetectedField> FieldMappings { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -54,9 +56,6 @@ public partial class SheetPreviewViewModel : ViewModelBase
     // PHASE 3: METADATA LABELS (Structural targets for the AI)
     [ObservableProperty] private string _selectedEntityNameLabel = string.Empty;
     [ObservableProperty] private string _selectedAccountNumberLabel = string.Empty;
-    [ObservableProperty] private string _selectedAccountTypeLabel = string.Empty;
-    [ObservableProperty] private string _selectedCurrencyLabel = string.Empty;
-    [ObservableProperty] private string _selectedCreditLimitLabel = string.Empty;
     [ObservableProperty] private string _selectedCardNumberLabel = string.Empty;
 
     // ACCOUNT METADATA
@@ -73,6 +72,11 @@ public partial class SheetPreviewViewModel : ViewModelBase
     [ObservableProperty] private string _selectedCreditHeader = string.Empty;
     [ObservableProperty] private string _selectedAmountHeader = string.Empty;
     [ObservableProperty] private string _selectedTransactionTypeHeader = string.Empty;
+
+    // UI ERROR HIGHLIGHT STATES
+    [ObservableProperty] private bool _isEntityNameLabelInvalid;
+    [ObservableProperty] private bool _isAccountNumberLabelInvalid;
+    [ObservableProperty] private bool _isCardNumberLabelInvalid;
 
     // EXCLUSIVE UI TOGGLES (Debit/Credit OR Amount/TxType)
     [ObservableProperty] private bool _isAmountMappingEnabled = true;
@@ -159,6 +163,41 @@ public partial class SheetPreviewViewModel : ViewModelBase
     {
         SelectedTransactionTypeHeader = string.Empty;
     }
+    [RelayCommand]
+    private void ClearSelectedEntityNameLabel()
+    {
+        SelectedEntityNameLabel = string.Empty;
+        IsEntityNameLabelInvalid = false; // Removes the red border
+    }
+
+    [RelayCommand]
+    private void ClearSelectedAccountNumberLabel()
+    {
+        SelectedAccountNumberLabel = string.Empty;
+        IsAccountNumberLabelInvalid = false;
+    }
+
+    [RelayCommand]
+    private void ClearSelectedCardNumberLabel()
+    {
+        SelectedCardNumberLabel = string.Empty;
+        IsCardNumberLabelInvalid = false;
+    }
+
+    // TRANSACTION HEADER ERROR STATES
+    [ObservableProperty] private bool _isDateHeaderInvalid;
+    [ObservableProperty] private bool _isDescriptionHeaderInvalid;
+    [ObservableProperty] private bool _isDebitHeaderInvalid;
+    [ObservableProperty] private bool _isCreditHeaderInvalid;
+    [ObservableProperty] private bool _isAmountHeaderInvalid;
+    [ObservableProperty] private bool _isTransactionTypeHeaderInvalid;
+
+    // AI LABEL XOR LOGIC
+    public bool IsAiAccountNumberLabelEnabled => string.IsNullOrWhiteSpace(SelectedCardNumberLabel);
+    public bool IsAiCardNumberLabelEnabled => string.IsNullOrWhiteSpace(SelectedAccountNumberLabel);
+
+    partial void OnSelectedAccountNumberLabelChanged(string value) => OnPropertyChanged(nameof(IsAiCardNumberLabelEnabled));
+    partial void OnSelectedCardNumberLabelChanged(string value) => OnPropertyChanged(nameof(IsAiAccountNumberLabelEnabled));
 
 
     // =========================================================================
@@ -169,6 +208,16 @@ public partial class SheetPreviewViewModel : ViewModelBase
     {
         _statementManager = statementManager ?? throw new ArgumentNullException(nameof(statementManager));
         AccountMapping = accountMapping ?? throw new ArgumentNullException(nameof(accountMapping));
+
+        // Listen to the child ViewModel to re-evaluate the Confirm button dynamically
+        AccountMapping.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(AccountMapping.AccountNumber) ||
+                e.PropertyName == nameof(AccountMapping.CardNumber))
+            {
+                OnPropertyChanged(nameof(CanConfirmImport));
+            }
+        };
     }
 
     // =========================================================================
@@ -287,9 +336,6 @@ public partial class SheetPreviewViewModel : ViewModelBase
             // Initialize the UI Labels if the AI detected them
             if (FieldMappings.TryGetValue("Meta:ENTITY_NAME", out var eField)) SelectedEntityNameLabel = eField.ColumnName;
             if (FieldMappings.TryGetValue("Meta:ACCOUNT_NUMBER", out var aField)) SelectedAccountNumberLabel = aField.ColumnName;
-            if (FieldMappings.TryGetValue("Meta:ACCOUNT_TYPE", out var tField)) SelectedAccountTypeLabel = tField.ColumnName;
-            if (FieldMappings.TryGetValue("Meta:CURRENCY", out var cField)) SelectedCurrencyLabel = cField.ColumnName;
-            if (FieldMappings.TryGetValue("Meta:CREDIT_LIMIT", out var clField)) SelectedCreditLimitLabel = clField.ColumnName;
             if (FieldMappings.TryGetValue("Meta:CARD_NUMBER", out var cnField)) SelectedCardNumberLabel = cnField.ColumnName;
 
             UpdateTransactionGrid(_originalPreview.PreviewTransactions);
@@ -321,7 +367,12 @@ public partial class SheetPreviewViewModel : ViewModelBase
     {
         if (IsBusy || _currentFileId == Guid.Empty || _originalPreview == null) return;
 
+        // GUARD: Check labels before hitting the backend Edit Service
+        if (!ValidateAiTrainingLabels()) return;
+        if (!ValidateFormInputs()) return;
+
         IsBusy = true;
+
         StatusText = "Regenerating preview...";
 
         try
@@ -332,9 +383,6 @@ public partial class SheetPreviewViewModel : ViewModelBase
             // PHASE 3: Sync manually typed labels into the dictionary for targeted search
             UpdateMetadataLabel("Meta:ENTITY_NAME", SelectedEntityNameLabel);
             UpdateMetadataLabel("Meta:ACCOUNT_NUMBER", SelectedAccountNumberLabel);
-            UpdateMetadataLabel("Meta:ACCOUNT_TYPE", SelectedAccountTypeLabel);
-            UpdateMetadataLabel("Meta:CURRENCY", SelectedCurrencyLabel);
-            UpdateMetadataLabel("Meta:CREDIT_LIMIT", SelectedCreditLimitLabel);
             UpdateMetadataLabel("Meta:CARD_NUMBER", SelectedCardNumberLabel);
 
             // Resolve Dropdowns to Integer Coordinates
@@ -499,6 +547,11 @@ public partial class SheetPreviewViewModel : ViewModelBase
             return;
         }
 
+        // GUARD: Check labels before hitting the backend Edit Service
+        if (!ValidateAiTrainingLabels()) return;
+
+        if (!ValidateFormInputs()) return;
+
         IsBusy = true;
         StatusText = "Committing to database...";
 
@@ -531,14 +584,6 @@ public partial class SheetPreviewViewModel : ViewModelBase
             if (!string.IsNullOrWhiteSpace(SelectedCardNumberLabel))
                 session.UpdateColumnMapping("Meta:CARD_NUMBER", SelectedCardNumberLabel, -1, "METADATA");
 
-            if (!string.IsNullOrWhiteSpace(SelectedAccountTypeLabel))
-                session.UpdateColumnMapping("Meta:ACCOUNT_TYPE", SelectedAccountTypeLabel, -1, "METADATA");
-
-            if (!string.IsNullOrWhiteSpace(SelectedCurrencyLabel))
-                session.UpdateColumnMapping("Meta:CURRENCY", SelectedCurrencyLabel, -1, "METADATA");
-
-            if (!string.IsNullOrWhiteSpace(SelectedCreditLimitLabel))
-                session.UpdateColumnMapping("Meta:CREDIT_LIMIT", SelectedCreditLimitLabel, -1, "METADATA");
             // ================================================================
 
             var tracker = session.ConfirmAndPrepareForImport();
@@ -568,6 +613,138 @@ public partial class SheetPreviewViewModel : ViewModelBase
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Validates both the structural transaction headers and the primary account values.
+    /// </summary>
+    private bool ValidateFormInputs()
+    {
+        bool allValid = true;
+
+        // 1. Reset Transaction Header Errors
+        IsDateHeaderInvalid = false;
+        IsDescriptionHeaderInvalid = false;
+        IsDebitHeaderInvalid = false;
+        IsCreditHeaderInvalid = false;
+        IsAmountHeaderInvalid = false;
+        IsTransactionTypeHeaderInvalid = false;
+
+        // Validate Transaction Headers (Must exist in AvailableHeaders)
+        var headersToCheck = new List<(string Name, string Value, Action SetError)>
+            {
+                ("Date Column", SelectedDateHeader, () => IsDateHeaderInvalid = true),
+                ("Description Column", SelectedDescriptionHeader, () => IsDescriptionHeaderInvalid = true),
+                ("Debit Column", SelectedDebitHeader, () => IsDebitHeaderInvalid = true),
+                ("Credit Column", SelectedCreditHeader, () => IsCreditHeaderInvalid = true),
+                ("Amount Column", SelectedAmountHeader, () => IsAmountHeaderInvalid = true),
+                ("Transaction Type Column", SelectedTransactionTypeHeader, () => IsTransactionTypeHeaderInvalid = true)
+            };
+
+        foreach (var header in headersToCheck)
+        {
+            if (!string.IsNullOrWhiteSpace(header.Value) &&
+                !AvailableHeaders.Any(h => string.Equals(h?.Trim(), header.Value.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                header.SetError();
+                allValid = false;
+                HeaderValidationError = $"Error: Column '{header.Value}' does not exist in the sheet.";
+            }
+        }
+
+        if (allValid) HeaderValidationError = string.Empty;
+
+        // 2. Validate Primary Account Values (Ensure they are found in the raw context)
+        AccountMapping.IsEntityNameInvalid = false;
+        AccountMapping.IsAccountNumberInvalid = false;
+        AccountMapping.IsCardNumberInvalid = false;
+
+        var valuesToCheck = new List<(string Name, string Value, Action SetError)>
+            {
+                ("Bank Name", AccountMapping.EntityName, () => AccountMapping.IsEntityNameInvalid = true),
+                ("Account Number", AccountMapping.AccountNumber, () => AccountMapping.IsAccountNumberInvalid = true),
+                ("Card Number", AccountMapping.CardNumber, () => AccountMapping.IsCardNumberInvalid = true)
+            };
+
+        foreach (var item in valuesToCheck)
+        {
+            if (!string.IsNullOrWhiteSpace(item.Value))
+            {
+                bool foundInRawGrid = false;
+                foreach (var row in RawHeaderRows)
+                {
+                    if (row != null && row.Any(cell =>
+                        !string.IsNullOrWhiteSpace(cell) &&
+                        cell.Contains(item.Value.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    {
+                        foundInRawGrid = true;
+                        break;
+                    }
+                }
+
+                if (!foundInRawGrid)
+                {
+                    item.SetError();
+                    allValid = false;
+                    Broker.Send(new ToastNotificationMessage(
+                        $"Validation Error: The value '{item.Value}' was not found in the raw sheet.",
+                        NotificationType.Error));
+                }
+            }
+        }
+
+        return allValid;
+    }
+
+    private bool ValidateAiTrainingLabels()
+    {
+        // 1. Reset all error states before validating
+        IsEntityNameLabelInvalid = false;
+        IsAccountNumberLabelInvalid = false;
+        IsCardNumberLabelInvalid = false;
+
+        bool allValid = true;
+
+        // Map labels to their respective error toggles
+        var labelsToCheck = new List<(string Name, string Value, Action SetError)>
+    {
+        ("Bank Label", SelectedEntityNameLabel, () => IsEntityNameLabelInvalid = true),
+        ("Account Label", SelectedAccountNumberLabel, () => IsAccountNumberLabelInvalid = true),
+        ("Card Label", SelectedCardNumberLabel, () => IsCardNumberLabelInvalid = true)
+    };
+
+        foreach (var item in labelsToCheck)
+        {
+            if (!string.IsNullOrWhiteSpace(item.Value))
+            {
+                bool foundInRawGrid = false;
+
+                foreach (var row in RawHeaderRows)
+                {
+                    if (row != null && row.Any(cell =>
+                        !string.IsNullOrWhiteSpace(cell) &&
+                        cell.Contains(item.Value.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    {
+                        foundInRawGrid = true;
+                        break;
+                    }
+                }
+
+                if (!foundInRawGrid)
+                {
+                    // 3. Trigger the red UI highlight for this specific field
+                    item.SetError();
+                    allValid = false;
+
+                    Broker.Send(new ToastNotificationMessage(
+                        $"Validation Error: '{item.Name}' was not found. It must match part of the text in the Raw Excel Context.",
+                        NotificationType.Error
+                    ));
+                }
+            }
+        }
+
+        return allValid;
     }
 
     // Safe routing back to the Queue WITHOUT deleting the file from memory

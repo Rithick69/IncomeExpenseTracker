@@ -147,7 +147,7 @@ public partial class RegisterViewModel : ViewModelBase
             string masterKey = GenerateMasterKey();
 
             // 4. Hash it securely for storage
-            using var secureMasterKey = new SecureString();
+            var secureMasterKey = new SecureString();
             foreach (char c in masterKey) secureMasterKey.AppendChar(c);
             secureMasterKey.MakeReadOnly();
 

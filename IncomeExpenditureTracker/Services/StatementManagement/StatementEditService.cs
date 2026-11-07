@@ -93,7 +93,8 @@ namespace IncomeExpenditureTracker.Services.StatementManagement
             // DEFENSIVE GUARD FOR 0-BASED INDEXING:
             // 0 is now a valid column (Column A). Only negative numbers are invalid.
             // (Note: If your UI explicitly passes -1 to mean "Unmap this column", change this check to: newColumnIndex < -1)
-            if (newColumnIndex < 0)
+            // Allow -1 ONLY for metadata AI training; otherwise enforce strict positive coordinates
+            if (newColumnIndex < 0 && category != "METADATA")
             {
                 _logger.LogError("Column mapping rejected for target field '{TargetField}': invalid column index {ColumnIndex}. Raw header: '{RawHeaderName}', category: '{Category}'.",
                     targetField,

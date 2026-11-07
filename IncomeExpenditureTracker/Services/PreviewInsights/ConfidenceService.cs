@@ -35,41 +35,58 @@ public sealed class ConfidenceService : IConfidenceService
         Dictionary<string, DetectedField> unifiedFields,
         List<TransactionPreview> previewTransactions)
     {
-
         double totalScore = 0;
 
-        // 2. Dynamically evaluate Account & Core Column rules via loops
-        foreach (var rule in AccountRules)
-            totalScore += EvaluateField(unifiedFields, rule.TargetKeys, rule.MaxWeight);
+        // =========================================================
+        // 1. MANDATORY ACCOUNT DETAILS (Max 30 points)
+        // =========================================================
+        // XOR LOGIC: We only need ONE identifier (Account OR Card).
+        // We evaluate both and only grant points for the highest one. No penalties for the missing one.
+        double accNoScore = EvaluateField(unifiedFields, new[] { "Meta:ACCOUNT_NUMBER", "AccountNumber" }, 30);
+        double cardNoScore = EvaluateField(unifiedFields, new[] { "Meta:CARD_NUMBER", "CardNumber" }, 30);
+        totalScore += Math.Max(accNoScore, cardNoScore);
 
-        foreach (var rule in CoreColumnRules)
-            totalScore += EvaluateField(unifiedFields, rule.TargetKeys, rule.MaxWeight);
+        // =========================================================
+        // 2. OPTIONAL ACCOUNT DETAILS (Bonus Points)
+        // =========================================================
+        // These do not deduct from the score if missing, but they act as a safety net.
+        totalScore += EvaluateField(unifiedFields, new[] { "Meta:ENTITY_NAME", "EntityName" }, 5);
+        totalScore += EvaluateField(unifiedFields, new[] { "Meta:ACCOUNT_TYPE", "AccountType" }, 3);
+        totalScore += EvaluateField(unifiedFields, new[] { "Meta:CURRENCY", "Currency" }, 2);
 
-        // 3. Handle Amount layout branching (Single vs. Dual Column Mode)
+        // =========================================================
+        // 3. CORE TRANSACTION COLUMNS (Max 30 points)
+        // =========================================================
+        totalScore += EvaluateField(unifiedFields, new[] { "Col:DATE", "Date" }, 15);
+        totalScore += EvaluateField(unifiedFields, new[] { "Col:DESCRIPTION", "Description" }, 15);
+
+        // =========================================================
+        // 4. AMOUNT COLUMNS (Max 15 points)
+        // =========================================================
         double singleAmountScore = EvaluateField(unifiedFields, new[] { "Col:AMOUNT", "Amount" }, 10);
         if (singleAmountScore > 0)
         {
             totalScore += singleAmountScore;
-
-            // NEW: Add a confidence boost if the single amount column is accompanied by a Transaction Type indicator (Dr/Cr)
             totalScore += EvaluateField(unifiedFields, new[] { "Col:TRANSACTIONTYPE", "TransactionType" }, 5);
         }
         else
         {
-            totalScore += EvaluateField(unifiedFields, new[] { "Col:DEBIT", "Debit" }, 5);
-            totalScore += EvaluateField(unifiedFields, new[] { "Col:CREDIT", "Credit" }, 5);
+            // Split evenly so a standard Dr/Cr layout yields the full 15 points
+            totalScore += EvaluateField(unifiedFields, new[] { "Col:DEBIT", "Debit" }, 7.5);
+            totalScore += EvaluateField(unifiedFields, new[] { "Col:CREDIT", "Credit" }, 7.5);
         }
 
-        // ------------------------------------------------------------
-        // SAMPLE TRANSACTION VALIDATION (20)
-        // ------------------------------------------------------------
+        // =========================================================
+        // 5. TRANSACTION SAMPLE VALIDATION (Max 35 points)
+        // =========================================================
+        totalScore += CalculateColumnConsistency(previewTransactions); // Grants up to 20
+        totalScore += CalculateTransactionDensity(previewTransactions);  // Grants up to 15
 
-        // A higher consistency of valid transactions in the preview sample increases confidence
-        totalScore += CalculateColumnConsistency(previewTransactions);
-
-        // A higher density of valid transactions in the preview sample increases confidence
-        totalScore += CalculateTransactionDensity(previewTransactions);
-
+        // =========================================================
+        // FINAL CALCULATION
+        // =========================================================
+        // A perfectly mapped statement hits 110 total base points.
+        // We cap it cleanly at 100. This ensures missing optional labels never drop a good sheet below 100%.
         return Math.Min((int)Math.Round(totalScore), 100);
     }
 
@@ -92,6 +109,23 @@ public sealed class ConfidenceService : IConfidenceService
         {
             if (dictionary.TryGetValue(key, out var field) && field != null)
             {
+                // RULE 1: Account Detail Value Fields (Meta)
+                // If this is an Account field, score it purely on whether the actual VALUE is populated.
+                // This prevents AI Training labels (which have no value) from falsely altering the score.
+                if (key.StartsWith("Meta:", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.IsNullOrWhiteSpace(field.ExtractedValue))
+                    {
+                        return maxWeight; // The value is populated (either by user or AI) -> 100% confidence
+                    }
+                    else
+                    {
+                        return 0; // No value, no points. The label itself doesn't grant confidence.
+                    }
+                }
+
+                // RULE 2: Transaction Columns (Col)
+                // For core structural columns, rely on the standard ConfidenceScore multiplier.
                 // Normalize confidence to a 0.0 - 1.0 multiplier.
                 // Automatically handles both 0-100 percentage scales (e.g., 85.0 -> 0.85)
                 // and 0.0-1.0 ratio scales (e.g., 0.85 -> 0.85).

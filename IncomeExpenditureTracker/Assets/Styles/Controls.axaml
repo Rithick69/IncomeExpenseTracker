@@ -131,4 +131,10 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="TextBlock.Foreground" Value="{DynamicResource TextPrimary}"/>
     </Style>
+
+    <!-- UI COMPONENT: ERROR HIGHLIGHTS -->
+    <Style Selector="TextBox.Error, ComboBox.Error">
+        <Setter Property="BorderBrush" Value="Red" />
+        <Setter Property="BorderThickness" Value="2" />
+    </Style>
 </Styles>

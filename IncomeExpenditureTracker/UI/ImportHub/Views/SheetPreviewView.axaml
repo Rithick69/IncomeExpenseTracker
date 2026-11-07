@@ -25,13 +25,24 @@
             <!-- ========================================== -->
             <Border Grid.Row="0" Classes="Card" Padding="15,10" Margin="0,0,0,10">
                 <Grid ColumnDefinitions="*, Auto">
-                    <StackPanel Grid.Column="0" Orientation="Vertical" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="0" Orientation="Vertical" VerticalAlignment="Center" Spacing="4">
+
                         <TextBlock Text="{Binding CurrentFileName}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" />
-                        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,2,0,0">
-                            <TextBlock Text="{Binding ConfidenceScoreText}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AccentIndigo}"/>
-                            <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
+
+                        <!-- LINE 2: Confidence Score & ToolTip Icon -->
+                        <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent" Cursor="Help" HorizontalAlignment="Left"
+                                    ToolTip.Tip="{DynamicResource Locale_Module_Preview_Header_ScoreToolTip}">
+
+                            <TextBlock Text="{Binding ConfidenceScoreText}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AccentIndigo}" VerticalAlignment="Center"/>
+                            <TextBlock Text="ⓘ" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Opacity="0.8" VerticalAlignment="Center" Margin="0,-1,0,0"/>
                         </StackPanel>
-                        <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_ScoreRule}" Foreground="Red" FontSize="11" FontWeight="Bold" Margin="0,2,0,0" IsVisible="{Binding !CanConfirmImport}" />
+
+                        <!-- LINE 3: Status Text -->
+                        <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{DynamicResource TextSecondary}" />
+
+                        <!-- LINE 4: Error Rule (Only visible if CanConfirmImport is false) -->
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_Header_ScoreRule}" Foreground="Red" FontSize="11" FontWeight="Bold" IsVisible="{Binding !CanConfirmImport}" />
+
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -70,7 +81,7 @@
 
                                     <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Date}" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,2,0,-6"/>
                                     <Grid>
-                                        <ComboBox x:Name="DateHeaderComboBox" IsEditable="True" Text="{Binding SelectedDateHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
+                                        <ComboBox x:Name="DateHeaderComboBox" Classes.Error="{Binding IsDateHeaderInvalid}" IsEditable="True" Text="{Binding SelectedDateHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
                                         <Border Width="1" HorizontalAlignment="Right" Margin="0,4,28,4" Background="{DynamicResource ComboBoxBorderBrush}" IsHitTestVisible="False" />
                                         <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,30,1" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding SelectedDateHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding ClearSelectedDateHeaderCommand}">
                                             <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" HorizontalAlignment="Center" />
@@ -79,7 +90,7 @@
 
                                     <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Description}" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,2,0,-6"/>
                                     <Grid>
-                                        <ComboBox x:Name="DescHeaderComboBox" IsEditable="True" Text="{Binding SelectedDescriptionHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
+                                        <ComboBox x:Name="DescHeaderComboBox" Classes.Error="{Binding IsDescriptionHeaderInvalid}" IsEditable="True" Text="{Binding SelectedDescriptionHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
                                         <Border Width="1" HorizontalAlignment="Right" Margin="0,4,28,4" Background="{DynamicResource ComboBoxBorderBrush}" IsHitTestVisible="False" />
                                         <Button Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,30,1" Padding="0" Background="Transparent" BorderThickness="0" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding SelectedDescriptionHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding ClearSelectedDescHeaderCommand}">
                                             <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" HorizontalAlignment="Center" />
@@ -94,7 +105,7 @@
                                     <StackPanel Spacing="10" IsVisible="{Binding IsSplitMappingEnabled}">
                                         <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Debit}" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,2,0,-6"/>
                                         <Grid>
-                                            <ComboBox x:Name="DebitHeaderComboBox" IsEditable="True" Text="{Binding SelectedDebitHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
+                                            <ComboBox x:Name="DebitHeaderComboBox" Classes.Error="{Binding IsDebitHeaderInvalid}" IsEditable="True" Text="{Binding SelectedDebitHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
                                             <Border Width="1" HorizontalAlignment="Right" Margin="0,4,28,4" Background="{DynamicResource ComboBoxBorderBrush}" IsHitTestVisible="False" />
                                             <Button Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,30,1" Padding="0" Background="Transparent" BorderThickness="0" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding SelectedDebitHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding ClearSelectedDebitHeaderCommand}">
                                                 <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" HorizontalAlignment="Center" />
@@ -103,7 +114,7 @@
 
                                         <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Credit}" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,2,0,-6"/>
                                         <Grid>
-                                            <ComboBox x:Name="CreditHeaderComboBox" IsEditable="True" Text="{Binding SelectedCreditHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
+                                            <ComboBox x:Name="CreditHeaderComboBox" Classes.Error="{Binding IsCreditHeaderInvalid}" IsEditable="True" Text="{Binding SelectedCreditHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
                                             <Border Width="1" HorizontalAlignment="Right" Margin="0,4,28,4" Background="{DynamicResource ComboBoxBorderBrush}" IsHitTestVisible="False" />
                                             <Button Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,30,1" Padding="0" Background="Transparent" BorderThickness="0" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding SelectedCreditHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding ClearSelectedCreditHeaderCommand}">
                                                 <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" HorizontalAlignment="Center" />
@@ -115,7 +126,7 @@
                                     <StackPanel Spacing="10" IsVisible="{Binding IsAmountMappingEnabled}">
                                         <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_Amount}" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,2,0,-6"/>
                                         <Grid>
-                                            <ComboBox x:Name="AmountHeaderComboBox" IsEditable="True" Text="{Binding SelectedAmountHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
+                                            <ComboBox x:Name="AmountHeaderComboBox" Classes.Error="{Binding IsAmountHeaderInvalid}" IsEditable="True" Text="{Binding SelectedAmountHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
                                             <Border Width="1" HorizontalAlignment="Right" Margin="0,4,28,4" Background="{DynamicResource ComboBoxBorderBrush}" IsHitTestVisible="False" />
                                             <Button Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,30,1" Padding="0" Background="Transparent" BorderThickness="0" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding SelectedAmountHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding ClearSelectedAmountHeaderCommand}">
                                                 <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" HorizontalAlignment="Center" />
@@ -124,7 +135,7 @@
 
                                         <TextBlock Text="{DynamicResource Locale_Module_Preview_Mapping_TransactionType}" Foreground="{DynamicResource TextSecondary}" FontSize="11" Margin="0,2,0,-6"/>
                                         <Grid>
-                                            <ComboBox x:Name="TransactionTypeHeaderComboBox" IsEditable="True" Text="{Binding SelectedTransactionTypeHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
+                                            <ComboBox x:Name="TransactionTypeHeaderComboBox" Classes.Error="{Binding IsTransactionTypeHeaderInvalid}" IsEditable="True" Text="{Binding SelectedTransactionTypeHeader, Mode=TwoWay}" ItemsSource="{Binding AvailableHeaders}" HorizontalAlignment="Stretch" Padding="8,4,30,4" />
                                             <Border Width="1" HorizontalAlignment="Right" Margin="0,4,28,4" Background="{DynamicResource ComboBoxBorderBrush}" IsHitTestVisible="False" />
                                             <Button Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,30,1" Padding="0" Background="Transparent" BorderThickness="0" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding SelectedTransactionTypeHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding ClearSelectedTransactionTypeHeaderCommand}">
                                                 <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" HorizontalAlignment="Center" />

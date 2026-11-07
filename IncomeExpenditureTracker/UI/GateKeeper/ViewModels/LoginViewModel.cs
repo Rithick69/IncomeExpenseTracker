@@ -346,27 +346,11 @@ public partial class LoginViewModel : ViewModelBase
 
         try
         {
-            // 2. RELEASE OS FILE LOCKS
-            // This forces SQLite to immediately let go of system.db and any cached profile .db files.
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            // 2. DELEGATE TO SERVICE
+            // The mock service in xUnit will do nothing here, protecting real files.
+            await _loginService.FactoryResetAsync();
 
-            // 3. TARGET THE LOCAL APP DATA FOLDER
-            var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var appFolder = Path.Combine(appDataFolder, "IncomeExpenditureTracker");
-
-            if (Directory.Exists(appFolder))
-            {
-                // Delete every single SQLite file in the directory
-                var dbFiles = Directory.GetFiles(appFolder, "*.db");
-                var walFiles = Directory.GetFiles(appFolder, "*.db-wal");
-                var shmFiles = Directory.GetFiles(appFolder, "*.db-shm");
-
-                foreach (var file in dbFiles) File.Delete(file);
-                foreach (var file in walFiles) File.Delete(file); // Clean up Write-Ahead Logs
-                foreach (var file in shmFiles) File.Delete(file); // Clean up Shared Memory files
-            }
-
-            // 4. RESET UI STATE
+            // 3. RESET UI STATE
             RunOnUIThread(() =>
             {
                 Profiles.Clear();
