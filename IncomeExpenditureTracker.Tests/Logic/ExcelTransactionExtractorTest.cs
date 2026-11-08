@@ -121,6 +121,25 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
             Assert.True(tx.ReviewStatus.HasFlag(ReviewFlags.InvalidDescription));
         }
 
+        [Fact]
+        public void ExtractTransactions_EmptyDescription_ReplacesWithUnnamedFallback()
+        {
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Sheet1");
+            worksheet.Cell(2, 1).Value = new DateTime(2026, 7, 19);
+            worksheet.Cell(2, 2).Value = "   "; // Pure whitespace
+            worksheet.Cell(2, 3).Value = "15.00";
+
+            _parserMock.Setup(p => p.Parse(It.IsAny<string>())).Returns(AccountParseResult.Success(15m, "15.00"));
+
+            var results = _extractor.ExtractTransactions(worksheet, 0, CreateSingleColumnMappings());
+
+            Assert.Single(results);
+            var tx = results.First();
+            Assert.Equal("[UNNAMED TRANSACTION]", tx.Description);
+            Assert.True(tx.ReviewStatus.HasFlag(ReviewFlags.InvalidDescription));
+        }
+
         // =========================================================================
         // DATE PARSING & EDGE CASES
         // =========================================================================
@@ -211,6 +230,41 @@ namespace IncomeExpenditureTracker.Tests.Tests.Logic
             Assert.Equal(0m, tx.Debit);  // Dumped to zero
             Assert.Equal(0m, tx.Credit); // Dumped to zero
             Assert.True(tx.ReviewStatus.HasFlag(ReviewFlags.InvalidAmount));
+        }
+
+        // =========================================================================
+        // ASYMMETRIC PARSING (TRANSACTION TYPE STRINGS)
+        // =========================================================================
+
+        [Fact]
+        public void ExtractTransactions_WithTransactionTypeString_ForcesMathAndDiscardsString()
+        {
+            // Arrange
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Sheet1");
+            worksheet.Cell(2, 1).Value = new DateTime(2026, 7, 19);
+            worksheet.Cell(2, 2).Value = "BANK CHARGE";
+            worksheet.Cell(2, 3).Value = "50.00"; // Extracted as a positive 50
+            worksheet.Cell(2, 4).Value = "DR";    // Forces the positive 50 into a Debit
+
+            var mappings = new Dictionary<string, DetectedField>
+            {
+                { "Col:Date", new DetectedField { ColumnIndex = 0 } },
+                { "Col:Description", new DetectedField { ColumnIndex = 1 } },
+                { "Col:Amount", new DetectedField { ColumnIndex = 2 } },
+                { "Col:TransactionType", new DetectedField { ColumnIndex = 3 } }
+            };
+
+            _parserMock.Setup(p => p.Parse(It.IsAny<string>())).Returns(AccountParseResult.Success(50m, "50.00"));
+
+            // Act
+            var results = _extractor.ExtractTransactions(worksheet, 0, mappings);
+
+            // Assert
+            Assert.Single(results);
+            var tx = results.First();
+            Assert.Equal(50m, tx.Debit); // DR correctly routed it to Debit
+            Assert.Equal(0m, tx.Credit);
         }
 
         // =========================================================================

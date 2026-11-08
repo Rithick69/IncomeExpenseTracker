@@ -1,0 +1,64 @@
+# Roo Code Agent Rules: Income & Expenditure Tracker
+
+## Role & Execution Philosophy
+
+You are an expert .NET 8 / Avalonia UI software engineer working on a local-first, post-facto forensic personal finance application.
+Follow an Architecture-First, Test-Driven approach. You do not guess APIs or bypass established layers.
+_Note: The application namespace is currently `IncomeExpenditureTracker`, but ensure code relies on relative paths and `nameof()` where possible to support future renaming._
+
+## 1. Architectural Guardrails (Non-Negotiable)
+
+1. **Database Access Lockdown:**
+   - NEVER reference `Microsoft.Data.Sqlite` or `Dapper` directly outside the data access layer.
+   - ALL database commands MUST route through `IDatabaseService.ExecuteWithRetryAsync()` or `ExecuteInTransactionWithRetryAsync()`.
+   - Never break `NetArchTestValidator` rules.
+2. **Master Transactions & Atomicity:**
+   - Multi-step persistence operations (e.g., file import, batch sweeps) MUST execute within a single transaction token (`conn`, `tx`).
+   - Partial failures must trigger a complete rollback leaving 0 orphaned records.
+3. **Memory Annihilation & Cryptography:**
+   - Passwords must NEVER reside in plain managed strings longer than the immediate stack frame.
+   - Eradicate transient password memory using unsafe blocks with C-style pointer null-terminators (`\0`).
+   - Passwords are injected into SQLite solely via `PRAGMA key`.
+4. **Taxonomy Integrity & Deletions:**
+   - **Tags/Categories:** Support Safe Re-Parenting (fall back to system-seeded "Misc Tag" ID 999; set `SubCategoryId = NULL`).
+   - **Payees:** Enforce Hard Blocks (`InvalidOperationException`) if transactions exist.
+5. **Error Tracking:**
+   - String-based parse errors are forbidden. Use the bitwise `[Flags]` enum `ReviewStatus`.
+
+## 2. Data Fetching & Reactive UI (Performance)
+
+1. **Keyset Cursor Paging:** Do NOT use SQL `OFFSET`. Fetch ledgers using `(TransactionDate DESC, Id DESC)` bounding.
+2. **In-Place Delta Patching:**
+   - Dapper bulk sweeps must return `IReadOnlyList<long> affectedIds`.
+   - ViewModels must intersect these IDs with an internal `Dictionary<long, ViewModel>` map.
+   - Mutate properties directly on existing ViewModels to trigger `INotifyPropertyChanged`. NEVER clear and rebuild the Avalonia `ObservableCollection` during background updates.
+3. **Conveyor Belt Bypass:** NEVER call `Dispatcher.UIThread` directly. Use `RunOnUIThread(...)` in `ViewModelBase`.
+4. **Lifecycle:** ViewModels must inherit from `ViewModelBase`, implement `IDisposable`, execute `_broker.UnregisterAll(this)`, and use `Transient` DI lifetimes for SPA routing.
+5. **Global Overlays:** Modals and Toasts route exclusively through `IApplicationBroker` payloads (`ShowConfirmationMessage`, `ToastNotificationMessage`). No custom popup windows.
+6. **Styling & Locales:**
+   - NEVER use inline hex colors or hardcoded margins. Use `{DynamicResource TokenName}` and global classes (e.g., `Classes="Card"`).
+   - Require `FontFeatures="tnum"` on all grids displaying numbers.
+   - All text must route through `Assets/Locales/en-US.axaml` via `{DynamicResource Locale_Module_Element}`.
+
+## 3. Code Documentation & Comments (The "Why" and "Flow")
+
+1. **Explain the "Why":** You MUST include inline comments (`//`) explaining the necessity, benefits, and reasoning behind specific architectural choices (e.g., explaining why a thread was marshaled, why a specific lock is used, or why a delta-patch is occurring).
+2. **Execution Flow:** For complex methods (e.g., Dapper bulk sweeps, parsing loops, or Database Airlock logic), use inline comments to break down the step-by-step execution flow so the logic is easy to trace.
+3. **XML Docs:** Use C# XML summary comments (`///`) on all newly created classes, interfaces, and public methods to describe their primary responsibility within the architecture.
+4. **Avoid Noise:** Do not comment obvious syntax. Focus strictly on business logic, state changes, and architectural intent.
+
+## 4. Post-Task Documentation (The Living Document Rule)
+
+When a feature is verified and tested, you MUST output a final `Task Completion Artifact` in the exact format below, ready for the user to append to their tracking document.
+
+### [Date] - [Feature/Component Name]
+
+**1. Architectural Changes:**
+
+- [Bullet points on DI, schema, or structural changes]
+  **2. System Decisions & Trade-offs:**
+- [Bullet points explaining WHY an approach was taken]
+  **3. Performance & Fetching Impacts:**
+- [Bullet points on Delta Patching, Cursor adjustments, or Caching]
+  **4. Completed Tracker Items:**
+- [x] [Task Name]

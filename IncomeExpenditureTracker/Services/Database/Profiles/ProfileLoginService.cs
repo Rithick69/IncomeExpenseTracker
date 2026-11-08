@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Security;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
@@ -138,6 +139,37 @@ namespace IncomeExpenditureTracker.Services.Database
             _broker.Send(new ProfileSwappedMessage());
 
             _logger.LogInformation("Logout complete. File locks released and caches annihilated.");
+        }
+
+        public async Task FactoryResetAsync()
+        {
+            _logger.LogWarning("Initiating global factory reset. All local data will be wiped.");
+
+            // 1. RELEASE OS FILE LOCKS
+            // This forces SQLite to immediately let go of system.db and any cached profile .db files.
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+            // 2. TARGET THE LOCAL APP DATA FOLDER
+            var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var appFolder = Path.Combine(appDataFolder, "IncomeExpenditureTracker");
+
+            if (Directory.Exists(appFolder))
+            {
+                // Execute OS file I/O on a background thread to prevent blocking
+                await Task.Run(() =>
+                {
+                    // Delete every single SQLite file in the directory
+                    var dbFiles = Directory.GetFiles(appFolder, "*.db");
+                    var walFiles = Directory.GetFiles(appFolder, "*.db-wal");
+                    var shmFiles = Directory.GetFiles(appFolder, "*.db-shm");
+
+                    foreach (var file in dbFiles) File.Delete(file);
+                    foreach (var file in walFiles) File.Delete(file); // Clean up Write-Ahead Logs
+                    foreach (var file in shmFiles) File.Delete(file); // Clean up Shared Memory files
+                });
+            }
+
+            _logger.LogInformation("Factory reset completed successfully.");
         }
     }
 }

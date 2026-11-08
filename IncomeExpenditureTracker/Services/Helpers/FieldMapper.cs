@@ -279,24 +279,23 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
 
                     var value = ExtractFieldValue(worksheet, row, col);
 
-                    if (!string.IsNullOrWhiteSpace(value))
-                    {
-                        // BOUNDARY TRANSLATION:
-                        // Convert ClosedXML's 1-based Excel coordinate to our global 0-based domain coordinate by subtracting 1.
-                        int zeroBasedIndex = col - 1;
 
-                        // DYNAMIC POPULATION: No switch statement needed!
-                        // Works identically for Account Number, Card Number, Currency, OR Bank Name (Entity)!
-                        detectedMetadata[$"Meta:{match.FieldType}"] = new DetectedField
-                        {
-                            SuggestedField = match.FieldType, // e.g., "ACCOUNT_NUMBER", "ENTITY_NAME"
-                            ColumnName = text,                // The raw label in Excel (e.g., "A/C NO:") -> VITAL FOR LEARNING!
-                            ColumnIndex = zeroBasedIndex,     // The integer coordinate for import engine math
-                            ExtractedValue = value,           // The actual data string (e.g., "987654321", "HDFC Bank")
-                            ConfidenceScore = 0.90,
-                            IsUserVerified = false
-                        };
-                    }
+                    // BOUNDARY TRANSLATION:
+                    // Convert ClosedXML's 1-based Excel coordinate to our global 0-based domain coordinate by subtracting 1.
+                    int zeroBasedIndex = col - 1;
+
+                    // DYNAMIC POPULATION: No switch statement needed!
+                    // Works identically for Account Number, Card Number, Currency, OR Bank Name (Entity)!
+                    detectedMetadata[$"Meta:{match.FieldType}"] = new DetectedField
+                    {
+                        SuggestedField = match.FieldType, // e.g., "ACCOUNT_NUMBER", "ENTITY_NAME"
+                        ColumnName = text,                // The raw label in Excel (e.g., "A/C NO:") -> VITAL FOR LEARNING!
+                        ColumnIndex = zeroBasedIndex,     // The integer coordinate for import engine math
+                        ExtractedValue = value ?? "",     // The actual data string (e.g., "987654321", "HDFC Bank")
+                        ConfidenceScore = string.IsNullOrWhiteSpace(value) ? 0.0 : 0.90, // Penalize score if missed
+                        IsUserVerified = false
+                    };
+
                 }
             }
 
@@ -349,7 +348,7 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
 
                 if (parts.Length > 1)
                 {
-                    var candidate = parts[1].Trim();
+                    var candidate = parts[1].Trim().TrimStart('-', ' ', '>', '='); // Remove leading characters that are often used in bank statements
 
                     // Only return if the right side of the separator actually contains a value
                     if (!string.IsNullOrWhiteSpace(candidate))
@@ -361,7 +360,7 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
         // Pattern 2: value in next column
         var rightCell = worksheet.Cell(row, col + 1).GetString();
         if (!string.IsNullOrWhiteSpace(rightCell))
-            return rightCell.Trim();
+            return rightCell.Trim().TrimStart('-', ' ', '>', '='); // Remove leading characters that are often used in bank statements
 
         // Pattern 3: value in next row
         var bottomCell = worksheet.Cell(row + 1, col).GetString();
@@ -369,6 +368,67 @@ public class FieldMapper : IFieldMapper<IXLWorksheet>
             return bottomCell.Trim();
 
         return "";
+    }
+
+    // ------------------------------------------------------------
+    // PHASE 2: RE-EXTRACT ACCOUNT DETAILS (Targeted Search)
+    // ------------------------------------------------------------
+    // Bypasses the synonym engine entirely. Searches the grid for the
+    // exact manual labels provided by the user during a UI regeneration.
+    // ------------------------------------------------------------
+    public async Task ReExtractAccountDetailsAsync(IXLWorksheet worksheet, Dictionary<string, DetectedField> fields, CancellationToken ct = default)
+    {
+        var metaFields = fields.Where(f => f.Key.StartsWith("Meta:")).ToList();
+
+        int lastCol = worksheet.LastColumnUsed()?.ColumnNumber() ?? 10;
+        int lastRow = Math.Min(20, worksheet.LastRowUsed()?.RowNumber() ?? 20);
+
+        foreach (var kvp in metaFields)
+        {
+            var field = kvp.Value;
+
+            // Only process if the user has provided a label to search for
+            if (!string.IsNullOrWhiteSpace(field.ColumnName)) continue;
+
+            try
+            {
+                bool found = false;
+                string targetLabel = Normalize(field.ColumnName);
+
+                for (int row = 1; row <= lastRow && !found; row++)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    for (int col = 1; col <= lastCol && !found; col++)
+                    {
+                        var cellText = Normalize(worksheet.Cell(row, col).GetString());
+
+                        // Direct string match (supports partial containment for messy bank cells)
+                        if (cellText == targetLabel || cellText.Contains(targetLabel))
+                        {
+                            // Trigger the neighbor-cell extraction logic
+                            var value = ExtractFieldValue(worksheet, row, col);
+
+                            field.ExtractedValue = value ?? "";
+
+                            // If value is found, boost to 100 since the user manually provided the label constraint
+                            field.ConfidenceScore = string.IsNullOrWhiteSpace(value) ? 0.0 : 100.0;
+                            field.ColumnIndex = col - 1;
+
+                            found = true;
+                        }
+                    }
+                }
+
+            }
+            catch (OperationCanceledException) { throw; } // Let cancellations bubble up
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to re-extract value for manually provided label '{Label}'. Skipping.", field.ColumnName);
+            }
+        }
+
+        await Task.CompletedTask; // Keep async signature intact for interface compliance
     }
 
     // ------------------------------------------------------------

@@ -14,6 +14,8 @@ using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.UI.Shared;
 using IncomeExpenditureTracker.UI.Gatekeeper;
 using IncomeExpenditureTracker.UI.MasterData;
+using IncomeExpenditureTracker.UI.ImportHub;
+using IncomeExpenditureTracker.Services.StatementManagement;
 
 // =========================================================================
 // ARCHITECTURAL NOTE: Why 'partial'?
@@ -85,8 +87,9 @@ namespace IncomeExpenditureTracker.UI.Shell
 
         // 2. Global Progress Bar State
         // Bound to a progress bar at the bottom of the main window for background tasks
+        // Changed to int? (nullable) to allow the UI to hide when set to null
         [ObservableProperty]
-        private int _loadingPercentage;
+        private int? _loadingPercentage;
 
         [ObservableProperty]
         private string _loadingStatus = "Ready";
@@ -217,8 +220,26 @@ namespace IncomeExpenditureTracker.UI.Shell
             });
         }
 
-        private void OnNavigationRequested(NavigationMessage message)
+        private async void OnNavigationRequested(NavigationMessage message)
         {
+            var statementManager = _serviceProvider.GetRequiredService<IStatementManager>();
+            if (statementManager != null && statementManager.HasStagedFiles && message.Destination != "Login")
+            {
+                var tcs = new TaskCompletionSource<bool>();
+                Broker.Send(new ShowConfirmationMessage(
+                    "Abandon Import?",
+                    "You have uncommitted files in the Import Queue. Navigating away will discard these files. Are you sure?",
+                    tcs));
+
+                bool confirmed = await tcs.Task;
+                if (!confirmed)
+                {
+                    return; // Halt routing
+                }
+
+                statementManager.DiscardAllFiles();
+            }
+
             NavigateTo(message.Destination);
         }
 
@@ -249,7 +270,7 @@ namespace IncomeExpenditureTracker.UI.Shell
                     "Dashboard" => _serviceProvider.GetRequiredService<DashboardViewModel>(),
 
                     // "Ledger" => _serviceProvider.GetRequiredService<LedgerViewModel>(),
-                    // "StatementImport" => _serviceProvider.GetRequiredService<StatementImportViewModel>(),
+                    "ImportHub" => _serviceProvider.GetRequiredService<ImportHubViewModel>(),
                     "DataTaxonomy" => _serviceProvider.GetRequiredService<DataTaxonomyViewModel>(),
                     // "Reports" => _serviceProvider.GetRequiredService<ReportsViewModel>(),
                     // "AuditLogs" => _serviceProvider.GetRequiredService<AuditLogsViewModel>(),
@@ -375,10 +396,32 @@ namespace IncomeExpenditureTracker.UI.Shell
             });
         }
 
-        private void OnStagingCompleted(StagingBatchCompletedMessage message)
+        // private void OnStagingCompleted(StagingBatchCompletedMessage message)
+        // {
+        //     RunOnUIThread(() =>
+        //     {
+        //         if (message.TotalSuccess > 0)
+        //         {
+        //             var alert = new ToastAlert(
+        //                 $"✅ Successfully staged {message.TotalSuccess} file(s).",
+        //                 NotificationType.Success);
+
+        //             Toasts.Add(alert);
+        //             _ = RemoveToastAfterDelayAsync(alert.Id, TimeSpan.FromSeconds(5));
+        //         }
+
+        //         LoadingStatus = "Staging Complete!";
+        //     });
+        // }
+
+        private async void OnStagingCompleted(StagingBatchCompletedMessage message)
         {
+            // 1. Instantly show the 100% success state
             RunOnUIThread(() =>
             {
+                LoadingPercentage = 100;
+                LoadingStatus = "Staging Complete!";
+
                 if (message.TotalSuccess > 0)
                 {
                     var alert = new ToastAlert(
@@ -388,8 +431,15 @@ namespace IncomeExpenditureTracker.UI.Shell
                     Toasts.Add(alert);
                     _ = RemoveToastAfterDelayAsync(alert.Id, TimeSpan.FromSeconds(5));
                 }
+            });
 
-                LoadingStatus = "Staging Complete!";
+            // 2. Wait 1.5 seconds so the user can read the success text
+            await Task.Delay(1500);
+
+            // 3. Reset the percentage to null to collapse the global UI bar
+            RunOnUIThread(() =>
+            {
+                LoadingPercentage = null;
             });
         }
 

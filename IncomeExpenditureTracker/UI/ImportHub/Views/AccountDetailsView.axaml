@@ -1,0 +1,157 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.ImportHub"
+             x:Class="IncomeExpenditureTracker.UI.ImportHub.AccountDetailsView"
+             x:DataType="vm:SheetPreviewViewModel">
+
+    <ScrollViewer Padding="10,10,10,40" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="20" MaxWidth="900" HorizontalAlignment="Left">
+
+            <StackPanel Spacing="5">
+                <TextBlock Classes="H2" Text="{DynamicResource Locale_Module_Preview_AccountValidation_Title}"/>
+                <TextBlock Classes="Subtitle" Text="{DynamicResource Locale_Module_Preview_AccountValidation_Subtitle}" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <!-- OPTIONAL: AI TRAINING SECTION -->
+            <Expander IsExpanded="{Binding IsAiTrainingExpanded}">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="{DynamicResource Locale_Module_Preview_AiTraining_Title}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <Border Background="{DynamicResource AccentIndigo}" CornerRadius="10" Padding="8,2" IsVisible="{Binding SuggestAiTraining}">
+                            <TextBlock Text="{DynamicResource Locale_Module_Preview_AiTraining_Recommended}" Foreground="White" FontSize="10" FontWeight="Bold" VerticalAlignment="Center"/>
+                        </Border>
+                    </StackPanel>
+                </Expander.Header>
+
+                <StackPanel Spacing="12" Margin="10,10,10,5">
+                    <!-- NEW: Explicit helper text regarding missing labels -->
+                    <Border Background="{DynamicResource BackgroundSecondary}" CornerRadius="6" Padding="10" Margin="0,0,0,5">
+                        <TextBlock Classes="HelperText" TextWrapping="Wrap">
+                            <Run FontWeight="Bold" Text="{DynamicResource Locale_Module_Preview_AiTraining_DescTitle}"/>
+                            <Run Text="{DynamicResource Locale_Module_Preview_AiTraining_Description_2}"/>
+                            <Run FontWeight="SemiBold" Foreground="{DynamicResource AccentIndigo}" Text="{DynamicResource Locale_Module_Preview_AiTraining_Description_2}"/>
+                        </TextBlock>
+                    </Border>
+
+                    <Grid ColumnDefinitions="1*,1*,1*" RowDefinitions="Auto,Auto" RowSpacing="12" ColumnSpacing="15">
+                        <StackPanel Grid.Row="0" Grid.Column="0">
+                            <TextBlock Classes="HelperText" Margin="0,0,0,4" Text="{DynamicResource Locale_Module_Preview_AiTraining_BankLabel}"/>
+                            <Grid>
+                                <TextBox Text="{Binding SelectedEntityNameLabel}" Classes.Error="{Binding IsEntityNameLabelInvalid}" Padding="12,8,30,8" />
+                                <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,2,1" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding SelectedEntityNameLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding ClearSelectedEntityNameLabelCommand}">
+                                    <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                        <!-- XOR BOUND LABELS -->
+                        <StackPanel Grid.Row="0" Grid.Column="1">
+                            <TextBlock Classes="HelperText" Margin="0,0,0,4" Text="{DynamicResource Locale_Module_Preview_AiTraining_AccountLabel}"/>
+                            <Grid>
+                                <TextBox Text="{Binding SelectedAccountNumberLabel}" IsEnabled="{Binding IsAiAccountNumberLabelEnabled}" Classes.Error="{Binding IsAccountNumberLabelInvalid}" Padding="12,8,30,8" />
+                                <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,2,1" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding SelectedAccountNumberLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding ClearSelectedAccountNumberLabelCommand}">
+                                    <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                        <StackPanel Grid.Row="0" Grid.Column="2">
+                            <TextBlock Classes="HelperText" Margin="0,0,0,4" Text="{DynamicResource Locale_Module_Preview_AiTraining_CardLabel}"/>
+                            <Grid>
+                                <TextBox Text="{Binding SelectedCardNumberLabel}" IsEnabled="{Binding IsAiCardNumberLabelEnabled}" Classes.Error="{Binding IsCardNumberLabelInvalid}" Padding="12,8,30,8" />
+                                <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,2,1" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding SelectedCardNumberLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding ClearSelectedCardNumberLabelCommand}">
+                                    <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Expander>
+
+            <!-- PRIMARY FORM: REQUIRED DATA -->
+            <Border Classes="Card">
+                <StackPanel Spacing="15">
+
+                    <!-- NEW: Explicit instructions for the values -->
+                    <Border BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1" Padding="0,0,0,10">
+                        <TextBlock Classes="HelperText" TextWrapping="Wrap">
+                            <Run Text="{DynamicResource Locale_Module_Preview_Form_HelperText_1}"/>
+                            <Run FontWeight="Bold" Text="{DynamicResource Locale_Module_Preview_Form_HelperText_2}"/>
+                            <Run Text="{DynamicResource Locale_Module_Preview_Form_HelperText_3}"/>
+                            <Run FontWeight="Bold" Text="{DynamicResource Locale_Module_Preview_Form_HelperText_4}"/>
+                            <Run Text="{DynamicResource Locale_Module_Preview_Form_HelperText_5}"/>
+                        </TextBlock>
+                    </Border>
+
+                    <Grid ColumnDefinitions="1*, 1*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="15" ColumnSpacing="20">
+                        <StackPanel Grid.Row="0" Grid.Column="0">
+                            <TextBlock Classes="FormLabel" Text="{DynamicResource Locale_Module_Preview_Form_BankName}" />
+                            <Grid>
+                                <AutoCompleteBox Text="{Binding AccountMapping.EntityName}" Classes.Error="{Binding AccountMapping.IsEntityNameInvalid}" ItemsSource="{Binding AccountMapping.AvailableEntityNames}" FilterMode="Contains" Watermark="{DynamicResource Locale_Module_Preview_Form_BankName_Watermark}" Padding="12,8,30,8"/>
+                                <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,2,1" Focusable="False" IsVisible="{Binding AccountMapping.EntityName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding AccountMapping.ClearEntityNameCommand}">
+                                    <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="0" Grid.Column="1">
+                            <TextBlock Classes="FormLabel" Text="{DynamicResource Locale_Module_Preview_Form_AccountNumber}" />
+                            <Grid>
+                                <AutoCompleteBox Text="{Binding AccountMapping.AccountNumber}" Classes.Error="{Binding AccountMapping.IsAccountNumberInvalid}" ItemsSource="{Binding AccountMapping.AvailableAccountNumbers}" FilterMode="Contains" IsEnabled="{Binding AccountMapping.IsAccountNumberEnabled}" Watermark="{DynamicResource Locale_Module_Preview_Form_AccountNumber_Watermark}" Padding="12,8,30,8"/>
+                                <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,2,1" Focusable="False" IsVisible="{Binding AccountMapping.AccountNumber, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding AccountMapping.ClearAccountNumberCommand}">
+                                    <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Grid.Column="0">
+                            <TextBlock Classes="FormLabel" Text="{DynamicResource Locale_Module_Preview_Form_CardNumber}" />
+                            <Grid>
+                                <AutoCompleteBox Text="{Binding AccountMapping.CardNumber}" Classes.Error="{Binding AccountMapping.IsCardNumberInvalid}" ItemsSource="{Binding AccountMapping.AvailableCardNumbers}" FilterMode="Contains" IsEnabled="{Binding AccountMapping.IsCardNumberEnabled}" Watermark="{DynamicResource Locale_Module_Preview_Form_CardNumber_Watermark}" Padding="12,8,30,8"/>
+                                <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,2,1" Focusable="False" IsVisible="{Binding AccountMapping.CardNumber, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding AccountMapping.ClearCardNumberCommand}">
+                                    <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Added Credit Limit Optional Tag -->
+                        <StackPanel Grid.Row="1" Grid.Column="1" IsVisible="{Binding AccountMapping.IsCreditLimitVisible}">
+                            <TextBlock Classes="FormLabel" Text="{DynamicResource Locale_Module_Preview_Form_CreditLimit}" />
+                            <Grid>
+                                <TextBox Text="{Binding AccountMapping.CreditLimit}" Classes.Error="{Binding AccountMapping.IsCreditLimitInvalid}" Watermark="{DynamicResource Locale_Module_Preview_Form_CreditLimit_Watermark}" Padding="12,8,30,8"/>
+                                <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,2,1" Focusable="False" IsVisible="{Binding AccountMapping.CreditLimit, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding AccountMapping.ClearCreditLimitCommand}">
+                                    <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Added Account Type Optional Tag -->
+                        <StackPanel Grid.Row="2" Grid.Column="0">
+                            <TextBlock Classes="FormLabel" Text="{DynamicResource Locale_Module_Preview_Form_AccountType}" />
+                            <Grid>
+                                <ComboBox x:Name="AccountTypeLabelComboBox" IsEditable="True" Text="{Binding AccountMapping.AccountType, Mode=TwoWay}" ItemsSource="{Binding AccountMapping.AvailableAccountTypes}" HorizontalAlignment="Stretch" Padding="8,4,30,4" PlaceholderText="{DynamicResource Locale_Module_Preview_Form_AccountType_Placeholder}" />
+                                <Border Width="1" HorizontalAlignment="Right" Margin="0,4,28,4" Background="{DynamicResource ComboBoxBorderBrush}" IsHitTestVisible="False" />
+                                <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,30,1" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding AccountMapping.AccountType, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding AccountMapping.ClearAccountTypeCommand}">
+                                    <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Added Currency Optional Tag -->
+                        <StackPanel Grid.Row="2" Grid.Column="1">
+                            <TextBlock Classes="FormLabel" Text="{DynamicResource Locale_Module_Preview_Form_Currency}" />
+                            <Grid>
+                                <ComboBox x:Name="CurrencyLabelComboBox" IsEditable="True" Text="{Binding AccountMapping.Currency, Mode=TwoWay}" ItemsSource="{Binding AccountMapping.AvailableCurrencies}" HorizontalAlignment="Stretch" Padding="8,4,30,4" PlaceholderText="{DynamicResource Locale_Module_Preview_Form_Currency_Placeholder}" />
+                                <Border Width="1" HorizontalAlignment="Right" Margin="0,4,28,4" Background="{DynamicResource ComboBoxBorderBrush}" IsHitTestVisible="False" />
+                                <Button Classes="GhostIcon" Width="26" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,1,30,1" Focusable="False" ToolTip.Tip="{DynamicResource Locale_Common_ToolTipClear}" IsVisible="{Binding AccountMapping.Currency, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Command="{Binding AccountMapping.ClearCurrencyCommand}">
+                                    <TextBlock Text="{DynamicResource Locale_Common_Cancel}" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Panel Height="100" Background="Transparent" />
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

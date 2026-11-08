@@ -8,6 +8,7 @@ using IncomeExpenditureTracker.Services.Settings;
 using IncomeExpenditureTracker.Services.Database;
 using IncomeExpenditureTracker.Services.Helpers;
 using IncomeExpenditureTracker.Services.Importing;
+using IncomeExpenditureTracker.Services.Importing.Strategies;
 using IncomeExpenditureTracker.Services.TransactionExtractor;
 using IncomeExpenditureTracker.Services.PreviewInsights;
 using IncomeExpenditureTracker.Services.StatementManagement;
@@ -101,7 +102,7 @@ public static class ServiceRegistration
         // ViewModels are usually Transient: If the user opens a window, we get a fresh Waiter.
         // If they close it, it gets destroyed cleanly without holding onto old data.
         services.AddTransient<MainWindowViewModel>();
-        services.AddTransient<StatementEditViewModel>();
+        services.AddTransient<ImportHubViewModel>();
         services.AddTransient<LoginViewModel>();
         services.AddTransient<RegisterViewModel>();
         services.AddTransient<DashboardViewModel>();
@@ -120,6 +121,11 @@ public static class ServiceRegistration
         services.AddTransient<TagRuleFormViewModel>();
         services.AddTransient<UserSettingFormViewModel>();
         services.AddTransient<MergeFormViewModel>();
+
+        // Import Hub & Sheet Review
+        services.AddTransient<ImportQueueViewModel>();
+        services.AddTransient<SheetPreviewViewModel>();
+        services.AddTransient<AccountMappingViewModel>();
 
 
         // (Note: FormViewModelBase is an abstract class and cannot be registered in DI)
@@ -174,8 +180,18 @@ public static class ServiceRegistration
         // Registering the generic interface mapped to your Excel engines
         services.AddSingleton<IStatementLoader, StatementLoader>();
         services.AddTransient<IStatementExtractor<IXLWorksheet>, ExcelStatementExtractor>();
-        services.AddTransient<IStatementImport<IXLWorksheet>, ExcelStatementImport>();
+        services.AddTransient<IStatementImport<IXLWorkbook>, ExcelStatementImport>();
         services.AddTransient<IStatementEditSession, StatementEditSession>();
+
+        services.AddTransient<ExcelParserStrategy>();
+        services.AddSingleton<Func<string, IFileParserStrategy>>(provider => extension =>
+        {
+            if (extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                return provider.GetRequiredService<ExcelParserStrategy>();
+            }
+            throw new NotSupportedException($"File extension {extension} is not supported.");
+        });
 
         // =========================================================================
         // FACTORIES (Bridges between Singletons and Transients)
@@ -188,8 +204,8 @@ public static class ServiceRegistration
         services.AddSingleton<Func<IStatementExtractor<IXLWorksheet>>>(provider =>
             () => provider.GetRequiredService<IStatementExtractor<IXLWorksheet>>());
 
-        services.AddSingleton<Func<IStatementImport<IXLWorksheet>>>(provider =>
-            () => provider.GetRequiredService<IStatementImport<IXLWorksheet>>());
+        services.AddSingleton<Func<IStatementImport<IXLWorkbook>>>(provider =>
+            () => provider.GetRequiredService<IStatementImport<IXLWorkbook>>());
 
         // ---------------------------------------------------------
         // Lifecycle / Session Orchestrators
@@ -199,7 +215,7 @@ public static class ServiceRegistration
         // =========================================================================
         services.AddSingleton<IMasterDataOrchestrator, MasterDataOrchestrator>();
         services.AddSingleton<ITransactionReviewOrchestrator, TransactionReviewOrchestrator>();
-        services.AddSingleton<StatementManager>();
+        services.AddSingleton<IStatementManager, StatementManager>();
 
         // ---------------------------------------------------------
         // Tagging

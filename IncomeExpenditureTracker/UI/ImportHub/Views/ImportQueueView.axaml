@@ -1,0 +1,136 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.ImportHub"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="IncomeExpenditureTracker.UI.ImportHub.ImportQueueView"
+             x:DataType="vm:ImportQueueViewModel">
+
+    <!-- Flipped RowDefinitions: Dropzone is Auto (hugs content), Staged Files gets the rest (*) -->
+    <Grid RowDefinitions="Auto,Auto,*" Margin="20">
+
+        <!-- ROW 0: File Type Selection Radio Buttons -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,20">
+            <RadioButton Content="{DynamicResource Locale_Module_ImportQueue_Excel}" IsChecked="{Binding IsExcelSelected}" />
+            <RadioButton Content="{DynamicResource Locale_Module_ImportQueue_Csv}" IsChecked="{Binding IsCsvSelected}" IsEnabled="False" />
+        </StackPanel>
+
+        <!-- ROW 1: Drop Zone -->
+        <Border Grid.Row="1"
+                x:Name="DropZoneBorder"
+                Classes="Card"
+                Padding="40"
+                IsEnabled="{Binding !IsLoading}"
+                DragDrop.AllowDrop="{Binding !IsLoading}"
+                Background="{DynamicResource BackgroundSecondary}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="15">
+                <TextBlock Text="{DynamicResource Locale_Module_ImportQueue_DropZone}"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimary}"
+                           FontSize="16" />
+
+                <Button x:Name="BrowseFilesButton"
+                        Content="{DynamicResource Locale_Module_ImportQueue_BrowseFiles}"
+                        HorizontalAlignment="Center"
+                        Classes="Primary" />
+            </StackPanel>
+        </Border>
+
+        <!-- ROW 2: Loading Indicator and Staged Files List -->
+        <Grid Grid.Row="2" Margin="0,20,0,0">
+
+            <!-- Progress Indicator -->
+            <StackPanel IsVisible="{Binding IsLoading}" Spacing="5" VerticalAlignment="Top">
+                <ProgressBar IsIndeterminate="True" Height="4" Foreground="{DynamicResource AccentIndigo}" />
+                <TextBlock Text="{Binding LoadingMessage}"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondary}"
+                           FontSize="12" />
+            </StackPanel>
+
+            <!-- Staged Files List -->
+            <ScrollViewer IsVisible="{Binding StagedFiles.Count}">
+                <StackPanel Spacing="15">
+
+                    <!-- QUEUE HEADER WITH DELETE ALL BUTTON -->
+                    <Grid ColumnDefinitions="*,Auto" Margin="5,0,0,5">
+                        <TextBlock Grid.Column="0"
+                                Text="{DynamicResource Locale_Module_ImportQueue_StagedFilesTitle}"
+                                Foreground="{DynamicResource TextPrimary}"
+                                FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+
+                        <!-- Clean text-only button with red accent -->
+                        <Button Grid.Column="1"
+                                Content="{DynamicResource Locale_Module_ImportHub_DeleteAll}"
+                                Command="{Binding DeleteAllFilesCommand}"
+                                Background="Transparent"
+                                Foreground="{DynamicResource TextDanger}"
+                                FontWeight="SemiBold"
+                                Padding="10,6"
+                                Cursor="Hand"/>
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding StagedFiles}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!-- Full-Width Card for each File -->
+                                <Expander HorizontalAlignment="Stretch" Margin="0,0,0,10" IsExpanded="True">
+
+                                    <!-- EXPANDER HEADER WITH INDIVIDUAL DELETE BUTTON -->
+                                    <Expander.Header>
+                                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,10,0">
+                                            <TextBlock Grid.Column="0"
+                                                    Text="{Binding FileName}"
+                                                    Foreground="{DynamicResource TextPrimary}"
+                                                    FontSize="16" FontWeight="Medium"
+                                                    VerticalAlignment="Center"/>
+
+                                            <!-- Subtle text button that blends with the header -->
+                                            <Button Grid.Column="1"
+                                                    Content="{DynamicResource Locale_Module_ImportHub_Delete}"
+                                                    Command="{Binding $parent[UserControl].((vm:ImportQueueViewModel)DataContext).DeleteFileCommand}"
+                                                    CommandParameter="{Binding Id}"
+                                                    Background="Transparent"
+                                                    Foreground="{DynamicResource TextSecondary}"
+                                                    FontSize="12"
+                                                    Padding="12,6"
+                                                    Cursor="Hand"/>
+                                        </Grid>
+                                    </Expander.Header>
+
+                                    <!-- Structured List of Sheets -->
+                                    <ItemsControl ItemsSource="{Binding SheetNames}" Margin="10,10,10,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <!-- Clean row for each sheet -->
+                                                <Border BorderBrush="{DynamicResource BorderSubtle}"
+                                                        BorderThickness="0,0,0,1"
+                                                        Padding="5,10">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock Grid.Column="0"
+                                                                   Text="{Binding}"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextSecondary}"/>
+
+                                                        <Button Grid.Column="1"
+                                                                Content="{DynamicResource Locale_Module_ImportHub_Preview}"
+                                                                Tag="{Binding $parent[Expander].DataContext.Id}"
+                                                                Click="OnSheetButtonClick"
+                                                                Classes="Primary"
+                                                                Padding="12,6"
+                                                                FontSize="12"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Expander>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

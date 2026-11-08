@@ -109,7 +109,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
             int miscTagId = await _tagService.GetOrCreateTagAsync("Misc", 999);
 
             // User manually adds a baseline rule
-            await _tagService.AddRuleAsync("WALMART", groceriesTagId, 10);
+            await _tagService.AddRuleAsync("WALMART", groceriesTagId);
 
             // =================================================================================
             // PHASE 2: THE INGESTION & PREVIEW (The Halt)
@@ -167,8 +167,8 @@ namespace IncomeExpenditureTracker.Tests.Integration
             // Assert: Verify Priority Math logic executed successfully in the DB
             Assert.Equal(groceriesTagId, newlyLearnedRule.TagId);
 
-            // Base rule was 10, the new learned rule must be calculated as 11
-            Assert.Equal(11, newlyLearnedRule.Priority);
+            // Base rule was 11, the new learned rule must be calculated as 12
+            Assert.Equal(12, newlyLearnedRule.Priority);
         }
 
         public void Dispose()
@@ -215,7 +215,7 @@ namespace IncomeExpenditureTracker.Tests.Integration
 
             // Act & Assert
             var exception = await Assert.ThrowsAsync<ArgumentException>(
-                () => _tagService.AddRuleAsync(invalidKeyword, tagId, 10));
+                () => _tagService.AddRuleAsync(invalidKeyword, tagId));
 
             Assert.Contains("cannot be empty", exception.Message);
         }

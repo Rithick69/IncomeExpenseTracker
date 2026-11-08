@@ -32,6 +32,13 @@
         <Setter Property="TextBlock.Foreground" Value="#FFFFFF"/>
     </Style>
 
+    <Style Selector="Button.Secondary">
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="16,10"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+
     <!-- UI COMPONENT: TEXTBOX & COMBOBOX (Form Inputs) -->
     <Style Selector="TextBox, ComboBox, DropDownButton">
         <Setter Property="CornerRadius" Value="6"/>
@@ -77,5 +84,57 @@
         <Setter Property="FontSize" Value="36"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="LetterSpacing" Value="-0.5"/>
+    </Style>
+
+    <!-- TYPOGRAPHY: SEMANTIC HEADERS -->
+    <Style Selector="TextBlock.H1">
+        <Setter Property="FontSize" Value="20"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+    </Style>
+    <Style Selector="TextBlock.H2">
+        <Setter Property="FontSize" Value="16"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+    </Style>
+    <Style Selector="TextBlock.H3">
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+    </Style>
+    <Style Selector="TextBlock.Subtitle">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+    </Style>
+    <Style Selector="TextBlock.HelperText">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+    </Style>
+
+    <!-- TYPOGRAPHY: FORM LABELS -->
+    <Style Selector="TextBlock.FormLabel">
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Margin" Value="0,0,0,6"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+    </Style>
+
+    <!-- UI COMPONENT: GHOST/ICON BUTTONS (e.g., Close 'X', transparent clear buttons) -->
+    <Style Selector="Button.GhostIcon">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Padding" Value="8,4"/>
+    </Style>
+    <Style Selector="Button.GhostIcon:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="TextBlock.Foreground" Value="{DynamicResource TextPrimary}"/>
+    </Style>
+
+    <!-- UI COMPONENT: ERROR HIGHLIGHTS -->
+    <Style Selector="TextBox.Error, ComboBox.Error">
+        <Setter Property="BorderBrush" Value="Red" />
+        <Setter Property="BorderThickness" Value="2" />
     </Style>
 </Styles>

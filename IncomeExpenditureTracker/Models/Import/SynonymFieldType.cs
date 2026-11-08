@@ -16,6 +16,7 @@ namespace IncomeExpenditureTracker.Models
         DEBIT,
         CREDIT,
         AMOUNT,
+        TRANSACTIONTYPE
     }
 
     // Strictly defines statement/account header data (to be prefixed with Meta:)

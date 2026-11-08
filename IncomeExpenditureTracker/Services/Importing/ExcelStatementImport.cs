@@ -18,8 +18,7 @@ using System.Threading;
 
 namespace IncomeExpenditureTracker.Services.Importing;
 
-
-public class ExcelStatementImport : IStatementImport<IXLWorksheet>
+public class ExcelStatementImport : IStatementImport<IXLWorkbook>
 {
     private readonly IDatabaseService _database;
     private readonly IEntityService _entityService;
@@ -58,37 +57,38 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task ImportConfirmedStatementAsync(IXLWorksheet worksheet, StatementPreview previewMap, CancellationToken ct = default)
+    public async Task ImportConfirmedBatchAsync(IXLWorkbook workbook, PreviewTracker tracker, CancellationToken ct = default)
     {
-        if (worksheet == null) throw new ArgumentNullException(nameof(worksheet));
-        if (previewMap == null) throw new ArgumentNullException(nameof(previewMap));
+        if (workbook == null) throw new ArgumentNullException(nameof(workbook));
+        if (tracker == null) throw new ArgumentNullException(nameof(tracker));
 
-        _logger.LogInformation("Starting confirmed statement import for file '{FileName}'...", previewMap.FileName);
-        // -------------------------------------------------------------------------
-        // 1. UPFRONT DICTIONARY RESOLUTION (O(1) Execution - Zero lookups in loops)
-        // -------------------------------------------------------------------------
-        // We resolve all metadata and column indices upfront to avoid repeated dictionary lookups during the transaction extraction loop.
-        var fields = previewMap.Fields;
+        var sheetName = tracker.SheetName;
+        _logger.LogInformation("Starting confirmed import for sheet '{SheetName}'...", sheetName);
 
         try
         {
             ct.ThrowIfCancellationRequested();
 
-            // Resolve Metadata (with safe fallbacks for relaxed validation)
+            if (!workbook.Worksheets.TryGetWorksheet(sheetName, out var worksheet))
+            {
+                _logger.LogError("Worksheet '{SheetName}' not found in workbook. Aborting import.", sheetName);
+                throw new InvalidOperationException($"Worksheet '{sheetName}' does not exist in the uploaded file.");
+            }
+
+            // Structure to hold processed data before opening DB transaction
+            var payeeMappings = _payeeService.GetMappingsCache();
+
+            // Process each sheet individually in memory
+
+            var previewMap = tracker.FinalPreview;
+
+            var fields = previewMap.Fields;
+
             string entityName = GetMetaValue(fields, "Meta:ENTITY_NAME", "Unknown Entity");
             string accountNumber = GetMetaValue(fields, "Meta:ACCOUNT_NUMBER", "Unknown Account");
             string cardNumber = GetMetaValue(fields, "Meta:CARD_NUMBER", string.Empty);
             string accountType = GetMetaValue(fields, "Meta:ACCOUNT_TYPE", "Checking");
             string currency = GetMetaValue(fields, "Meta:CURRENCY", "INR");
-
-            // -------------------------------------------------------------------------
-            // CPU Intensive Tasks
-            // -------------------------------------------------------------------------
-
-            // -------------------------------------------------------------------------
-            // 1. PURE INTEGER-INDEXED TRANSACTION EXTRACTION
-            // -------------------------------------------------------------------------
-            // Passing resolved integer coordinates avoids 2,500+ dictionary string lookups
 
             var transactions = _transactionExtractor.ExtractTransactions(
                 worksheet,
@@ -99,19 +99,11 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
 
             if (transactions.Count == 0)
             {
-                _logger.LogWarning("No valid transactions extracted from worksheet. Aborting import transaction.");
+                _logger.LogWarning("No valid transactions extracted from worksheet '{SheetName}'. Aborting import.", sheetName);
                 return;
             }
 
-            // -------------------------------------------------------------------------
-            // 2. IN-MEMORY TOKENIZATION & TAGGING
-            // -------------------------------------------------------------------------
-
-            // Pre-Cache abort check: Don't hit the DB/cache if already cancelled
-            ct.ThrowIfCancellationRequested();
-
             var tokenRows = new List<List<string>>(transactions.Count);
-            var payeeMappings = _payeeService.GetMappingsCache();
 
             foreach (var txn in transactions)
             {
@@ -121,39 +113,16 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
                 var tokens = _descriptionParser.ExtractTokens(txn.Description);
                 tokenRows.Add(tokens);
 
-                // A. Sanitize and store in the Source property
+                // Sanitize and store in the Source property
                 txn.Source = _descriptionParser.SanitizeMerchantString(txn.Description);
-
-                // B. Check if it is a Credit
-                bool isCredit = txn.Credit > 0;
-
-                // C.Perform O(1) Exact - Match Lookup
-                if (isCredit)
-                {
-                    if (!string.IsNullOrWhiteSpace(txn.Source) && payeeMappings.TryGetValue(txn.Source, out int payeeId))
-                    {
-                        txn.PayeeId = payeeId;
-                    }
-                    else
-                    {
-                        // Flag for review ONLY if it is a credit and missing a mapping
-                        txn.ReviewStatus |= ReviewFlags.MissingPayee;
-                    }
-                }
             }
 
             await _tagEngine.ProcessTransactions(transactions, tokenRows, ct);
 
-            // DB Tasks
-
+            // Execute DB operations under a single master transaction token
             await _database.ExecuteInTransactionWithRetryAsync(async (conn, tx, ct) =>
             {
 
-                // Ensure the account and entity exist in the database, creating them if necessary
-
-                // -------------------------------------------------------------------------
-                // 3. DATABASE METADATA PERSISTENCE
-                // -------------------------------------------------------------------------
                 var entityId = await _entityService.GetOrCreateEntity(entityName, conn, tx, ct);
 
                 var accountId = await _accountService.GetOrCreateAccount(new Account
@@ -167,74 +136,110 @@ public class ExcelStatementImport : IStatementImport<IXLWorksheet>
                     CreatedDate = DateTime.UtcNow
                 }, conn, tx, ct);
 
-                // -------------------------------------------------------------------------
-                // 4. BATCH CREATION & HASHING
-                // -------------------------------------------------------------------------
-                // Extract filename safely without file I/O locks
                 string fileName = !string.IsNullOrWhiteSpace(previewMap.FileName)
                     ? previewMap.FileName
                     : $"Statement_{DateTime.UtcNow:yyyyMMdd}";
 
                 var batchId = await _batchService.CreateBatch(fileName, entityName, accountId, conn, tx, ct);
 
-                // Assign the ImportBatchId and generate a hash for each transaction before insertion
-                // This allows us to identify duplicates and group transactions by import batch for easier management
-
                 foreach (var txn in transactions)
                 {
                     ct.ThrowIfCancellationRequested();
-
                     txn.ImportBatchId = batchId;
                     txn.TransactionHash = GenerateHash(txn);
                     txn.AccountId = accountId;
-                }
 
-                // -------------------------------------------------------------------------
-                // 5. HIGH-PERFORMANCE CHUNKED INSERTION
-                // -------------------------------------------------------------------------
-                // Using .Chunk() (.NET 6+) or List.GetRange avoids .Skip().Take() GC overhead
+                    // Check if it is a Credit
+                    bool isCredit = txn.Credit > 0;
+
+                    // Perform Assignment & Store New Mappings (Restricted to Credits)
+                    if (isCredit && !string.IsNullOrWhiteSpace(txn.Source))
+                    {
+                        // 1. STORING: If the extractor already assigned a PayeeId (e.g., from an explicit Excel column)
+                        // and it isn't in our cache yet, permanently save the mapping so the engine learns it.
+                        if (txn.PayeeId.HasValue && txn.PayeeId.Value > 0)
+                        {
+                            if (!payeeMappings.ContainsKey(txn.Source))
+                            {
+                                await _payeeService.AddMappingAsync(txn.Source, txn.PayeeId.Value, ct: ct);
+                                payeeMappings[txn.Source] = txn.PayeeId.Value; // Update local cache for subsequent rows
+                            }
+                        }
+                        // 2. ASSIGNMENT: Look up the mapping for the credit transaction
+                        else if (payeeMappings.TryGetValue(txn.Source, out int mappedPayeeId))
+                        {
+                            txn.PayeeId = mappedPayeeId;
+                        }
+                        // 3. Auto-Create New Payee
+                        else
+                        {
+                            var newPayee = new Payee
+                            {
+                                Name = txn.Source,
+                                IsDefaultIncomeSource = false, // Engine default
+                                CreatedDate = DateTime.UtcNow
+                            };
+
+                            var createdPayee = await _payeeService.CreateAsync(newPayee, conn, tx, ct);
+                            txn.PayeeId = createdPayee.Id;
+
+                            // Save the mapping so the engine remembers it for the next row
+                            await _payeeService.AddMappingAsync(txn.Source, createdPayee.Id, conn, tx, ct);
+                            payeeMappings[txn.Source] = createdPayee.Id;
+
+                            // Note: We no longer flag MissingPayee because we just created it.
+                        }
+                    }
+                }
 
                 for (int i = 0; i < transactions.Count; i += BatchSize)
                 {
                     ct.ThrowIfCancellationRequested();
-
                     int count = Math.Min(BatchSize, transactions.Count - i);
                     var batch = transactions.GetRange(i, count);
-
                     await _transactionService.InsertTransactionsAsync(batch, conn, tx, ct);
                 }
-                _logger.LogInformation("Successfully imported {Count} transactions under Batch ID {BatchId} for account ID {AccountId}.", transactions.Count, batchId, accountId);
+                _logger.LogInformation("Successfully imported {Count} transactions under Batch ID {BatchId} for account ID {AccountId} (Sheet: {SheetName}).",
+                    transactions.Count, batchId, accountId, sheetName);
 
             }, ct);
-
         }
         catch (OperationCanceledException)
         {
-
-            _logger.LogWarning("Statement import was cancelled for file '{FileName}'.", previewMap.FileName);
+            _logger.LogWarning("Statement import for sheet '{SheetName}' was cancelled.", sheetName);
             throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Fatal error occurred while importing statement file '{FileName}'. Aborting workflow.", previewMap?.FileName);
-            throw new InvalidOperationException($"Failed to import the statement file '{previewMap?.FileName}'. The file may be corrupted or contain invalid data.", ex);
+            _logger.LogError(ex, "Fatal error occurred while importing batch statement. Aborting workflow.");
+            throw new InvalidOperationException("Failed to import the batch statements.", ex);
         }
     }
+
     private string GenerateHash(Transaction txn)
     {
         var raw = $"{txn.Date:yyyy-MM-dd}|{txn.Description}|{txn.Debit}|{txn.Credit}|{txn.AccountId}";
         using var sha = SHA256.Create();
         var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
-
         return Convert.ToHexString(bytes);
     }
-
-    // --- Lightweight Helper Method for Upfront Resolution ---
 
     private static string GetMetaValue(Dictionary<string, DetectedField> fields, string key, string defaultValue)
     {
         return fields.TryGetValue(key, out var field) && !string.IsNullOrWhiteSpace(field.ExtractedValue)
             ? field.ExtractedValue.Trim()
             : defaultValue;
+    }
+
+    private class ProcessedSheetData
+    {
+        public string SheetName { get; set; } = string.Empty;
+        public StatementPreview PreviewMap { get; set; } = null!;
+        public List<Transaction> Transactions { get; set; } = new();
+        public string EntityName { get; set; } = string.Empty;
+        public string AccountNumber { get; set; } = string.Empty;
+        public string CardNumber { get; set; } = string.Empty;
+        public string AccountType { get; set; } = string.Empty;
+        public string Currency { get; set; } = string.Empty;
     }
 }

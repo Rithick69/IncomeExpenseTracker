@@ -16,5 +16,7 @@ namespace IncomeExpenditureTracker.Services.Database
         /// releasing all OS file locks, and broadcasting a cache teardown event.
         /// </summary>
         Task LogoutAsync();
+
+        Task FactoryResetAsync();
     }
 }

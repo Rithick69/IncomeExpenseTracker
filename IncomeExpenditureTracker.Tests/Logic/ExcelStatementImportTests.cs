@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data; // Added for IDbConnection and IDbTransaction
 using System.Threading.Tasks;
+using System.Threading;
 using ClosedXML.Excel;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Importing;
@@ -49,10 +50,18 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             // Empty fields to force fallbacks
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
+
+            var trackers = new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" };
 
             _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction> { new Transaction { Description = "Test" } }); // Must return > 0 to proceed
@@ -67,7 +76,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
                     });
 
             // Act
-            await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
+            await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers);
 
             // Assert
             _entityMock.Verify(x => x.GetOrCreateEntity("Unknown Entity", It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -86,8 +95,16 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
+
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
+            var trackers = new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" };
 
             // Generate 300 transactions to force chunking (BatchSize is 250)
             var transactions = new List<Transaction>();
@@ -110,7 +127,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
 
             // Act & Assert
             await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap));
+                await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers));
         }
 
         /// <summary>
@@ -122,15 +139,22 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
+
             var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
+            var trackers = new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" };
 
             // Return empty list
             _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction>());
 
             // Act
-            await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
+            await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers);
 
             // Assert
             _dbMock.Verify(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -144,9 +168,15 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             var previewMap = new StatementPreview { FileName = null!, Fields = new Dictionary<string, DetectedField>() };
+            var trackers = new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" };
 
             _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction> { new Transaction { Description = "Test" } });
@@ -160,7 +190,7 @@ namespace IncomeExpenditureTracker.Tests.Logic
             var expectedPrefix = "Statement_";
 
             // Act
-            await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
+            await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers);
 
             // Assert
             _batchMock.Verify(x => x.CreateBatch(It.Is<string>(s => s.StartsWith(expectedPrefix)), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -174,12 +204,12 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
-            var worksheetMock = new Mock<IXLWorksheet>();
-            var previewMap = new StatementPreview();
+            var workbookMock = new Mock<IXLWorkbook>();
+            PreviewTracker nullTracker = null!;
 
             // Act & Assert
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ImportConfirmedStatementAsync(null!, previewMap));
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ImportConfirmedStatementAsync(worksheetMock.Object, null!));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ImportConfirmedBatchAsync(null!, new PreviewTracker()));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ImportConfirmedBatchAsync(workbookMock.Object, nullTracker));
         }
 
         /// <summary>
@@ -192,7 +222,12 @@ namespace IncomeExpenditureTracker.Tests.Logic
         {
             // Arrange
             var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
             var worksheetMock = new Mock<IXLWorksheet>();
+            var worksheetsMock = new Mock<IXLWorksheets>();
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
 
             // Provide a blatantly invalid currency format
             var invalidCurrency = "$$$ GARBAGE $$$";
@@ -203,6 +238,8 @@ namespace IncomeExpenditureTracker.Tests.Logic
                     { "Meta:CURRENCY", new DetectedField { ExtractedValue = invalidCurrency } }
                 }
             };
+
+            var trackers = new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" };
 
             _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
                           .Returns(new List<Transaction> { new Transaction { Description = "Test" } }); // Must return > 0 to proceed
@@ -215,13 +252,101 @@ namespace IncomeExpenditureTracker.Tests.Logic
                     });
 
             // Act
-            await service.ImportConfirmedStatementAsync(worksheetMock.Object, previewMap);
+            await service.ImportConfirmedBatchAsync(workbookMock.Object, trackers);
 
             // Assert
             // Verify that the AccountService receives the exact garbage string, proving the parser doesn't swallow it.
             // If this string violates DB constraints, the ExecuteInTransactionWithRetryAsync will handle the rollback.
             _accountMock.Verify(x => x.GetOrCreateAccount(It.Is<Account>(a =>
                 a.Currency == invalidCurrency), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+
+        // =================================================================================
+        // Architectural Guardrails & Concurrency
+        // =================================================================================
+
+        [Fact]
+        public async Task ImportConfirmedBatchAsync_EnforcesMasterTransactionToken_AcrossAllServices()
+        {
+            // =================================================================================
+            // OBJECTIVE: Ensure 100% atomicity by verifying all services share the exact same DB token.
+            // =================================================================================
+            var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
+            var worksheetMock = new Mock<IXLWorksheet>();
+            var worksheetsMock = new Mock<IXLWorksheets>();
+
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
+
+            var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
+            var tracker = new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" };
+
+            _extractorMock.Setup(x => x.ExtractTransactions(It.IsAny<IXLWorksheet>(), It.IsAny<int>(), It.IsAny<Dictionary<string, DetectedField>>(), It.IsAny<CancellationToken>()))
+                          .Returns(new List<Transaction> { new Transaction { Description = "Test" } });
+
+            // Create explicit DB token mocks
+            var mockConnection = new Mock<IDbConnection>();
+            var mockTransaction = new Mock<IDbTransaction>();
+
+            // Force the wrapper to inject our specific mocks
+            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+                .Returns<Func<IDbConnection, IDbTransaction, CancellationToken, Task>, CancellationToken>(async (action, ct) =>
+                {
+                    await action.Invoke(mockConnection.Object, mockTransaction.Object, ct);
+                });
+
+            // Act
+            await service.ImportConfirmedBatchAsync(workbookMock.Object, tracker);
+
+            // Assert: Verify EVERY persistence call received the exact same mockTransaction.Object
+            _entityMock.Verify(x => x.GetOrCreateEntity(It.IsAny<string>(), mockConnection.Object, mockTransaction.Object, It.IsAny<CancellationToken>()), Times.Once);
+
+            _accountMock.Verify(x => x.GetOrCreateAccount(It.IsAny<Account>(), mockConnection.Object, mockTransaction.Object, It.IsAny<CancellationToken>()), Times.Once);
+
+            _batchMock.Verify(x => x.CreateBatch(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), mockConnection.Object, mockTransaction.Object, It.IsAny<CancellationToken>()), Times.Once);
+
+            _transactionMock.Verify(x => x.InsertTransactionsAsync(It.IsAny<List<Transaction>>(), mockConnection.Object, mockTransaction.Object, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task ImportConfirmedBatchAsync_CancellationRequested_AbortsBeforeExecution()
+        {
+            // =================================================================================
+            // OBJECTIVE: Prevent DB side-effects if the user aborts mid-import.
+            // =================================================================================
+            var service = CreateService();
+            var workbookMock = new Mock<IXLWorkbook>();
+            var worksheetMock = new Mock<IXLWorksheet>();
+            var worksheetsMock = new Mock<IXLWorksheets>();
+
+            IXLWorksheet? outSheet = worksheetMock.Object;
+            worksheetsMock.Setup(ws => ws.TryGetWorksheet(It.IsAny<string>(), out outSheet!)).Returns(true);
+            workbookMock.Setup(w => w.Worksheets).Returns(worksheetsMock.Object);
+
+            var previewMap = new StatementPreview { Fields = new Dictionary<string, DetectedField>() };
+            var tracker = new PreviewTracker { FinalPreview = previewMap, SheetName = "Sheet1" };
+
+            var cts = new CancellationTokenSource();
+            cts.Cancel(); // Immediately trigger cancellation
+
+            // Mock the DB wrapper to respect the cancellation token
+            _dbMock.Setup(x => x.ExecuteInTransactionWithRetryAsync(It.IsAny<Func<IDbConnection, IDbTransaction, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+                .Returns<Func<IDbConnection, IDbTransaction, CancellationToken, Task>, CancellationToken>(async (action, ct) =>
+                {
+                    ct.ThrowIfCancellationRequested(); // Simulating infrastructure catching the token
+                    await action.Invoke(null!, null!, ct);
+                });
+
+            // Act & Assert
+            await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+                await service.ImportConfirmedBatchAsync(workbookMock.Object, tracker, cts.Token));
+
+            // Verify no downstream DB calls were executed
+            _entityMock.Verify(x => x.GetOrCreateEntity(It.IsAny<string>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Never);
+            _transactionMock.Verify(x => x.InsertTransactionsAsync(It.IsAny<List<Transaction>>(), It.IsAny<IDbConnection>(), It.IsAny<IDbTransaction>(), It.IsAny<CancellationToken>()), Times.Never);
         }
     }
 }

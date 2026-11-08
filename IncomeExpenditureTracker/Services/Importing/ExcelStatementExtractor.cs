@@ -57,6 +57,9 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 fileName,
                 forceReload);
 
+            // Capture Raw Context for the UI
+            var rawHeaderRows = ExtractRawHeaderRows(worksheet);
+
             // 1. Detect account & entity metadata (Returns Dictionary<string, DetectedField>)
             var metadataFields = await _fieldMapper.DetectAccountDetails(worksheet, forceReload, ct);
 
@@ -64,12 +67,26 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
             var headerRow = await _headerDetector.DetectHeaderRow(worksheet, forceReload, ct);
             _logger.LogInformation("Detected header row {HeaderRow} for file '{FileName}'.", headerRow, fileName);
 
+            // Sweep the physical row and capture all raw headers for the UI Dropdowns
+            var rawHeaders = new List<string>();
+            int excelHeaderRow = headerRow + 1;
+            int lastCol = worksheet.LastColumnUsed()?.ColumnNumber() ?? 0;
+            for (int c = 1; c <= lastCol; c++)
+            {
+                var cellText = worksheet.Cell(excelHeaderRow, c).GetString().Trim();
+                if (string.IsNullOrWhiteSpace(cellText))
+                {
+                    // Inject a deterministic placeholder for blank headers
+                    rawHeaders.Add($"[Column {c} - Blank]");
+                }
+                else
+                {
+                    rawHeaders.Add(cellText);
+                }
+            }
+
             // 3. Detect column coordinates (Returns Dictionary<string, DetectedField>)
             var columnFields = await _fieldMapper.DetectColumns(worksheet, headerRow, forceReload, ct);
-            _logger.LogInformation(
-                "Detected {ColumnCount} mapped columns for file '{FileName}'.",
-                columnFields?.Count ?? 0,
-                fileName);
 
             if (columnFields == null)
             {
@@ -89,6 +106,47 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 "Preview extraction yielded {PreviewCount} sample transactions for file '{FileName}'.",
                 previewTransactions.Count,
                 fileName);
+
+            // =========================================================================
+            // THE 20-ROW FALLBACK GUARANTEE (Guilty Until Proven Innocent)
+            // If the primary extractor yielded 0 rows (usually due to catastrophic header
+            // mapping failure), we forcefully scoop up the first 20 physical rows beneath
+            // the header and dump them into the preview so the user has raw strings to map.
+            // =========================================================================
+            if (previewTransactions.Count == 0 && headerRow >= 0)
+            {
+
+                // headerRow is 0-based. The first data row is headerRow + 2.
+                int firstDataRow = headerRow + 2;
+                var lastRowUsed = worksheet.LastRowUsed()?.RowNumber() ?? firstDataRow;
+
+                // Grab up to 20 actual data rows
+                int rowsToGrab = Math.Min(20, lastRowUsed - firstDataRow + 1);
+
+                for (int i = 0; i < rowsToGrab; i++)
+                {
+                    int physicalRow = firstDataRow + i;
+                    var row = worksheet.Row(physicalRow);
+                    if (row.IsEmpty()) continue;
+
+                    // Forcefully grab whatever is in the first few physical columns
+                    var rawCol1 = row.Cell(1).GetString();
+                    var rawCol2 = row.Cell(2).GetString();
+                    var rawCol3 = row.Cell(3).GetString();
+                    var rawCol4 = row.Cell(4).GetString(); // Grab an extra column just in case
+
+                    previewTransactions.Add(new TransactionPreview
+                    {
+                        Date = default, // Forces ReviewFlags.InvalidDate in UI
+                        Description = $"[RAW DATA] {rawCol1} | {rawCol2} | {rawCol3} | {rawCol4}",
+                        Debit = 0,
+                        Credit = 0,
+                        Amount = 0, // Forces ReviewFlags.InvalidAmount in UI
+                        TransactionType = "Unknown" // Forces ReviewFlags.InvalidTransactionType in UI
+                    });
+                }
+            }
+            // =========================================================================
 
             ct.ThrowIfCancellationRequested();
 
@@ -124,7 +182,9 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 HeaderSignature = signature,
                 PreviewTransactions = previewTransactions,
                 ConfidenceScore = confidence,
-                RequiresVerification = confidence < 80 || !previewTransactions.Any()
+                RequiresVerification = confidence < 80 || !previewTransactions.Any(),
+                RawHeaders = rawHeaders,
+                RawHeaderRows = rawHeaderRows
             };
         }
         catch (OperationCanceledException)
@@ -143,9 +203,129 @@ public class ExcelStatementExtractor : IStatementExtractor<IXLWorksheet>
                 HeaderSignature = string.Empty,
                 PreviewTransactions = new List<TransactionPreview>(),
                 ConfidenceScore = 0,
-                RequiresVerification = true
+                RequiresVerification = true,
+                RawHeaders = new List<string>(),
+                RawHeaderRows = new List<List<string>>()
             };
         }
+    }
+
+    // 2. ADD THIS NEW METHOD:
+    public async Task<StatementPreview> ReExtractAsync(IXLWorksheet worksheet, string fileName, int headerRow, Dictionary<string, DetectedField> updatedFields, List<string> originalRawHeaders, CancellationToken ct = default)
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Re-fetch the raw grid so it persists across UI regenerations
+            var rawHeaderRows = ExtractRawHeaderRows(worksheet);
+
+            // Phase 2: Intercept the updated fields and execute the targeted metadata search
+            await _fieldMapper.ReExtractAccountDetailsAsync(worksheet, updatedFields, ct);
+
+            // 1. Re-run the transaction extraction using the USER'S updated dictionary
+            var previewTransactions = _transactionExtractor
+                .ExtractPreview(worksheet, headerRow, updatedFields, ct)
+                .Take(20)
+                .ToList();
+
+            // 2. The 20-Row Fallback Guarantee (In case the user mapped garbage columns)
+            if (previewTransactions.Count == 0 && headerRow >= 0)
+            {
+                int firstDataRow = headerRow + 2;
+                var lastRowUsed = worksheet.LastRowUsed()?.RowNumber() ?? firstDataRow;
+                int rowsToGrab = Math.Min(20, lastRowUsed - firstDataRow + 1);
+
+                for (int i = 0; i < rowsToGrab; i++)
+                {
+                    var row = worksheet.Row(firstDataRow + i);
+                    if (row.IsEmpty()) continue;
+
+                    previewTransactions.Add(new TransactionPreview
+                    {
+                        Date = default,
+                        Description = $"[RAW DATA] {row.Cell(1).GetString()} | {row.Cell(2).GetString()} | {row.Cell(3).GetString()}",
+                        Debit = 0,
+                        Credit = 0,
+                        Amount = 0,
+                        TransactionType = "Unknown"
+                    });
+                }
+            }
+
+            // 3. Recalculate Confidence based on the new rows
+            var confidence = _confidenceService.CalculateConfidence(updatedFields, previewTransactions);
+
+            // 4. Dynamically extract the Entity Name from the user's updated dictionary
+            // We check both the raw domain name and the "Meta:" prefixed version for safety.
+            string entityName = "UNKNOWN_ENTITY";
+            if (updatedFields.TryGetValue("Meta:ENTITY_NAME", out var metaField) ||
+                updatedFields.TryGetValue("EntityName", out metaField))
+            {
+                if (!string.IsNullOrWhiteSpace(metaField.ExtractedValue))
+                {
+                    entityName = metaField.ExtractedValue;
+                }
+            }
+
+            return new StatementPreview
+            {
+                FileName = fileName,
+                HeaderRow = headerRow,
+                Fields = updatedFields,
+                HeaderSignature = GenerateHeaderSignature(entityName, updatedFields),
+                PreviewTransactions = previewTransactions,
+                ConfidenceScore = confidence,
+                RequiresVerification = confidence < 80 || !previewTransactions.Any(),
+                RawHeaders = originalRawHeaders, // Preserve the dropdown options!
+                RawHeaderRows = rawHeaderRows
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Statement regeneration was safely cancelled for file '{FileName}'.", fileName);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fatal error while regenerating statement preview for file '{FileName}'.", fileName);
+
+            // MACRO-LEVEL: Return a safe default instead of crashing, preserving the user's staged file
+            return new StatementPreview
+            {
+                FileName = fileName,
+                HeaderRow = headerRow, // Keep the old header row if possible
+                Fields = updatedFields, // Keep their dictionary mapping
+                HeaderSignature = string.Empty,
+                PreviewTransactions = new List<TransactionPreview>(), // Empty grid signals the failure
+                ConfidenceScore = 0,
+                RequiresVerification = true,
+                RawHeaders = originalRawHeaders,
+                RawHeaderRows = new List<List<string>>()
+            };
+        }
+    }
+
+    // ------------------------------------------------------------
+    // HELPER: EXTRACT RAW HEADER ROWS (Phase 1)
+    // Grabs a constrained 20x20 visual representation of the sheet
+    // ------------------------------------------------------------
+    private List<List<string>> ExtractRawHeaderRows(IXLWorksheet worksheet)
+    {
+        var rawHeaderRows = new List<List<string>>();
+        int maxRawRows = Math.Min(20, worksheet.LastRowUsed()?.RowNumber() ?? 20);
+        int maxRawCols = Math.Min(20, worksheet.LastColumnUsed()?.ColumnNumber() ?? 10);
+
+        for (int r = 1; r <= maxRawRows; r++)
+        {
+            var rowData = new List<string>();
+            for (int c = 1; c <= maxRawCols; c++)
+            {
+                rowData.Add(worksheet.Cell(r, c).GetString()); // Preserves spaces for merged cells
+            }
+            rawHeaderRows.Add(rowData);
+        }
+        return rawHeaderRows;
     }
 
     // Generates a simple signature string based on the detected header names and their positions.
