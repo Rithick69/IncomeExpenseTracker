@@ -168,6 +168,12 @@ public class SheetPreviewViewModelTests
         viewModel.SelectedEntityNameLabel = "Customer Name:";
         viewModel.SelectedAccountNumberLabel = "A/C No.";
 
+        // Populate the RawHeaderRows so ValidateAllInputs() passes the UI guard clause
+        viewModel.RawHeaderRows = new System.Collections.ObjectModel.ObservableCollection<List<string>>
+        {
+            new() { "Customer Name:", "A/C No.", "Some other data" }
+        };
+
         _mockEditSession.Setup(s => s.ConfirmAndPrepareForImport()).Returns(new PreviewTracker { FinalPreview = new StatementPreview() });
 
         // Act

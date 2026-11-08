@@ -82,6 +82,37 @@ public partial class ImportQueueViewModel : ViewModelBase
             return;
         }
 
+        // --- DEDUPLICATION LOGIC ---
+        var uniquePaths = new List<string>();
+        int skippedCount = 0;
+
+        foreach (var path in paths)
+        {
+            string fileName = Path.GetFileName(path);
+
+            // Check if a file with this exact name is already in the StagedFiles collection
+            bool isDuplicate = StagedFiles.Any(f => string.Equals(f.FileName, fileName, StringComparison.OrdinalIgnoreCase));
+
+            if (isDuplicate)
+            {
+                skippedCount++;
+            }
+            else
+            {
+                uniquePaths.Add(path);
+            }
+        }
+
+        // Notify user if any files were skipped
+        if (skippedCount > 0)
+        {
+            _broker.Send(new ToastNotificationMessage($"Skipped {skippedCount} file(s) that are already in the queue.", NotificationType.Warning));
+        }
+
+        // If all selected files were duplicates, stop processing
+        if (!uniquePaths.Any()) return;
+        // -------------------------------
+
         try
         {
             IsLoading = true;
@@ -97,7 +128,7 @@ public partial class ImportQueueViewModel : ViewModelBase
                 });
             });
 
-            var result = await _statementManager.StageFilesAsync(paths, progress, CancellationToken.None);
+            var result = await _statementManager.StageFilesAsync(uniquePaths, progress, CancellationToken.None);
 
             foreach (var success in result.Successes)
             {

@@ -21,7 +21,8 @@
                 x:Name="DropZoneBorder"
                 Classes="Card"
                 Padding="40"
-                DragDrop.AllowDrop="True"
+                IsEnabled="{Binding !IsLoading}"
+                DragDrop.AllowDrop="{Binding !IsLoading}"
                 Background="{DynamicResource BackgroundSecondary}">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="15">
                 <TextBlock Text="{DynamicResource Locale_Module_ImportQueue_DropZone}"

@@ -368,8 +368,7 @@ public partial class SheetPreviewViewModel : ViewModelBase
         if (IsBusy || _currentFileId == Guid.Empty || _originalPreview == null) return;
 
         // GUARD: Check labels before hitting the backend Edit Service
-        if (!ValidateAiTrainingLabels()) return;
-        if (!ValidateFormInputs()) return;
+        if (!ValidateAllInputs()) return;
 
         IsBusy = true;
 
@@ -548,9 +547,7 @@ public partial class SheetPreviewViewModel : ViewModelBase
         }
 
         // GUARD: Check labels before hitting the backend Edit Service
-        if (!ValidateAiTrainingLabels()) return;
-
-        if (!ValidateFormInputs()) return;
+        if (!ValidateAllInputs()) return;
 
         IsBusy = true;
         StatusText = "Committing to database...";
@@ -616,13 +613,16 @@ public partial class SheetPreviewViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Validates both the structural transaction headers and the primary account values.
+    /// Validates the structural transaction headers and AI training labels.
+    /// Explicitly allows primary account values to be freely entered even if not present in the sheet.
     /// </summary>
-    private bool ValidateFormInputs()
+    private bool ValidateAllInputs()
     {
         bool allValid = true;
 
-        // 1. Reset Transaction Header Errors
+        // =========================================================
+        // 1. VALIDATE TRANSACTION HEADERS
+        // =========================================================
         IsDateHeaderInvalid = false;
         IsDescriptionHeaderInvalid = false;
         IsDebitHeaderInvalid = false;
@@ -630,16 +630,15 @@ public partial class SheetPreviewViewModel : ViewModelBase
         IsAmountHeaderInvalid = false;
         IsTransactionTypeHeaderInvalid = false;
 
-        // Validate Transaction Headers (Must exist in AvailableHeaders)
         var headersToCheck = new List<(string Name, string Value, Action SetError)>
-            {
-                ("Date Column", SelectedDateHeader, () => IsDateHeaderInvalid = true),
-                ("Description Column", SelectedDescriptionHeader, () => IsDescriptionHeaderInvalid = true),
-                ("Debit Column", SelectedDebitHeader, () => IsDebitHeaderInvalid = true),
-                ("Credit Column", SelectedCreditHeader, () => IsCreditHeaderInvalid = true),
-                ("Amount Column", SelectedAmountHeader, () => IsAmountHeaderInvalid = true),
-                ("Transaction Type Column", SelectedTransactionTypeHeader, () => IsTransactionTypeHeaderInvalid = true)
-            };
+        {
+            ("Date Column", SelectedDateHeader, () => IsDateHeaderInvalid = true),
+            ("Description Column", SelectedDescriptionHeader, () => IsDescriptionHeaderInvalid = true),
+            ("Debit Column", SelectedDebitHeader, () => IsDebitHeaderInvalid = true),
+            ("Credit Column", SelectedCreditHeader, () => IsCreditHeaderInvalid = true),
+            ("Amount Column", SelectedAmountHeader, () => IsAmountHeaderInvalid = true),
+            ("Transaction Type Column", SelectedTransactionTypeHeader, () => IsTransactionTypeHeaderInvalid = true)
+        };
 
         foreach (var header in headersToCheck)
         {
@@ -654,64 +653,19 @@ public partial class SheetPreviewViewModel : ViewModelBase
 
         if (allValid) HeaderValidationError = string.Empty;
 
-        // 2. Validate Primary Account Values (Ensure they are found in the raw context)
-        AccountMapping.IsEntityNameInvalid = false;
-        AccountMapping.IsAccountNumberInvalid = false;
-        AccountMapping.IsCardNumberInvalid = false;
-
-        var valuesToCheck = new List<(string Name, string Value, Action SetError)>
-            {
-                ("Bank Name", AccountMapping.EntityName, () => AccountMapping.IsEntityNameInvalid = true),
-                ("Account Number", AccountMapping.AccountNumber, () => AccountMapping.IsAccountNumberInvalid = true),
-                ("Card Number", AccountMapping.CardNumber, () => AccountMapping.IsCardNumberInvalid = true)
-            };
-
-        foreach (var item in valuesToCheck)
-        {
-            if (!string.IsNullOrWhiteSpace(item.Value))
-            {
-                bool foundInRawGrid = false;
-                foreach (var row in RawHeaderRows)
-                {
-                    if (row != null && row.Any(cell =>
-                        !string.IsNullOrWhiteSpace(cell) &&
-                        cell.Contains(item.Value.Trim(), StringComparison.OrdinalIgnoreCase)))
-                    {
-                        foundInRawGrid = true;
-                        break;
-                    }
-                }
-
-                if (!foundInRawGrid)
-                {
-                    item.SetError();
-                    allValid = false;
-                    Broker.Send(new ToastNotificationMessage(
-                        $"Validation Error: The value '{item.Value}' was not found in the raw sheet.",
-                        NotificationType.Error));
-                }
-            }
-        }
-
-        return allValid;
-    }
-
-    private bool ValidateAiTrainingLabels()
-    {
-        // 1. Reset all error states before validating
+        // =========================================================
+        // 2. VALIDATE AI TRAINING LABELS
+        // =========================================================
         IsEntityNameLabelInvalid = false;
         IsAccountNumberLabelInvalid = false;
         IsCardNumberLabelInvalid = false;
 
-        bool allValid = true;
-
-        // Map labels to their respective error toggles
         var labelsToCheck = new List<(string Name, string Value, Action SetError)>
-    {
-        ("Bank Label", SelectedEntityNameLabel, () => IsEntityNameLabelInvalid = true),
-        ("Account Label", SelectedAccountNumberLabel, () => IsAccountNumberLabelInvalid = true),
-        ("Card Label", SelectedCardNumberLabel, () => IsCardNumberLabelInvalid = true)
-    };
+        {
+            ("Bank Label", SelectedEntityNameLabel, () => IsEntityNameLabelInvalid = true),
+            ("Account Label", SelectedAccountNumberLabel, () => IsAccountNumberLabelInvalid = true),
+            ("Card Label", SelectedCardNumberLabel, () => IsCardNumberLabelInvalid = true)
+        };
 
         foreach (var item in labelsToCheck)
         {
@@ -732,7 +686,6 @@ public partial class SheetPreviewViewModel : ViewModelBase
 
                 if (!foundInRawGrid)
                 {
-                    // 3. Trigger the red UI highlight for this specific field
                     item.SetError();
                     allValid = false;
 

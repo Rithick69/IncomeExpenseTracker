@@ -163,9 +163,9 @@ public class ConfidenceServiceTests
         // Arrange
         var fields = new Dictionary<string, DetectedField>
             {
-                // Max 5 points
+                // Max 7.5 points
                 { "Debit", new DetectedField { ConfidenceScore = 100.0 } },
-                // Max 5 points
+                // Max 7.5 points
                 { "Credit", new DetectedField { ConfidenceScore = 100.0 } }
             };
         var previews = new List<TransactionPreview>();
@@ -174,8 +174,8 @@ public class ConfidenceServiceTests
         int score = _confidenceService.CalculateConfidence(fields, previews);
 
         // Assert
-        // Should add 5 for Debit and 5 for Credit
-        Assert.Equal(10, score);
+        // Should add 7.5 for Debit and 7.5 for Credit
+        Assert.Equal(15, score);
     }
 
     /// <summary>

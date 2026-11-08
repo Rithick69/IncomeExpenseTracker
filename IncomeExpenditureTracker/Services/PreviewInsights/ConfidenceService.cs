@@ -77,17 +77,17 @@ public sealed class ConfidenceService : IConfidenceService
         }
 
         // =========================================================
-        // 5. TRANSACTION SAMPLE VALIDATION (Max 35 points)
+        // 5. TRANSACTION SAMPLE VALIDATION (Max 25 points)
         // =========================================================
-        totalScore += CalculateColumnConsistency(previewTransactions); // Grants up to 20
-        totalScore += CalculateTransactionDensity(previewTransactions);  // Grants up to 15
+        totalScore += CalculateGridQuality(previewTransactions);
 
         // =========================================================
         // FINAL CALCULATION
         // =========================================================
-        // A perfectly mapped statement hits 110 total base points.
-        // We cap it cleanly at 100. This ensures missing optional labels never drop a good sheet below 100%.
-        return Math.Min((int)Math.Round(totalScore), 100);
+        // Perfect Core (75) + Perfect Grid (25) = 100 Base Points.
+        // Bonus Labels (Bank, Type, Currency) grant up to 10 extra points.
+        // Cap strictly at 100.
+        return Math.Clamp((int)Math.Round(totalScore), 0, 100);
     }
 
     // ------------------------------------------------------------
@@ -142,22 +142,19 @@ public sealed class ConfidenceService : IConfidenceService
     }
 
     // ------------------------------------------------------------
-    // CalculateTransactionDensity
+    // CalculateGridQuality
     // ------------------------------------------------------------
-    // This method calculates the density of valid transactions in the preview sample.
-    // A valid transaction is one that has a valid date, a non-empty description, and a valid amount (either a positive debit, a positive credit, or a non-zero amount for combined columns).
-    // The method returns a confidence score based on the percentage of valid transactions in the sample.
+    // Evaluates how cleanly the detected columns map to actual transaction rows.
+    // Replaces the redundant Density/Consistency methods. Grants up to 25 points.
     // ------------------------------------------------------------
-
-    private int CalculateTransactionDensity(List<TransactionPreview> previewRows)
+    private int CalculateGridQuality(List<TransactionPreview> previewRows)
     {
-        if (previewRows == null || previewRows.Count == 0)
-            return 0;
+        if (previewRows == null || previewRows.Count == 0) return 0;
 
         int validRows = 0;
-
         foreach (var tx in previewRows)
         {
+            // A valid row must have a Date, Description, and some form of Amount
             if (tx.Date != default &&
                 !string.IsNullOrWhiteSpace(tx.Description) &&
                 (tx.Debit > 0 || tx.Credit > 0 || tx.Amount != 0))
@@ -166,65 +163,11 @@ public sealed class ConfidenceService : IConfidenceService
             }
         }
 
-        double density = (double)validRows / previewRows.Count;
-
-        if (density > 0.9)
-            return 15;
-
-        if (density > 0.75)
-            return 12;
-
-        if (density > 0.6)
-            return 8;
-
-        if (density > 0.4)
-            return 4;
-
-        return 0;
-    }
-
-    // ------------------------------------------------------------
-    // CalculateColumnConsistency
-    // ------------------------------------------------------------
-    // This method calculates the consistency of valid transactions in the preview sample.
-    // A valid transaction is one that has a valid date, a non-empty description, and a valid amount (either a positive debit, a positive credit, or a non-zero amount for combined
-    // columns).
-    // The method returns a confidence score based on the percentage of valid transactions in the sample, with higher consistency yielding a higher score.
-    // ------------------------------------------------------------
-
-    private int CalculateColumnConsistency(List<TransactionPreview> previewRows)
-    {
-        if (previewRows == null || previewRows.Count == 0)
-            return 0;
-
-        int validRows = 0;
-
-        foreach (var tx in previewRows)
-        {
-            bool validDate = tx.Date != default;
-            bool validDesc = !string.IsNullOrWhiteSpace(tx.Description);
-
-            // A valid amount is either a positive debit, a positive credit, or a non-zero amount (for combined columns)
-
-            bool validAmount =
-                tx.Debit > 0 ||
-                tx.Credit > 0 ||
-                tx.Amount != 0;
-
-            if (validDate && validDesc && validAmount)
-                validRows++;
-        }
-
         double ratio = (double)validRows / previewRows.Count;
 
-        if (ratio > 0.9)
-            return 20;
-
-        if (ratio > 0.7)
-            return 15;
-
-        if (ratio > 0.5)
-            return 10;
+        if (ratio > 0.90) return 25;
+        if (ratio > 0.75) return 18;
+        if (ratio > 0.50) return 10;
 
         return 0;
     }
