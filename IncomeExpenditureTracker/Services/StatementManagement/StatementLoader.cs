@@ -26,7 +26,7 @@ public class StatementLoadResult : IDisposable
 
 public class StatementLoader : IStatementLoader
 {
-    public async Task<StatementLoadResult> LoadStatementAsync(string filePath, IProgress<LoadingProgress> progress = null!, CancellationToken ct = default)
+    public Task<StatementLoadResult> LoadStatementAsync(string filePath, IProgress<LoadingProgress> progress = null!, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -45,7 +45,7 @@ public class StatementLoader : IStatementLoader
             ct.ThrowIfCancellationRequested();
             progress?.Report(new LoadingProgress { Percentage = 100, Message = "Statement loaded." });
 
-            return new StatementLoadResult(Path.GetFileName(filePath), stream);
+            return Task.FromResult(new StatementLoadResult(Path.GetFileName(filePath), stream));
         }
         catch (IOException ex)
         {
