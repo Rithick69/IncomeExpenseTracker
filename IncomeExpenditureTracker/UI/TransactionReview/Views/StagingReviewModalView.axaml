@@ -1,0 +1,167 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.TransactionReview"
+             mc:Ignorable="d" d:DesignWidth="1600" d:DesignHeight="900"
+             x:Class="IncomeExpenditureTracker.UI.TransactionReview.StagingReviewModalView"
+             x:DataType="vm:StagingReviewModalViewModel"
+             IsVisible="{Binding IsVisible}">
+
+    <!-- Full-Screen Overlay (Z-Index 105) -->
+    <Grid Background="#CC000000" ZIndex="105">
+        <!-- Semi-Transparent Dark Background -->
+
+        <!-- Main Modal Card (90% of screen, centered) -->
+        <Border Classes="Card"
+                Width="1440"
+                Height="810"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Padding="0">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <!-- =====================================================================
+                     HEADER: Title + Close Button
+                     ===================================================================== -->
+                <Border Grid.Row="0"
+                        Background="{DynamicResource BackgroundSecondary}"
+                        Padding="30,20"
+                        CornerRadius="8,8,0,0">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Text="{DynamicResource Locale_Ledger_StagingModal_Title}"
+                                   Classes="H1"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="1"
+                                Content="✕"
+                                Classes="GhostIcon"
+                                Command="{Binding CloseCommand}"
+                                FontSize="24"
+                                ToolTip.Tip="{DynamicResource Locale_Common_Close}" />
+                    </Grid>
+                </Border>
+
+                <!-- =====================================================================
+                     MAIN CONTENT: DataGrid of Staged Corrections
+                     ===================================================================== -->
+                <ScrollViewer Grid.Row="1" Padding="30,20">
+                    <StackPanel Spacing="15">
+                        <!-- Helper Text -->
+                        <TextBlock Text="{DynamicResource Locale_Ledger_StagingModal_Subtitle}"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,10" />
+
+                        <!-- DataGrid: Staged Corrections -->
+                        <DataGrid ItemsSource="{Binding StagedCorrections}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  GridLinesVisibility="Horizontal"
+                                  HeadersVisibility="Column"
+                                  CanUserReorderColumns="False"
+                                  CanUserResizeColumns="True"
+                                  FontFeatures="tnum"
+                                  MinHeight="400">
+                            <DataGrid.Columns>
+                                <!-- Date Column -->
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Date}"
+                                                    Binding="{Binding Date, StringFormat='{}{0:dd-MMM-yyyy}'}"
+                                                    Width="120" />
+
+                                <!-- Original Merchant Column -->
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_StagingModal_OriginalMerchant}"
+                                                    Binding="{Binding OriginalMerchant}"
+                                                    Width="200" />
+
+                                <!-- New Payee Column -->
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_StagingModal_NewPayee}"
+                                                    Binding="{Binding NewPayee}"
+                                                    Width="180" />
+
+                                <!-- New Tag Column -->
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_StagingModal_NewTag}"
+                                                    Binding="{Binding NewTag}"
+                                                    Width="180" />
+
+                                <!-- Corrected Debit Column (Right-Aligned) -->
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Debit}"
+                                                        Width="140">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding CorrectedDebit, StringFormat='{}{0:N2}'}"
+                                                       HorizontalAlignment="Right"
+                                                       Foreground="{DynamicResource TextDanger}"
+                                                       FontFeatures="tnum"
+                                                       Margin="0,0,12,0" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <!-- Corrected Credit Column (Right-Aligned) -->
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Credit}"
+                                                        Width="140">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding CorrectedCredit, StringFormat='{}{0:N2}'}"
+                                                       HorizontalAlignment="Right"
+                                                       Foreground="{DynamicResource AccentSuccess}"
+                                                       FontFeatures="tnum"
+                                                       Margin="0,0,12,0" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <!-- Actions Column (Discard Button) -->
+                                <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_StagingModal_Actions}"
+                                                        Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="🗑"
+                                                    Classes="GhostIcon"
+                                                    Command="{Binding $parent[UserControl].((vm:StagingReviewModalViewModel)DataContext).DiscardCorrectionCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="{DynamicResource Locale_Ledger_StagingModal_Discard}"
+                                                    FontSize="16" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- =====================================================================
+                     FOOTER: Summary + Commit Button
+                     ===================================================================== -->
+                <Border Grid.Row="2"
+                        Background="{DynamicResource BackgroundSecondary}"
+                        Padding="30,20"
+                        CornerRadius="0,0,8,8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <!-- Summary Text (Left) -->
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding FooterSummary}"
+                                       FontWeight="SemiBold"
+                                       FontSize="16"
+                                       Foreground="{DynamicResource TextPrimary}" />
+                            <TextBlock Text="{DynamicResource Locale_Ledger_StagingModal_FooterHelper}"
+                                       Foreground="{DynamicResource TextSecondary}"
+                                       FontSize="12"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+
+                        <!-- Commit Updates Button (Massive, Right) -->
+                        <Button Grid.Column="1"
+                                Content="{DynamicResource Locale_Ledger_StagingModal_CommitButton}"
+                                Classes="Primary"
+                                Command="{Binding CommitUpdatesCommand}"
+                                FontSize="18"
+                                FontWeight="Bold"
+                                Padding="40,15"
+                                VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

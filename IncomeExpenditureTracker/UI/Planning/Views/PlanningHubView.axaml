@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Planning.ViewModels"
+             x:Class="IncomeExpenditureTracker.UI.Planning.Views.PlanningHubView"
+             x:DataType="vm:PlanningHubViewModel">
+
+    <!-- Parent SPA Router for Financial Planning & Forecasting -->
+    <!-- Manages tab navigation between Goal Tracker and Financial Simulators -->
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- ===================================================================== -->
+        <!-- TOP ACTION BAR (Z-Index 10) - Title                                  -->
+        <!-- ===================================================================== -->
+        <Border Grid.Row="0"
+                Classes="Card"
+                ZIndex="10"
+                Margin="0,0,0,16">
+            <Grid ColumnDefinitions="*">
+
+                <!-- Title -->
+                <TextBlock Grid.Column="0"
+                           Classes="H1"
+                           Text="{DynamicResource Locale_Planning_Title}"
+                           VerticalAlignment="Center"/>
+
+            </Grid>
+        </Border>
+
+        <!-- ===================================================================== -->
+        <!-- TAB CONTROL (Vertical Tabs on Left)                                  -->
+        <!-- ===================================================================== -->
+        <TabControl Grid.Row="1"
+                    SelectedIndex="{Binding SelectedTabIndex}"
+                    TabStripPlacement="Left">
+
+            <!-- ============================================================= -->
+            <!-- TAB 1: GOAL TRACKER                                           -->
+            <!-- ============================================================= -->
+            <TabItem Header="{DynamicResource Locale_Planning_Tab_GoalTracker}">
+                <ContentControl Content="{Binding GoalTrackerViewModel}"/>
+            </TabItem>
+
+            <!-- ============================================================= -->
+            <!-- TAB 2: FINANCIAL SIMULATORS                                   -->
+            <!-- ============================================================= -->
+            <TabItem Header="{DynamicResource Locale_Planning_Tab_FinancialSimulator}">
+                <ContentControl Content="{Binding SimulatorsViewModel}"/>
+            </TabItem>
+
+        </TabControl>
+
+    </Grid>
+
+</UserControl>

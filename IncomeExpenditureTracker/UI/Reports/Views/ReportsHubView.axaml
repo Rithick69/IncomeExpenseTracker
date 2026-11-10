@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Reports.ViewModels"
+             x:Class="IncomeExpenditureTracker.UI.Reports.Views.ReportsHubView"
+             x:DataType="vm:ReportsHubViewModel">
+
+    <!-- Parent SPA Router for Historical Reports -->
+    <!-- Manages tab navigation and common date range controls -->
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- ===================================================================== -->
+        <!-- TOP ACTION BAR (Z-Index 10) - Date Range + Export                    -->
+        <!-- ===================================================================== -->
+        <Border Grid.Row="0"
+                Classes="Card"
+                ZIndex="10"
+                Margin="0,0,0,16">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+
+                <!-- Title -->
+                <TextBlock Grid.Column="0"
+                           Classes="H1"
+                           Text="{DynamicResource Locale_Reports_Title}"
+                           VerticalAlignment="Center"/>
+
+                <!-- Date Range Picker: Start Date -->
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            Margin="16,0,0,0">
+                    <TextBlock Text="{DynamicResource Locale_Reports_StartDate}"
+                               VerticalAlignment="Center"
+                               Classes="FormLabel"/>
+                    <DatePicker SelectedDate="{Binding StartDate}"
+                                VerticalAlignment="Center"
+                                MinWidth="140"/>
+                </StackPanel>
+
+                <!-- Date Range Picker: End Date -->
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            Margin="16,0,0,0">
+                    <TextBlock Text="{DynamicResource Locale_Reports_EndDate}"
+                               VerticalAlignment="Center"
+                               Classes="FormLabel"/>
+                    <DatePicker SelectedDate="{Binding EndDate}"
+                                VerticalAlignment="Center"
+                                MinWidth="140"/>
+                </StackPanel>
+
+                <!-- Export to Excel Button -->
+                <Button Grid.Column="3"
+                        Classes="Primary"
+                        Content="{DynamicResource Locale_Reports_ExportExcel}"
+                        Command="{Binding ExportToExcelCommand}"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <!-- ===================================================================== -->
+        <!-- TAB CONTROL (Vertical Tabs on Left)                                  -->
+        <!-- ===================================================================== -->
+        <TabControl Grid.Row="1"
+                    SelectedIndex="{Binding SelectedTabIndex}"
+                    TabStripPlacement="Left">
+
+            <!-- ============================================================= -->
+            <!-- TAB 1: SPEND TRACKER                                          -->
+            <!-- ============================================================= -->
+            <TabItem Header="{DynamicResource Locale_Reports_Tab_SpendTracker}">
+                <ContentControl Content="{Binding SpendTrackerViewModel}"/>
+            </TabItem>
+
+            <!-- ============================================================= -->
+            <!-- TAB 2: TAG INSIGHTS                                           -->
+            <!-- ============================================================= -->
+            <TabItem Header="{DynamicResource Locale_Reports_Tab_TagInsights}">
+                <ContentControl Content="{Binding TagInsightsViewModel}"/>
+            </TabItem>
+
+            <!-- ============================================================= -->
+            <!-- TAB 3: NET WORTH                                              -->
+            <!-- ============================================================= -->
+            <TabItem Header="{DynamicResource Locale_Reports_Tab_NetWorth}">
+                <ContentControl Content="{Binding NetWorthViewModel}"/>
+            </TabItem>
+
+            <!-- ============================================================= -->
+            <!-- TAB 4: AIS TAX REPORT                                         -->
+            <!-- ============================================================= -->
+            <TabItem Header="{DynamicResource Locale_Reports_Tab_AISTax}">
+                <ContentControl Content="{Binding AisReportViewModel}"/>
+            </TabItem>
+
+        </TabControl>
+
+    </Grid>
+
+</UserControl>

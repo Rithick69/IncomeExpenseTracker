@@ -1,0 +1,195 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Planning.ViewModels"
+             x:Class="IncomeExpenditureTracker.UI.Planning.Views.SimulatorsView"
+             x:DataType="vm:SimulatorsViewModel">
+
+    <!-- Financial Simulators Tab - Dashboard and Detail View Container -->
+    <!-- WHY: This view acts as a SPA router between dashboard (profile list) and detail view (active simulation) -->
+
+    <Grid>
+
+        <!-- ===================================================================== -->
+        <!-- DASHBOARD VIEW (Profile Cards Grid)                                  -->
+        <!-- WHY: Shown when IsDashboardVisible=true                               -->
+        <!-- ===================================================================== -->
+        <Grid RowDefinitions="Auto,*"
+              IsVisible="{Binding IsDashboardVisible}">
+
+            <!-- ================================================================= -->
+            <!-- TOP ACTION BAR (Z-Index 10) - New Simulation Button              -->
+            <!-- ================================================================= -->
+            <Border Grid.Row="0"
+                    Classes="Card"
+                    ZIndex="10"
+                    Margin="0,0,0,16">
+                <Grid ColumnDefinitions="*,Auto">
+
+                    <!-- Title -->
+                    <TextBlock Grid.Column="0"
+                               Classes="H2"
+                               Text="{DynamicResource Locale_Planning_Simulators_Title}"
+                               VerticalAlignment="Center"/>
+
+                    <!-- New Simulation Button (Primary CTA) -->
+                    <Button Grid.Column="1"
+                            Classes="Primary"
+                            Content="{DynamicResource Locale_Planning_Simulators_NewSimulation}"
+                            Command="{Binding ToggleNewSimulationPanelCommand}"
+                            VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <!-- ================================================================= -->
+            <!-- PROFILE CARDS GRID (Wrap Layout)                                 -->
+            <!-- WHY: Displays saved simulator profiles as clickable cards        -->
+            <!-- ================================================================= -->
+            <ScrollViewer Grid.Row="1"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+
+                <!-- ItemsControl with WrapPanel for card-based layout -->
+                <ItemsControl ItemsSource="{Binding Profiles}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <!-- WHY: Wrap grid layout ensures cards wrap to next row when horizontal space is filled -->
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SimulatorProfileCardViewModel">
+                            <!-- ============================================= -->
+                            <!-- INDIVIDUAL PROFILE CARD                       -->
+                            <!-- ============================================= -->
+                            <Border Classes="Card"
+                                    Width="320"
+                                    Margin="0,0,16,16"
+                                    Padding="20">
+                                <StackPanel Spacing="12">
+
+                                    <!-- Profile Name -->
+                                    <TextBlock Text="{Binding ProfileName}"
+                                               Classes="H3"
+                                               TextWrapping="Wrap"/>
+
+                                    <!-- Simulation Type Badge -->
+                                    <Border Background="{DynamicResource AccentBrush}"
+                                            CornerRadius="12"
+                                            Padding="10,5"
+                                            HorizontalAlignment="Left">
+                                        <TextBlock Text="{Binding SimulationType}"
+                                                   Foreground="{DynamicResource OnAccentBrush}"
+                                                   FontSize="12"
+                                                   FontWeight="Medium"/>
+                                    </Border>
+
+                                    <!-- Description -->
+                                    <TextBlock Text="{Binding Description}"
+                                               Classes="Body"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource MutedForeground}"
+                                               MaxLines="2"/>
+
+                                    <!-- Last Modified Info -->
+                                    <TextBlock Text="{Binding LastModifiedDisplay}"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource MutedForeground}"/>
+
+                                    <!-- Open Profile Button -->
+                                    <Button Classes="Secondary"
+                                            Content="{DynamicResource Locale_Planning_Simulators_OpenProfile}"
+                                            Command="{Binding $parent[ItemsControl].((vm:SimulatorsViewModel)DataContext).OpenProfileCommand}"
+                                            CommandParameter="{Binding}"
+                                            HorizontalAlignment="Stretch"
+                                            Margin="0,8,0,0"/>
+
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+            </ScrollViewer>
+
+            <!-- ================================================================= -->
+            <!-- RIGHT SLIDE-IN PANEL (Z-Index 105) - New Simulation Form         -->
+            <!-- WHY: Overlays the dashboard to allow creating new simulations    -->
+            <!-- ================================================================= -->
+            <Border Grid.Row="0"
+                    Grid.RowSpan="2"
+                    IsVisible="{Binding IsNewSimulationPanelVisible}"
+                    ZIndex="105"
+                    Background="{DynamicResource OverlayBackdrop}"
+                    HorizontalAlignment="Right">
+
+                <!-- WHY: Slide-in panel with form inputs for simulation parameters -->
+                <Border Classes="Card"
+                        Width="450"
+                        Padding="24"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Stretch">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="20">
+
+                            <!-- Panel Title -->
+                            <TextBlock Classes="H2"
+                                       Text="{DynamicResource Locale_Planning_Simulators_NewSimulationPanel_Title}"/>
+
+                            <!-- Close Button -->
+                            <Button Classes="Secondary"
+                                    Content="{DynamicResource Locale_Planning_Simulators_NewSimulationPanel_Close}"
+                                    Command="{Binding ToggleNewSimulationPanelCommand}"
+                                    HorizontalAlignment="Stretch"/>
+
+                            <!-- WHY: AutoCompleteBox allows selecting an Account or Tag to link the simulation -->
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="Label"
+                                           Text="{DynamicResource Locale_Planning_Simulators_NewSimulationPanel_AccountTag}"/>
+                                <AutoCompleteBox Watermark="{DynamicResource Locale_Planning_Simulators_NewSimulationPanel_AccountTag_Placeholder}"
+                                                 Text="{Binding SelectedAccountTag}"/>
+                            </StackPanel>
+
+                            <!-- Interest Rate Input -->
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="Label"
+                                           Text="{DynamicResource Locale_Planning_Simulators_NewSimulationPanel_InterestRate}"/>
+                                <TextBox Watermark="{DynamicResource Locale_Planning_Simulators_NewSimulationPanel_InterestRate_Placeholder}"
+                                         Text="{Binding InterestRate}"
+                                         FontFeatures="tnum"/>
+                            </StackPanel>
+
+                            <!-- Target Corpus Input -->
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="Label"
+                                           Text="{DynamicResource Locale_Planning_Simulators_NewSimulationPanel_TargetCorpus}"/>
+                                <TextBox Watermark="{DynamicResource Locale_Planning_Simulators_NewSimulationPanel_TargetCorpus_Placeholder}"
+                                         Text="{Binding TargetCorpus}"
+                                         FontFeatures="tnum"/>
+                            </StackPanel>
+
+                            <!-- Create Simulation Button -->
+                            <Button Classes="Primary"
+                                    Content="{DynamicResource Locale_Planning_Simulators_NewSimulationPanel_Create}"
+                                    Command="{Binding CreateSimulationCommand}"
+                                    HorizontalAlignment="Stretch"
+                                    Margin="0,12,0,0"/>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+
+            </Border>
+
+        </Grid>
+
+        <!-- ===================================================================== -->
+        <!-- ACTIVE SIMULATION DETAIL VIEW                                        -->
+        <!-- WHY: Shown when IsDashboardVisible=false (a profile is opened)       -->
+        <!-- ===================================================================== -->
+        <ContentControl Content="{Binding ActiveSimulation}"
+                        IsVisible="{Binding !IsDashboardVisible}"/>
+
+    </Grid>
+
+</UserControl>

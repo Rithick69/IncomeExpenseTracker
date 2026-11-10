@@ -1,0 +1,178 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Planning.ViewModels"
+             x:Class="IncomeExpenditureTracker.UI.Planning.Views.ActiveSimulationView"
+             x:DataType="vm:ActiveSimulationViewModel">
+
+    <!-- Active Simulation Detail View - Displays Amortization/Compounding Schedule -->
+    <!-- WHY: This view shows the detailed schedule for a specific simulation with tabular numeric formatting -->
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- ===================================================================== -->
+        <!-- TOP ACTION BAR (Z-Index 10) - Profile Title and Action Buttons       -->
+        <!-- ===================================================================== -->
+        <Border Grid.Row="0"
+                Classes="Card"
+                ZIndex="10"
+                Margin="0,0,0,16">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+
+                <!-- Back Button (navigates back to dashboard) -->
+                <Button Grid.Column="0"
+                        Classes="Secondary"
+                        Content="{DynamicResource Locale_Planning_ActiveSimulation_Back}"
+                        Command="{Binding $parent[UserControl].((vm:SimulatorsViewModel)DataContext).BackToDashboardCommand}"
+                        VerticalAlignment="Center"
+                        Margin="0,0,16,0"/>
+
+                <!-- Profile Name -->
+                <TextBlock Grid.Column="1"
+                           Classes="H2"
+                           Text="{Binding ProfileName}"
+                           VerticalAlignment="Center"/>
+
+                <!-- Edit Parameters Button -->
+                <Button Grid.Column="2"
+                        Classes="Secondary"
+                        Content="{DynamicResource Locale_Planning_ActiveSimulation_EditParameters}"
+                        Command="{Binding ToggleEditParametersPanelCommand}"
+                        VerticalAlignment="Center"
+                        Margin="0,0,12,0"/>
+
+                <!-- Export to Excel Button -->
+                <Button Grid.Column="3"
+                        Classes="Primary"
+                        Content="{DynamicResource Locale_Planning_ActiveSimulation_ExportExcel}"
+                        Command="{Binding ExportToExcelCommand}"
+                        VerticalAlignment="Center"/>
+
+            </Grid>
+        </Border>
+
+        <!-- ===================================================================== -->
+        <!-- CONTENT ZONE: DataGrid for Amortization/Compounding Schedule         -->
+        <!-- WHY: DataGrid displays tabular data with FontFeatures="tnum" for     -->
+        <!--      proper alignment of numeric columns (Month, Principal, etc.)    -->
+        <!-- ===================================================================== -->
+        <Border Grid.Row="1"
+                Classes="Card"
+                Padding="0">
+
+            <DataGrid ItemsSource="{Binding ScheduleRows}"
+                      IsReadOnly="True"
+                      GridLinesVisibility="Horizontal"
+                      AutoGenerateColumns="False"
+                      CanUserReorderColumns="False"
+                      CanUserResizeColumns="True"
+                      CanUserSortColumns="True"
+                      FontFeatures="tnum">
+
+                <!-- WHY: FontFeatures="tnum" enables tabular numeric spacing for aligned columns -->
+
+                <DataGrid.Columns>
+
+                    <!-- Month Column -->
+                    <DataGridTextColumn Header="{DynamicResource Locale_Planning_ActiveSimulation_Column_Month}"
+                                        Binding="{Binding Month}"
+                                        Width="Auto"/>
+
+                    <!-- Principal Column -->
+                    <DataGridTextColumn Header="{DynamicResource Locale_Planning_ActiveSimulation_Column_Principal}"
+                                        Binding="{Binding PrincipalDisplay}"
+                                        Width="*"/>
+
+                    <!-- Interest Column -->
+                    <DataGridTextColumn Header="{DynamicResource Locale_Planning_ActiveSimulation_Column_Interest}"
+                                        Binding="{Binding InterestDisplay}"
+                                        Width="*"/>
+
+                    <!-- Balance Column -->
+                    <DataGridTextColumn Header="{DynamicResource Locale_Planning_ActiveSimulation_Column_Balance}"
+                                        Binding="{Binding BalanceDisplay}"
+                                        Width="*"/>
+
+                </DataGrid.Columns>
+
+            </DataGrid>
+
+        </Border>
+
+        <!-- ===================================================================== -->
+        <!-- RIGHT SLIDE-IN PANEL (Z-Index 105) - Edit Parameters Form            -->
+        <!-- WHY: Overlays the schedule to allow editing simulation parameters    -->
+        <!-- ===================================================================== -->
+        <Border Grid.Row="0"
+                Grid.RowSpan="2"
+                IsVisible="{Binding IsEditParametersPanelVisible}"
+                ZIndex="105"
+                Background="{DynamicResource OverlayBackdrop}"
+                HorizontalAlignment="Right">
+
+            <!-- WHY: Slide-in panel with form inputs for editing simulation parameters -->
+            <Border Classes="Card"
+                    Width="400"
+                    Padding="24"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Stretch">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="20">
+
+                        <!-- Panel Title -->
+                        <TextBlock Classes="H2"
+                                   Text="{DynamicResource Locale_Planning_ActiveSimulation_EditPanel_Title}"/>
+
+                        <!-- Close Button -->
+                        <Button Classes="Secondary"
+                                Content="{DynamicResource Locale_Planning_ActiveSimulation_EditPanel_Close}"
+                                Command="{Binding ToggleEditParametersPanelCommand}"
+                                HorizontalAlignment="Stretch"/>
+
+                        <!-- Interest Rate Input -->
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="Label"
+                                       Text="{DynamicResource Locale_Planning_ActiveSimulation_EditPanel_InterestRate}"/>
+                            <TextBox Text="{Binding InterestRate}"
+                                     FontFeatures="tnum"/>
+                        </StackPanel>
+
+                        <!-- Target Corpus Input -->
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="Label"
+                                       Text="{DynamicResource Locale_Planning_ActiveSimulation_EditPanel_TargetCorpus}"/>
+                            <TextBox Text="{Binding TargetCorpus}"
+                                     FontFeatures="tnum"/>
+                        </StackPanel>
+
+                        <!-- Monthly Amount Input -->
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="Label"
+                                       Text="{DynamicResource Locale_Planning_ActiveSimulation_EditPanel_MonthlyAmount}"/>
+                            <TextBox Text="{Binding MonthlyAmount}"
+                                     FontFeatures="tnum"/>
+                        </StackPanel>
+
+                        <!-- Tenure (Months) Input -->
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="Label"
+                                       Text="{DynamicResource Locale_Planning_ActiveSimulation_EditPanel_TenureMonths}"/>
+                            <TextBox Text="{Binding TenureMonths}"
+                                     FontFeatures="tnum"/>
+                        </StackPanel>
+
+                        <!-- Save Parameters Button -->
+                        <Button Classes="Primary"
+                                Content="{DynamicResource Locale_Planning_ActiveSimulation_EditPanel_Save}"
+                                Command="{Binding SaveParametersCommand}"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,12,0,0"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+        </Border>
+
+    </Grid>
+
+</UserControl>

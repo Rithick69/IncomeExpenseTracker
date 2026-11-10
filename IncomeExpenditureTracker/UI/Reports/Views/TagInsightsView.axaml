@@ -1,0 +1,153 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Reports.ViewModels"
+             x:Class="IncomeExpenditureTracker.UI.Reports.Views.TagInsightsView"
+             x:DataType="vm:TagInsightsViewModel">
+
+    <!-- Tag Insights Report: Month-over-Month Spending Analysis by Tag -->
+
+    <ScrollViewer>
+        <StackPanel Spacing="16">
+
+            <!-- ===================================================================== -->
+            <!-- TOP BAR: Tag Selector                                                 -->
+            <!-- ===================================================================== -->
+            <Border Classes="Card">
+                <StackPanel Spacing="12">
+                    <TextBlock Classes="H2"
+                               Text="{DynamicResource Locale_Reports_TagInsights_Title}"/>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_TagInsights_SelectTag}"
+                                   VerticalAlignment="Center"
+                                   Classes="FormLabel"/>
+                        <AutoCompleteBox ItemsSource="{Binding AvailableTags}"
+                                         SelectedItem="{Binding SelectedTag}"
+                                         MinWidth="250"
+                                         Watermark="{DynamicResource Locale_Reports_TagInsights_TagPlaceholder}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ===================================================================== -->
+            <!-- SUMMARY CARDS ROW                                                     -->
+            <!-- ===================================================================== -->
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="16">
+
+                <!-- Total Spend Card -->
+                <Border Grid.Column="0" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_TagInsights_TotalSpend}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding TotalSpend, StringFormat='₹ {0:N2}'}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Average Monthly Spend Card -->
+                <Border Grid.Column="1" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_TagInsights_AvgMonthly}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding AverageMonthlySpend, StringFormat='₹ {0:N2}'}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Transaction Count Card -->
+                <Border Grid.Column="2" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_TagInsights_TransactionCount}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding TransactionCount}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ===================================================================== -->
+            <!-- CHART ZONE: Month-over-Month Line Chart                              -->
+            <!-- ===================================================================== -->
+            <Border Classes="Card">
+                <StackPanel Spacing="16">
+                    <TextBlock Classes="H3"
+                               Text="{DynamicResource Locale_Reports_TagInsights_ChartTitle}"/>
+
+                    <!-- Placeholder for LiveCharts2 Line Chart -->
+                    <Border Background="{DynamicResource BackgroundSecondary}"
+                            Height="300"
+                            CornerRadius="8">
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Spacing="12">
+                            <TextBlock Classes="H3"
+                                       Text="{DynamicResource Locale_Reports_Chart_Placeholder_Title}"
+                                       HorizontalAlignment="Center"
+                                       Opacity="0.7"/>
+                            <TextBlock Classes="Subtitle"
+                                       Text="{DynamicResource Locale_Reports_TagInsights_ChartPlaceholder}"
+                                       HorizontalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       MaxWidth="500"
+                                       TextAlignment="Center"
+                                       Opacity="0.6"/>
+                            <TextBlock Classes="Caption"
+                                       Text="{DynamicResource Locale_Reports_Chart_Placeholder_Package}"
+                                       HorizontalAlignment="Center"
+                                       FontFamily="Consolas,Menlo,monospace"
+                                       Opacity="0.5"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- ===================================================================== -->
+            <!-- DATA ZONE: Transaction DataGrid                                      -->
+            <!-- ===================================================================== -->
+            <Border Classes="Card">
+                <StackPanel Spacing="16">
+                    <TextBlock Classes="H3"
+                               Text="{DynamicResource Locale_Reports_TagInsights_GridTitle}"/>
+
+                    <!-- Virtualized DataGrid for Transaction Details -->
+                    <DataGrid ItemsSource="{Binding Transactions}"
+                              IsReadOnly="True"
+                              GridLinesVisibility="Horizontal"
+                              CanUserReorderColumns="True"
+                              CanUserResizeColumns="True"
+                              CanUserSortColumns="True"
+                              AutoGenerateColumns="False"
+                              MaxHeight="400">
+
+                        <DataGrid.Columns>
+                            <!-- Date Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Date}"
+                                                Binding="{Binding Date, StringFormat='{}{0:dd MMM yyyy}'}"
+                                                Width="120"/>
+
+                            <!-- Merchant Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Merchant}"
+                                                Binding="{Binding Merchant}"
+                                                Width="*"/>
+
+                            <!-- Tag Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Tag}"
+                                                Binding="{Binding Tag}"
+                                                Width="150"/>
+
+                            <!-- Amount Column (Tabular Numerics) -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_TagInsights_Amount}"
+                                                Binding="{Binding Amount, StringFormat='₹ {0:N2}'}"
+                                                Width="130"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

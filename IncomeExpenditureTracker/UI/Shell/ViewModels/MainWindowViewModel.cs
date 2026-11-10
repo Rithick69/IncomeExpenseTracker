@@ -15,6 +15,9 @@ using IncomeExpenditureTracker.UI.Shared;
 using IncomeExpenditureTracker.UI.Gatekeeper;
 using IncomeExpenditureTracker.UI.MasterData;
 using IncomeExpenditureTracker.UI.ImportHub;
+using IncomeExpenditureTracker.UI.TransactionReview;
+using IncomeExpenditureTracker.UI.Reports.ViewModels;
+using IncomeExpenditureTracker.UI.Planning.ViewModels;
 using IncomeExpenditureTracker.Services.StatementManagement;
 
 // =========================================================================
@@ -263,16 +266,20 @@ namespace IncomeExpenditureTracker.UI.Shell
 
                 // CRITICAL: Utilizing _serviceProvider requests a brand new
                 // Transient instance from the DI container, destroying stale state.
+                // Dispose the old ViewModel before swapping to prevent memory leaks
+                CurrentView?.Dispose();
+
                 CurrentView = destination switch
                 {
                     "Login" => _serviceProvider.GetRequiredService<LoginViewModel>(),
                     "Register" => _serviceProvider.GetRequiredService<RegisterViewModel>(),
                     "Dashboard" => _serviceProvider.GetRequiredService<DashboardViewModel>(),
 
-                    // "Ledger" => _serviceProvider.GetRequiredService<LedgerViewModel>(),
+                    "Ledger" => _serviceProvider.GetRequiredService<TransactionReviewViewModel>(),
                     "ImportHub" => _serviceProvider.GetRequiredService<ImportHubViewModel>(),
                     "DataTaxonomy" => _serviceProvider.GetRequiredService<DataTaxonomyViewModel>(),
-                    // "Reports" => _serviceProvider.GetRequiredService<ReportsViewModel>(),
+                    "ReportsHub" => _serviceProvider.GetRequiredService<ReportsHubViewModel>(),
+                    "PlanningHub" => _serviceProvider.GetRequiredService<PlanningHubViewModel>(),
                     // "AuditLogs" => _serviceProvider.GetRequiredService<AuditLogsViewModel>(),
                     _ => throw new ArgumentException($"Unknown route: {destination}")
                 };

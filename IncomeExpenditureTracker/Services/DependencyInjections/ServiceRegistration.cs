@@ -20,8 +20,10 @@ using IncomeExpenditureTracker.UI.Shell;
 using IncomeExpenditureTracker.UI.Shared;
 using IncomeExpenditureTracker.UI.Gatekeeper;
 using IncomeExpenditureTracker.UI.ImportHub;
-// using IncomeExpenditureTracker.UI.Ledger;
+using IncomeExpenditureTracker.UI.TransactionReview;
 using IncomeExpenditureTracker.UI.MasterData;
+using IncomeExpenditureTracker.UI.Reports.ViewModels;
+using IncomeExpenditureTracker.UI.Planning.ViewModels;
 using Microsoft.Extensions.Configuration;
 namespace IncomeExpenditureTracker.DependencyInjection;
 
@@ -127,6 +129,13 @@ public static class ServiceRegistration
         services.AddTransient<SheetPreviewViewModel>();
         services.AddTransient<AccountMappingViewModel>();
 
+        // Transaction Review (Ledger) & Staging Modal
+        services.AddTransient<TransactionReviewViewModel>();
+        services.AddTransient<StagingReviewModalViewModel>();
+
+        // Reports Hub & Planning Hub (Analytics & Future Planning)
+        services.AddTransient<ReportsHubViewModel>();
+        services.AddTransient<PlanningHubViewModel>();
 
         // (Note: FormViewModelBase is an abstract class and cannot be registered in DI)
 

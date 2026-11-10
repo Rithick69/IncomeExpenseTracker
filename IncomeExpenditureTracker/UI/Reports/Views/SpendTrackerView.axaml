@@ -1,0 +1,179 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Reports.ViewModels"
+             x:Class="IncomeExpenditureTracker.UI.Reports.Views.SpendTrackerView"
+             x:DataType="vm:SpendTrackerViewModel">
+
+    <!-- Spend Tracker Report Tab: Monthly Income/Expense Trends + Category Breakdown -->
+    <!-- NOTE: LiveCharts2 requires: dotnet add package LiveChartsCore.SkiaSharpView.Avalonia -->
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+
+        <StackPanel Spacing="24">
+
+            <!-- ===================================================================== -->
+            <!-- TOP SUMMARY WIDGETS (Total Income, Total Expense, Net Cashflow)      -->
+            <!-- ===================================================================== -->
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="16">
+
+                <!-- Widget 1: Total Income -->
+                <Border Grid.Column="0" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Classes="Subtitle"
+                                   Text="{DynamicResource Locale_Reports_Widget_TotalIncome}"/>
+                        <TextBlock Classes="DisplayNumber"
+                                   FontFeatures="tnum"
+                                   Text="{Binding TotalIncome, StringFormat='₹{0:N2}'}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Widget 2: Total Expense -->
+                <Border Grid.Column="1" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Classes="Subtitle"
+                                   Text="{DynamicResource Locale_Reports_Widget_TotalExpense}"/>
+                        <TextBlock Classes="DisplayNumber"
+                                   FontFeatures="tnum"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Text="{Binding TotalExpense, StringFormat='₹{0:N2}'}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Widget 3: Net Cashflow -->
+                <Border Grid.Column="2" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Classes="Subtitle"
+                                   Text="{DynamicResource Locale_Reports_Widget_NetCashflow}"/>
+                        <TextBlock Classes="DisplayNumber"
+                                   FontFeatures="tnum"
+                                   Text="{Binding NetCashflow, StringFormat='₹{0:N2}'}"/>
+                    </StackPanel>
+                </Border>
+
+            </Grid>
+
+            <!-- ===================================================================== -->
+            <!-- CHARTS ZONE                                                           -->
+            <!-- ===================================================================== -->
+            <Grid RowDefinitions="*" ColumnDefinitions="2*,*" ColumnSpacing="16">
+
+                <!-- ============================================================= -->
+                <!-- LEFT: Monthly Income vs. Expense Bar Chart                    -->
+                <!-- ============================================================= -->
+                <Border Grid.Column="0" Classes="Card" MinHeight="400">
+                    <StackPanel Spacing="16">
+
+                        <!-- Chart Title -->
+                        <TextBlock Classes="H2"
+                                   Text="{DynamicResource Locale_Reports_Chart_MonthlyTrend}"/>
+
+                        <!-- LiveCharts2 Placeholder (To be implemented after package install) -->
+                        <!-- EXAMPLE INTEGRATION:
+                        <lvc:CartesianChart Series="{Binding MonthlySeries}"
+                                            XAxes="{Binding XAxes}"
+                                            YAxes="{Binding YAxes}"
+                                            Height="350"/>
+                        -->
+
+                        <!-- MOCK PLACEHOLDER: Visual representation of the chart -->
+                        <Border Background="{DynamicResource BackgroundPrimary}"
+                                CornerRadius="8"
+                                Height="350"
+                                Padding="16">
+                            <StackPanel VerticalAlignment="Center"
+                                        HorizontalAlignment="Center"
+                                        Spacing="12">
+                                <TextBlock Classes="H3"
+                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Title}"
+                                           HorizontalAlignment="Center"/>
+                                <TextBlock Classes="Subtitle"
+                                           TextWrapping="Wrap"
+                                           TextAlignment="Center"
+                                           MaxWidth="400"
+                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Description}"/>
+                                <TextBlock Classes="HelperText"
+                                           TextWrapping="Wrap"
+                                           TextAlignment="Center"
+                                           Foreground="{DynamicResource AccentIndigo}"
+                                           MaxWidth="450"
+                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Package}"/>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </Border>
+
+                <!-- ============================================================= -->
+                <!-- RIGHT: Category-wise Expense Doughnut Chart                  -->
+                <!-- ============================================================= -->
+                <Border Grid.Column="1" Classes="Card" MinHeight="400">
+                    <StackPanel Spacing="16">
+
+                        <!-- Chart Title -->
+                        <TextBlock Classes="H2"
+                                   Text="{DynamicResource Locale_Reports_Chart_CategoryBreakdown}"/>
+
+                        <!-- LiveCharts2 Placeholder (To be implemented after package install) -->
+                        <!-- EXAMPLE INTEGRATION:
+                        <lvc:PieChart Series="{Binding CategorySeries}"
+                                      Height="320"/>
+                        -->
+
+                        <!-- MOCK PLACEHOLDER: Visual representation of the doughnut chart -->
+                        <Border Background="{DynamicResource BackgroundPrimary}"
+                                CornerRadius="8"
+                                Height="350"
+                                Padding="16">
+                            <StackPanel VerticalAlignment="Center"
+                                        HorizontalAlignment="Center"
+                                        Spacing="12">
+                                <TextBlock Classes="H3"
+                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Title}"
+                                           HorizontalAlignment="Center"/>
+                                <TextBlock Classes="Subtitle"
+                                           TextWrapping="Wrap"
+                                           TextAlignment="Center"
+                                           MaxWidth="300"
+                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Doughnut}"/>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </Border>
+
+            </Grid>
+
+            <!-- ===================================================================== -->
+            <!-- DATA TABLE (Optional: Monthly Breakdown in Tabular Form)             -->
+            <!-- ===================================================================== -->
+            <Border Classes="Card">
+                <StackPanel Spacing="12">
+
+                    <TextBlock Classes="H2"
+                               Text="{DynamicResource Locale_Reports_Table_MonthlyBreakdown}"/>
+
+                    <!-- DataGrid with Mock Data Display -->
+                    <DataGrid ItemsSource="{Binding MonthlyIncomeData}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              GridLinesVisibility="Horizontal"
+                              Height="300">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_Table_Month}"
+                                                Binding="{Binding Month}"
+                                                Width="*"/>
+                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_Table_Income}"
+                                                Binding="{Binding Value, StringFormat='₹{0:N2}'}"
+                                                Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+
+    </ScrollViewer>
+
+</UserControl>

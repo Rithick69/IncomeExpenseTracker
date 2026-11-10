@@ -1,0 +1,150 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Planning.ViewModels"
+             x:Class="IncomeExpenditureTracker.UI.Planning.Views.GoalTrackerView"
+             x:DataType="vm:GoalTrackerViewModel">
+
+    <!-- Goal Tracker Tab - Displays Financial Goals as Cards in a Wrap Grid -->
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- ===================================================================== -->
+        <!-- TOP ACTION BAR (Z-Index 10) - Add New Goal Button                    -->
+        <!-- ===================================================================== -->
+        <Border Grid.Row="0"
+                Classes="Card"
+                ZIndex="10"
+                Margin="0,0,0,16">
+            <Grid ColumnDefinitions="*,Auto">
+
+                <!-- Title -->
+                <TextBlock Grid.Column="0"
+                           Classes="H2"
+                           Text="{DynamicResource Locale_Planning_GoalTracker_Title}"
+                           VerticalAlignment="Center"/>
+
+                <!-- Add New Goal Button -->
+                <Button Grid.Column="1"
+                        Classes="Primary"
+                        Content="{DynamicResource Locale_Planning_GoalTracker_AddGoal}"
+                        Command="{Binding ToggleAddGoalPanelCommand}"
+                        VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <!-- ===================================================================== -->
+        <!-- GOAL CARDS GRID (Wrap Layout)                                        -->
+        <!-- ===================================================================== -->
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+
+            <!-- ItemsControl with WrapPanel for card-based layout -->
+            <ItemsControl ItemsSource="{Binding Goals}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <!-- Wrap grid layout: cards wrap to next row when horizontal space is filled -->
+                        <WrapPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:GoalCardViewModel">
+                        <!-- ================================================= -->
+                        <!-- INDIVIDUAL GOAL CARD                              -->
+                        <!-- ================================================= -->
+                        <Border Classes="Card"
+                                Width="280"
+                                Margin="0,0,16,16"
+                                Padding="16">
+                            <StackPanel Spacing="12">
+
+                                <!-- Goal Name -->
+                                <TextBlock Text="{Binding GoalName}"
+                                           Classes="H3"
+                                           TextWrapping="Wrap"/>
+
+                                <!-- Linked Tag Pill (if linked to a tag) -->
+                                <Border IsVisible="{Binding LinkedTagName, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                        Background="{DynamicResource AccentBrush}"
+                                        CornerRadius="12"
+                                        Padding="8,4"
+                                        HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding LinkedTagName}"
+                                               Foreground="{DynamicResource OnAccentBrush}"
+                                               FontSize="12"
+                                               FontWeight="Medium"/>
+                                </Border>
+
+                                <!-- Progress Display Text -->
+                                <TextBlock Text="{Binding ProgressDisplay}"
+                                           Classes="Body"
+                                           FontFeatures="tnum"
+                                           HorizontalAlignment="Center"/>
+
+                                <!-- Progress Bar -->
+                                <ProgressBar Value="{Binding CompletionPercentage}"
+                                             Minimum="0"
+                                             Maximum="100"
+                                             Height="8"
+                                             CornerRadius="4"/>
+
+                                <!-- Completion Percentage Text -->
+                                <TextBlock HorizontalAlignment="Center"
+                                           FontWeight="SemiBold"
+                                           FontFeatures="tnum">
+                                    <Run Text="{Binding CompletionPercentage, StringFormat='{}{0:F1}'}"/>
+                                    <Run Text="%"/>
+                                    <Run Text="{DynamicResource Locale_Planning_GoalTracker_Complete}"/>
+                                </TextBlock>
+
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+        </ScrollViewer>
+
+        <!-- ===================================================================== -->
+        <!-- RIGHT SLIDE-IN PANEL (Z-Index 105) - Add New Goal Form (Mocked)      -->
+        <!-- ===================================================================== -->
+        <Border Grid.Row="0"
+                Grid.RowSpan="2"
+                IsVisible="{Binding IsAddGoalPanelVisible}"
+                ZIndex="105"
+                Background="{DynamicResource OverlayBackdrop}"
+                HorizontalAlignment="Right">
+
+            <!-- Slide-in panel content (mocked as simple overlay for now) -->
+            <Border Classes="Card"
+                    Width="400"
+                    Padding="24"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Stretch">
+                <StackPanel Spacing="16">
+
+                    <!-- Panel Title -->
+                    <TextBlock Classes="H2"
+                               Text="{DynamicResource Locale_Planning_GoalTracker_AddGoalPanel_Title}"/>
+
+                    <!-- Close Button -->
+                    <Button Classes="Secondary"
+                            Content="{DynamicResource Locale_Planning_GoalTracker_AddGoalPanel_Close}"
+                            Command="{Binding ToggleAddGoalPanelCommand}"
+                            HorizontalAlignment="Stretch"/>
+
+                    <!-- Placeholder: Form fields will be added when full implementation is done -->
+                    <TextBlock Classes="Body"
+                               Text="{DynamicResource Locale_Planning_GoalTracker_AddGoalPanel_Placeholder}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource MutedForeground}"/>
+
+                </StackPanel>
+            </Border>
+
+        </Border>
+
+    </Grid>
+
+</UserControl>

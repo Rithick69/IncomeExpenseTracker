@@ -1,0 +1,128 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Reports.ViewModels"
+             x:Class="IncomeExpenditureTracker.UI.Reports.Views.NetWorthView"
+             x:DataType="vm:NetWorthViewModel">
+
+    <!-- Net Worth Report: Assets vs Liabilities Stacked Area Chart -->
+
+    <ScrollViewer>
+        <StackPanel Spacing="16">
+
+            <!-- ===================================================================== -->
+            <!-- SUMMARY CARDS ROW                                                     -->
+            <!-- ===================================================================== -->
+            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="16">
+
+                <!-- Current Net Worth Card -->
+                <Border Grid.Column="0" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_NetWorth_CurrentNetWorth}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding CurrentNetWorth, StringFormat='₹ {0:N2}'}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"
+                                   Foreground="{DynamicResource SuccessBrush}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Total Assets Card -->
+                <Border Grid.Column="1" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_NetWorth_TotalAssets}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding TotalAssets, StringFormat='₹ {0:N2}'}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Total Liabilities Card -->
+                <Border Grid.Column="2" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_NetWorth_TotalLiabilities}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding TotalLiabilities, StringFormat='₹ {0:N2}'}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"
+                                   Foreground="{DynamicResource ErrorBrush}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Net Worth Change Card -->
+                <Border Grid.Column="3" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_NetWorth_NetWorthChange}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding NetWorthChange, StringFormat='+{0:N2}%'}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"
+                                   Foreground="{DynamicResource SuccessBrush}"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ===================================================================== -->
+            <!-- CHART ZONE: Stacked Area Chart (Assets vs Liabilities)               -->
+            <!-- ===================================================================== -->
+            <Border Classes="Card">
+                <StackPanel Spacing="16">
+                    <TextBlock Classes="H2"
+                               Text="{DynamicResource Locale_Reports_NetWorth_ChartTitle}"/>
+
+                    <TextBlock Classes="Subtitle"
+                               Text="{DynamicResource Locale_Reports_NetWorth_ChartDescription}"
+                               TextWrapping="Wrap"
+                               Opacity="0.8"/>
+
+                    <!-- Placeholder for LiveCharts2 Stacked Area Chart -->
+                    <Border Background="{DynamicResource BackgroundSecondary}"
+                            Height="400"
+                            CornerRadius="8">
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Spacing="12">
+                            <TextBlock Classes="H3"
+                                       Text="{DynamicResource Locale_Reports_Chart_Placeholder_Title}"
+                                       HorizontalAlignment="Center"
+                                       Opacity="0.7"/>
+                            <TextBlock Classes="Subtitle"
+                                       Text="{DynamicResource Locale_Reports_NetWorth_ChartPlaceholder}"
+                                       HorizontalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       MaxWidth="600"
+                                       TextAlignment="Center"
+                                       Opacity="0.6"/>
+                            <TextBlock Classes="Caption"
+                                       Text="{DynamicResource Locale_Reports_Chart_Placeholder_Package}"
+                                       HorizontalAlignment="Center"
+                                       FontFamily="Consolas,Menlo,monospace"
+                                       Opacity="0.5"/>
+
+                            <!-- Chart Legend Explanation -->
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="24"
+                                        HorizontalAlignment="Center"
+                                        Margin="0,16,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="20" Height="20" Background="{DynamicResource SuccessBrush}" CornerRadius="4"/>
+                                    <TextBlock Text="{DynamicResource Locale_Reports_NetWorth_AssetsLabel}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="20" Height="20" Background="{DynamicResource ErrorBrush}" CornerRadius="4"/>
+                                    <TextBlock Text="{DynamicResource Locale_Reports_NetWorth_LiabilitiesLabel}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="20" Height="20" Background="{DynamicResource AccentBrush}" CornerRadius="4"/>
+                                    <TextBlock Text="{DynamicResource Locale_Reports_NetWorth_NetWorthLabel}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

@@ -35,6 +35,8 @@
     <system:String x:Key="Locale_Dashboard_Placeholder_CashFlow">Cash Flow (Coming Soon)</system:String>
     <!-- Dashboard Quick Links -->
     <system:String x:Key="Locale_Dashboard_Button_ManageData">Manage Data &amp; Taxonomy</system:String>
+    <system:String x:Key="Locale_Dashboard_Button_ViewReports">View Reports &amp; Analytics</system:String>
+    <system:String x:Key="Locale_Dashboard_Button_PlanningHub">Financial Planning</system:String>
 
     <!-- ========================================== -->
     <!-- DATA TAXONOMY HUB                        -->
@@ -341,4 +343,260 @@
     <system:String x:Key="Locale_Module_Preview_RawModal_CloseButton">Close Preview</system:String>
     <system:String x:Key="Locale_Common_CloseIcon">✕</system:String>
     <system:String x:Key="Locale_Common_Close">Close</system:String>
+
+
+    <!-- Transaction Review / Ledger View -->
+    <system:String x:Key="Locale_Ledger_TriageMode_Label">Triage Mode</system:String>
+    <system:String x:Key="Locale_Ledger_Search_Placeholder">Search transactions...</system:String>
+    <system:String x:Key="Locale_Ledger_ReviewEdits_Label">Review Edits</system:String>
+    <system:String x:Key="Locale_Ledger_StartDate_Label">Start Date</system:String>
+    <system:String x:Key="Locale_Ledger_EndDate_Label">End Date</system:String>
+    <system:String x:Key="Locale_Ledger_Account_Label">Account</system:String>
+    <system:String x:Key="Locale_Ledger_AllAccounts_Placeholder">All Accounts</system:String>
+    <system:String x:Key="Locale_Ledger_Refresh_Button">Refresh</system:String>
+
+    <!-- DataGrid Column Headers -->
+    <system:String x:Key="Locale_Ledger_Grid_Select">Select</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Date">Date</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Account">Account</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Merchant">Merchant</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Payee">Payee</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Tag">Tag</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Debit">Debit</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Credit">Credit</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Status">Status</system:String>
+
+    <!-- Slide-In Edit Panel -->
+    <system:String x:Key="Locale_Ledger_Panel_Title">Edit Transaction</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_RawAmount_Label">Raw Amount (Audit Trail)</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Date_Label">Transaction Date</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Debit_Label">Debit Amount</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Credit_Label">Credit Amount</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Payee_Label">Payee</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Payee_Placeholder">Select or type payee...</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Tag_Label">Tag</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Tag_Placeholder">Select or type tag...</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_SplitTransaction_Label">Split Transaction</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_SplitTransaction_Placeholder">Split transaction feature coming soon</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Memo_Label">Memo</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Memo_Placeholder">Add personal notes...</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_Cancel_Button">Cancel</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_StageUpdates_Button">Stage Updates</system:String>
+
+    <!-- Split Transaction Controls -->
+    <system:String x:Key="Locale_Ledger_Split_Amount_Label">Amount</system:String>
+    <system:String x:Key="Locale_Ledger_Split_Tag_Label">Tag</system:String>
+    <system:String x:Key="Locale_Ledger_Split_Payee_Label">Payee</system:String>
+    <system:String x:Key="Locale_Ledger_Split_Remove_Button">Remove split line</system:String>
+    <system:String x:Key="Locale_Ledger_AddSplitLine_Button">+ Add Split Line</system:String>
+
+    <!-- New Top Filters -->
+    <system:String x:Key="Locale_Ledger_ImportBatch_Label">Import Batch</system:String>
+    <system:String x:Key="Locale_Ledger_AllBatches_Placeholder">All Batches</system:String>
+    <system:String x:Key="Locale_Ledger_RevertBatch_Button">Revert Batch</system:String>
+    <system:String x:Key="Locale_Ledger_GroupBy_Label">Group By</system:String>
+    <system:String x:Key="Locale_Ledger_GroupBy_Placeholder">None</system:String>
+
+    <!-- Bulk Actions Bar -->
+    <system:String x:Key="Locale_Ledger_BulkTag_Label">Bulk Tag</system:String>
+    <system:String x:Key="Locale_Ledger_BulkTag_Placeholder">Select tag...</system:String>
+    <system:String x:Key="Locale_Ledger_BulkPayee_Label">Bulk Payee</system:String>
+    <system:String x:Key="Locale_Ledger_BulkPayee_Placeholder">Select payee...</system:String>
+    <system:String x:Key="Locale_Ledger_BulkApply_Button">Apply to All</system:String>
+    <system:String x:Key="Locale_Ledger_CancelSelection_Button">Cancel Selection</system:String>
+
+    <!-- Footer Pagination -->
+    <system:String x:Key="Locale_Ledger_PageSize_Label">Rows per page:</system:String>
+    <system:String x:Key="Locale_Ledger_Previous_Button">Previous</system:String>
+    <system:String x:Key="Locale_Ledger_Next_Button">Next</system:String>
+
+    <!-- Staging Review Modal (The Checkout Cart) -->
+    <system:String x:Key="Locale_Ledger_StagingModal_Title">Review Staged Updates</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_Subtitle">Review all pending transaction corrections below. Once committed, these changes will be saved to the database atomically. You can discard individual corrections before committing.</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_OriginalMerchant">Original Merchant</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_NewPayee">New Payee</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_NewTag">New Tag</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_Actions">Actions</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_Discard">Discard correction</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_FooterHelper">All corrections will be applied in a single database transaction.</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_CommitButton">Commit Updates</system:String>
+
+    <!-- ========================================== -->
+    <!-- REPORTS HUB MODULE                       -->
+    <!-- ========================================== -->
+
+    <!-- Reports Hub: Top Action Bar -->
+    <system:String x:Key="Locale_Reports_Title">Historical Reports</system:String>
+    <system:String x:Key="Locale_Reports_StartDate">Start Date</system:String>
+    <system:String x:Key="Locale_Reports_EndDate">End Date</system:String>
+    <system:String x:Key="Locale_Reports_ExportExcel">Export to Excel</system:String>
+
+    <!-- Reports Hub: Tab Headers -->
+    <system:String x:Key="Locale_Reports_Tab_SpendTracker">Spend Tracker</system:String>
+    <system:String x:Key="Locale_Reports_Tab_TagInsights">Tag Insights</system:String>
+    <system:String x:Key="Locale_Reports_Tab_NetWorth">Net Worth</system:String>
+    <system:String x:Key="Locale_Reports_Tab_AISTax">AIS (Tax Report)</system:String>
+
+    <!-- Reports Hub: Placeholder Messages -->
+    <system:String x:Key="Locale_Reports_Placeholder_CashFlow">Cash Flow Analysis</system:String>
+    <system:String x:Key="Locale_Reports_Placeholder_NetWorth">Net Worth Tracker</system:String>
+    <system:String x:Key="Locale_Reports_Placeholder_AISTax">Annual Information Statement (AIS)</system:String>
+    <system:String x:Key="Locale_Reports_Placeholder_Description">This feature is under construction and will be available soon.</system:String>
+
+    <!-- Spend Tracker: Summary Widgets -->
+    <system:String x:Key="Locale_Reports_Widget_TotalIncome">Total Income</system:String>
+    <system:String x:Key="Locale_Reports_Widget_TotalExpense">Total Expense</system:String>
+    <system:String x:Key="Locale_Reports_Widget_NetCashflow">Net Cashflow</system:String>
+
+    <!-- Spend Tracker: Chart Titles -->
+    <system:String x:Key="Locale_Reports_Chart_MonthlyTrend">Monthly Income vs. Expense Trend</system:String>
+    <system:String x:Key="Locale_Reports_Chart_CategoryBreakdown">Expense by Category</system:String>
+
+    <!-- Spend Tracker: Chart Placeholders -->
+    <system:String x:Key="Locale_Reports_Chart_Placeholder_Title">Chart Visualization</system:String>
+    <system:String x:Key="Locale_Reports_Chart_Placeholder_Description">LiveCharts2 integration is required to render this bar chart. The mock data is already loaded and ready to display.</system:String>
+    <system:String x:Key="Locale_Reports_Chart_Placeholder_Doughnut">LiveCharts2 integration is required to render this doughnut chart showing category-wise expense breakdown.</system:String>
+    <system:String x:Key="Locale_Reports_Chart_Placeholder_Package">Install Package: dotnet add package LiveChartsCore.SkiaSharpView.Avalonia</system:String>
+
+    <!-- Spend Tracker: Data Table -->
+    <system:String x:Key="Locale_Reports_Table_MonthlyBreakdown">Monthly Breakdown</system:String>
+    <system:String x:Key="Locale_Reports_Table_Month">Month</system:String>
+    <system:String x:Key="Locale_Reports_Table_Income">Income</system:String>
+    <system:String x:Key="Locale_Reports_Table_Expense">Expense</system:String>
+
+    <!-- ========================================== -->
+    <!-- TAG INSIGHTS REPORT                      -->
+    <!-- ========================================== -->
+
+    <!-- Tag Insights: Top Bar -->
+    <system:String x:Key="Locale_Reports_TagInsights_Title">Tag Spending Analysis</system:String>
+    <system:String x:Key="Locale_Reports_TagInsights_SelectTag">Select Tag:</system:String>
+    <system:String x:Key="Locale_Reports_TagInsights_TagPlaceholder">Search tags...</system:String>
+
+    <!-- Tag Insights: Summary Widgets -->
+    <system:String x:Key="Locale_Reports_TagInsights_TotalSpend">Total Spend</system:String>
+    <system:String x:Key="Locale_Reports_TagInsights_AvgMonthly">Avg Monthly Spend</system:String>
+    <system:String x:Key="Locale_Reports_TagInsights_TransactionCount">Transaction Count</system:String>
+
+    <!-- Tag Insights: Chart -->
+    <system:String x:Key="Locale_Reports_TagInsights_ChartTitle">Month-over-Month Spending Trend</system:String>
+    <system:String x:Key="Locale_Reports_TagInsights_ChartPlaceholder">LiveCharts2 integration is required to render this line chart showing monthly spending trends for the selected tag.</system:String>
+
+    <!-- Tag Insights: Data Grid -->
+    <system:String x:Key="Locale_Reports_TagInsights_GridTitle">Transaction Details</system:String>
+    <system:String x:Key="Locale_Reports_TagInsights_Amount">Amount</system:String>
+
+    <!-- ========================================== -->
+    <!-- NET WORTH REPORT                         -->
+    <!-- ========================================== -->
+
+    <!-- Net Worth: Summary Widgets -->
+    <system:String x:Key="Locale_Reports_NetWorth_CurrentNetWorth">Current Net Worth</system:String>
+    <system:String x:Key="Locale_Reports_NetWorth_TotalAssets">Total Assets</system:String>
+    <system:String x:Key="Locale_Reports_NetWorth_TotalLiabilities">Total Liabilities</system:String>
+    <system:String x:Key="Locale_Reports_NetWorth_NetWorthChange">Net Worth Change</system:String>
+
+    <!-- Net Worth: Chart -->
+    <system:String x:Key="Locale_Reports_NetWorth_ChartTitle">Net Worth Trend (Assets vs Liabilities)</system:String>
+    <system:String x:Key="Locale_Reports_NetWorth_ChartDescription">This chart displays your financial health over time by tracking total assets (positive) and liabilities (negative).</system:String>
+    <system:String x:Key="Locale_Reports_NetWorth_ChartPlaceholder">LiveCharts2 integration is required to render this stacked area chart showing Assets vs Liabilities over time.</system:String>
+    <system:String x:Key="Locale_Reports_NetWorth_AssetsLabel">Assets</system:String>
+    <system:String x:Key="Locale_Reports_NetWorth_LiabilitiesLabel">Liabilities</system:String>
+    <system:String x:Key="Locale_Reports_NetWorth_NetWorthLabel">Net Worth</system:String>
+
+    <!-- ========================================== -->
+    <!-- AIS (TAX) REPORT                         -->
+    <!-- ========================================== -->
+
+    <!-- AIS Report: Top Bar -->
+    <system:String x:Key="Locale_Reports_AIS_Title">Annual Information Statement (AIS)</system:String>
+    <system:String x:Key="Locale_Reports_AIS_Description">Section 285BA of the Income Tax Act requires tracking all high-value transactions. This report summarizes total inflow and outflow by payee for the selected financial year.</system:String>
+    <system:String x:Key="Locale_Reports_AIS_FinancialYear">Financial Year:</system:String>
+
+    <!-- AIS Report: Summary Widgets -->
+    <system:String x:Key="Locale_Reports_AIS_TotalInflow">Total Inflow</system:String>
+    <system:String x:Key="Locale_Reports_AIS_TotalOutflow">Total Outflow</system:String>
+    <system:String x:Key="Locale_Reports_AIS_NetFlow">Net Flow</system:String>
+
+    <!-- AIS Report: Data Grid -->
+    <system:String x:Key="Locale_Reports_AIS_GridTitle">Payee-wise Summary</system:String>
+    <system:String x:Key="Locale_Reports_AIS_GridHelperText">This table groups all transactions by payee to help you prepare your tax filings. Export this data to Excel for detailed analysis.</system:String>
+    <system:String x:Key="Locale_Reports_AIS_PayeeName">Payee Name</system:String>
+    <system:String x:Key="Locale_Reports_AIS_Category">Category</system:String>
+    <system:String x:Key="Locale_Reports_AIS_NetAmount">Net Amount</system:String>
+    <system:String x:Key="Locale_Reports_AIS_FooterHelperText">💡 Tip: Use filters and sorting to identify high-value payees. Export this report before filing your ITR (Income Tax Return).</system:String>
+
+    <!-- ========================================== -->
+    <!-- PLANNING HUB MODULE                      -->
+    <!-- ========================================== -->
+
+    <!-- Planning Hub: Top Action Bar -->
+    <system:String x:Key="Locale_Planning_Title">Financial Planning &amp; Forecasting</system:String>
+
+    <!-- Planning Hub: Tab Headers -->
+    <system:String x:Key="Locale_Planning_Tab_GoalTracker">Goal Tracker</system:String>
+    <system:String x:Key="Locale_Planning_Tab_FinancialSimulator">Financial Simulator</system:String>
+
+    <!-- ========================================== -->
+    <!-- GOAL TRACKER TAB                         -->
+    <!-- ========================================== -->
+
+    <!-- Goal Tracker: Top Action Bar -->
+    <system:String x:Key="Locale_Planning_GoalTracker_Title">Financial Goals</system:String>
+    <system:String x:Key="Locale_Planning_GoalTracker_AddGoal">+ Add New Goal</system:String>
+
+    <!-- Goal Tracker: Goal Card Elements -->
+    <system:String x:Key="Locale_Planning_GoalTracker_Complete">Complete</system:String>
+
+    <!-- Goal Tracker: Add Goal Panel (Right Slide-In) -->
+    <system:String x:Key="Locale_Planning_GoalTracker_AddGoalPanel_Title">Create New Goal</system:String>
+    <system:String x:Key="Locale_Planning_GoalTracker_AddGoalPanel_Close">Close Panel</system:String>
+    <system:String x:Key="Locale_Planning_GoalTracker_AddGoalPanel_Placeholder">Form fields will be added when full implementation is complete. For now, this panel demonstrates the Z-Index overlay behavior.</system:String>
+
+    <!-- ========================================== -->
+    <!-- FINANCIAL SIMULATORS TAB                  -->
+    <!-- ========================================== -->
+
+    <!-- Simulators: Top Action Bar -->
+    <system:String x:Key="Locale_Planning_Simulators_Title">Financial Simulators</system:String>
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulation">+ New Simulation</system:String>
+
+    <!-- Simulators: Profile Card Elements -->
+    <system:String x:Key="Locale_Planning_Simulators_OpenProfile">Open Simulation</system:String>
+
+    <!-- Simulators: New Simulation Panel (Right Slide-In) -->
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulationPanel_Title">Create New Simulation</system:String>
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulationPanel_Close">Close Panel</system:String>
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulationPanel_AccountTag">Account / Tag</system:String>
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulationPanel_AccountTag_Placeholder">Select an account or tag...</system:String>
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulationPanel_InterestRate">Interest Rate (%)</system:String>
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulationPanel_InterestRate_Placeholder">e.g., 8.5 for 8.5% p.a.</system:String>
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulationPanel_TargetCorpus">Target Corpus (₹)</system:String>
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulationPanel_TargetCorpus_Placeholder">e.g., 500000</system:String>
+    <system:String x:Key="Locale_Planning_Simulators_NewSimulationPanel_Create">Create Simulation</system:String>
+
+    <!-- ========================================== -->
+    <!-- ACTIVE SIMULATION DETAIL VIEW             -->
+    <!-- ========================================== -->
+
+    <!-- Active Simulation: Top Action Bar -->
+    <system:String x:Key="Locale_Planning_ActiveSimulation_Back">← Back to Dashboard</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_EditParameters">Edit Parameters</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_ExportExcel">Export to Excel</system:String>
+
+    <!-- Active Simulation: DataGrid Column Headers -->
+    <system:String x:Key="Locale_Planning_ActiveSimulation_Column_Month">Month</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_Column_Principal">Principal</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_Column_Interest">Interest</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_Column_Balance">Balance</system:String>
+
+    <!-- Active Simulation: Edit Parameters Panel (Right Slide-In) -->
+    <system:String x:Key="Locale_Planning_ActiveSimulation_EditPanel_Title">Edit Simulation Parameters</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_EditPanel_Close">Close Panel</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_EditPanel_InterestRate">Interest Rate (%)</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_EditPanel_TargetCorpus">Target Corpus (₹)</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_EditPanel_MonthlyAmount">Monthly Amount (₹)</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_EditPanel_TenureMonths">Tenure (Months)</system:String>
+    <system:String x:Key="Locale_Planning_ActiveSimulation_EditPanel_Save">Save &amp; Recalculate</system:String>
+
 </ResourceDictionary>

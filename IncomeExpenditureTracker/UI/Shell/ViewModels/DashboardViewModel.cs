@@ -36,9 +36,27 @@ namespace IncomeExpenditureTracker.UI.Shell
         [RelayCommand]
         public void NavigateToDataTaxonomy()
         {
-            // Note: Adjust the payload of NavigationMessage based on how
-            // your specific enum or string routing dictionary is set up.
             _broker.Send(new NavigationMessage("DataTaxonomy"));
+        }
+
+        /// <summary>
+        /// Navigates to the Reports Hub for historical analytics and data visualization.
+        /// The router will resolve a Transient instance of ReportsHubViewModel.
+        /// </summary>
+        [RelayCommand]
+        public void NavigateToReportsHub()
+        {
+            _broker.Send(new NavigationMessage("ReportsHub"));
+        }
+
+        /// <summary>
+        /// Navigates to the Planning Hub for financial forecasting and goal tracking.
+        /// The router will resolve a Transient instance of PlanningHubViewModel.
+        /// </summary>
+        [RelayCommand]
+        public void NavigateToPlanningHub()
+        {
+            _broker.Send(new NavigationMessage("PlanningHub"));
         }
 
         public override void Dispose()

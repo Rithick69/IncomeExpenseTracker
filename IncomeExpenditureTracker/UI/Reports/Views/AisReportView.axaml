@@ -1,0 +1,145 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Reports.ViewModels"
+             x:Class="IncomeExpenditureTracker.UI.Reports.Views.AisReportView"
+             x:DataType="vm:AisReportViewModel">
+
+    <!-- AIS (Annual Information Statement) Report: Payee-wise Inflow/Outflow Summary -->
+
+    <ScrollViewer>
+        <StackPanel Spacing="16">
+
+            <!-- ===================================================================== -->
+            <!-- TOP BAR: Financial Year Selector                                      -->
+            <!-- ===================================================================== -->
+            <Border Classes="Card">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <StackPanel Grid.Column="0" Spacing="8">
+                        <TextBlock Classes="H2"
+                                   Text="{DynamicResource Locale_Reports_AIS_Title}"/>
+                        <TextBlock Classes="Subtitle"
+                                   Text="{DynamicResource Locale_Reports_AIS_Description}"
+                                   TextWrapping="Wrap"
+                                   Opacity="0.8"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="8"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="{DynamicResource Locale_Reports_AIS_FinancialYear}"
+                                   VerticalAlignment="Center"
+                                   Classes="FormLabel"/>
+                        <ComboBox ItemsSource="{Binding AvailableFinancialYears}"
+                                  SelectedItem="{Binding SelectedFinancialYear}"
+                                  MinWidth="150"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ===================================================================== -->
+            <!-- SUMMARY CARDS ROW                                                     -->
+            <!-- ===================================================================== -->
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="16">
+
+                <!-- Total Inflow Card -->
+                <Border Grid.Column="0" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_AIS_TotalInflow}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding TotalInflow, StringFormat='₹ {0:N2}'}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"
+                                   Foreground="{DynamicResource SuccessBrush}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Total Outflow Card -->
+                <Border Grid.Column="1" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_AIS_TotalOutflow}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding TotalOutflow, StringFormat='₹ {0:N2}'}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"
+                                   Foreground="{DynamicResource ErrorBrush}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Net Flow Card -->
+                <Border Grid.Column="2" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Reports_AIS_NetFlow}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding NetFlow, StringFormat='₹ {0:N2}'}"
+                                   Classes="H1"
+                                   FontFeatures="tnum"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ===================================================================== -->
+            <!-- DATA ZONE: High-Density DataGrid (Payee-wise Summary)                -->
+            <!-- ===================================================================== -->
+            <Border Classes="Card">
+                <StackPanel Spacing="16">
+                    <TextBlock Classes="H3"
+                               Text="{DynamicResource Locale_Reports_AIS_GridTitle}"/>
+
+                    <TextBlock Classes="Subtitle"
+                               Text="{DynamicResource Locale_Reports_AIS_GridHelperText}"
+                               TextWrapping="Wrap"
+                               Opacity="0.7"/>
+
+                    <!-- High-Density Virtualized DataGrid -->
+                    <DataGrid ItemsSource="{Binding PayeeSummaries}"
+                              IsReadOnly="True"
+                              GridLinesVisibility="Horizontal"
+                              CanUserReorderColumns="True"
+                              CanUserResizeColumns="True"
+                              CanUserSortColumns="True"
+                              AutoGenerateColumns="False"
+                              MaxHeight="600">
+
+                        <DataGrid.Columns>
+                            <!-- Payee Name Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_AIS_PayeeName}"
+                                                Binding="{Binding PayeeName}"
+                                                Width="*"
+                                                MinWidth="250"/>
+
+                            <!-- Category Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_AIS_Category}"
+                                                Binding="{Binding Category}"
+                                                Width="180"/>
+
+                            <!-- Total Inflow Column (Tabular Numerics) -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_AIS_TotalInflow}"
+                                                Binding="{Binding TotalInflow, StringFormat='₹ {0:N2}'}"
+                                                Width="160"/>
+
+                            <!-- Total Outflow Column (Tabular Numerics) -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_AIS_TotalOutflow}"
+                                                Binding="{Binding TotalOutflow, StringFormat='₹ {0:N2}'}"
+                                                Width="160"/>
+
+                            <!-- Net Amount Column (Tabular Numerics) -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_AIS_NetAmount}"
+                                                Binding="{Binding NetAmount, StringFormat='₹ {0:N2}'}"
+                                                Width="160"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- Footer Helper Text -->
+                    <TextBlock Classes="Caption"
+                               Text="{DynamicResource Locale_Reports_AIS_FooterHelperText}"
+                               TextWrapping="Wrap"
+                               Opacity="0.6"
+                               Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

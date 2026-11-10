@@ -1,0 +1,592 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:IncomeExpenditureTracker.UI.TransactionReview"
+             mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="900"
+             x:Class="IncomeExpenditureTracker.UI.TransactionReview.TransactionReviewView"
+             x:DataType="vm:TransactionReviewViewModel">
+
+    <!-- Root Grid: Main content on left, Slide-in panel on right -->
+    <Grid ColumnDefinitions="*,Auto">
+
+        <!-- =====================================================================
+             ZONE 1 & 2: Main Content Area (Top Action Bar + DataGrid)
+             ===================================================================== -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto">
+
+            <!-- =====================================================================
+                 ZONE 1: Top Action Bar (Filters, Search, Triage Mode Toggle)
+                 ===================================================================== -->
+            <Border Grid.Row="0" Classes="Card" Margin="20,20,20,10">
+                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto">
+
+                    <!-- Row 0: Triage Mode Toggle + Search + Review Edits Button -->
+                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="10" Margin="0,0,20,15">
+                        <TextBlock Text="{DynamicResource Locale_Ledger_TriageMode_Label}"
+                                   Classes="FormLabel"
+                                   VerticalAlignment="Center" />
+                        <ToggleSwitch IsChecked="{Binding IsTriageMode}"
+                                      Command="{Binding ToggleTriageModeCommand}" />
+                    </StackPanel>
+
+                    <TextBox Grid.Row="0" Grid.Column="1"
+                             Text="{Binding SearchText}"
+                             Watermark="{DynamicResource Locale_Ledger_Search_Placeholder}"
+                             MinWidth="250"
+                             Margin="0,0,20,15" />
+
+                    <!-- Spacer to push Review button to right -->
+                    <StackPanel Grid.Row="0" Grid.Column="2" />
+
+                    <!-- Review X Edits Button (Pinned to Far Right, Zone 1) -->
+                    <Button Grid.Row="0" Grid.Column="3"
+                            Classes="Primary"
+                            Command="{Binding ReviewPendingEditsCommand}"
+                            IsVisible="{Binding HasStagedEdits}"
+                            Margin="0,0,0,15">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{DynamicResource Locale_Ledger_ReviewEdits_Label}"
+                                       VerticalAlignment="Center" />
+                            <Border Background="{DynamicResource AccentIndigoHover}"
+                                    CornerRadius="12"
+                                    Padding="8,2">
+                                <TextBlock Text="{Binding StagedEditsCount}"
+                                           Foreground="#FFFFFF"
+                                           FontWeight="Bold"
+                                           FontSize="11" />
+                            </Border>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Row 1: Date Range + Account + Import Batch + Group By Filters -->
+                    <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="15">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{DynamicResource Locale_Ledger_StartDate_Label}"
+                                       Classes="FormLabel" />
+                            <DatePicker SelectedDate="{Binding StartDate}"
+                                        MinWidth="150" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{DynamicResource Locale_Ledger_EndDate_Label}"
+                                       Classes="FormLabel" />
+                            <DatePicker SelectedDate="{Binding EndDate}"
+                                        MinWidth="150" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{DynamicResource Locale_Ledger_Account_Label}"
+                                       Classes="FormLabel" />
+                            <ComboBox ItemsSource="{Binding AvailableAccounts}"
+                                    SelectedItem="{Binding SelectedAccount}"
+                                    PlaceholderText="{DynamicResource Locale_Ledger_AllAccounts_Placeholder}"
+                                    MinWidth="200">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayName}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- Import Batch Filter -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{DynamicResource Locale_Ledger_ImportBatch_Label}"
+                                       Classes="FormLabel" />
+                            <ComboBox ItemsSource="{Binding AvailableImportBatches}"
+                                    SelectedItem="{Binding SelectedImportBatch}"
+                                    PlaceholderText="{DynamicResource Locale_Ledger_AllBatches_Placeholder}"
+                                    MinWidth="200">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayName}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- Revert Batch Button (Red, visible only when batch selected) -->
+                        <Button Content="{DynamicResource Locale_Ledger_RevertBatch_Button}"
+                                Background="{DynamicResource TextDanger}"
+                                Command="{Binding RevertBatchCommand}"
+                                IsVisible="{Binding IsBatchSelected}"
+                                VerticalAlignment="Bottom" />
+
+                        <!-- Group By ComboBox -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{DynamicResource Locale_Ledger_GroupBy_Label}"
+                                       Classes="FormLabel" />
+                            <ComboBox ItemsSource="{Binding GroupByOptions}"
+                                    SelectedItem="{Binding SelectedGroupBy}"
+                                    PlaceholderText="{DynamicResource Locale_Ledger_GroupBy_Placeholder}"
+                                    MinWidth="150">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <Button Content="{DynamicResource Locale_Ledger_Refresh_Button}"
+                                Classes="Secondary"
+                                Command="{Binding RefreshGridCommand}"
+                                VerticalAlignment="Bottom" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- =====================================================================
+                 ZONE 2: Main DataGrid (Transaction Ledger) with Overlay Bulk Actions Bar
+                 ===================================================================== -->
+            <Border Grid.Row="1" Classes="Card" Margin="20,10,20,20">
+                <Grid>
+                    <!-- Main DataGrid -->
+                    <DataGrid ItemsSource="{Binding Transactions}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              GridLinesVisibility="Horizontal"
+                              HeadersVisibility="Column"
+                              SelectionMode="Single"
+                              CanUserReorderColumns="True"
+                              CanUserResizeColumns="True"
+                              FontFeatures="tnum"
+                              DoubleTapped="OnRowDoubleTapped">
+
+                        <DataGrid.Columns>
+                            <!-- Select Checkbox Column -->
+                            <DataGridCheckBoxColumn Header="{DynamicResource Locale_Ledger_Grid_Select}"
+                                                    Binding="{Binding IsSelected}"
+                                                    Width="60" />
+
+                            <!-- Date Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Date}"
+                                                Binding="{Binding Date, StringFormat='{}{0:dd-MMM-yyyy}'}"
+                                                Width="120" />
+
+                            <!-- Account Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Account}"
+                                                Binding="{Binding AccountName}"
+                                                Width="150" />
+
+                            <!-- Merchant Template Column (Bold Sanitized + Muted Raw) -->
+                            <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Merchant}"
+                                                    Width="250">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Spacing="4" Margin="0,6">
+                                            <TextBlock Text="{Binding SanitizedSource}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextPrimary}" />
+                                            <TextBlock Text="{Binding RawDescription}"
+                                                       Classes="HelperText"
+                                                       TextWrapping="NoWrap"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Payee Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Payee}"
+                                                Binding="{Binding PayeeName}"
+                                                Width="140" />
+
+                            <!-- Tag Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Tag}"
+                                                Binding="{Binding TagName}"
+                                                Width="140" />
+
+                            <!-- Debit Column (Explicit Width, Right-Aligned, Padding to prevent overlap) -->
+                            <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Debit}"
+                                                    Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Debit, StringFormat='{}{0:N2}'}"
+                                                   HorizontalAlignment="Right"
+                                                   Foreground="{DynamicResource TextDanger}"
+                                                   FontFeatures="tnum"
+                                                   Margin="0,0,12,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Credit Column (Explicit Width, Right-Aligned, Padding to prevent overlap) -->
+                            <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Credit}"
+                                                    Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Credit, StringFormat='{}{0:N2}'}"
+                                                   HorizontalAlignment="Right"
+                                                   Foreground="{DynamicResource AccentSuccess}"
+                                                   FontFeatures="tnum"
+                                                   Margin="0,0,12,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Status Column -->
+                            <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Status}"
+                                                Binding="{Binding StatusDisplay}"
+                                                Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- Contextual Bulk Actions Bar (Overlays grid header when items selected, Z-Index 20) -->
+                    <Border Classes="Card"
+                            Background="{DynamicResource BackgroundSecondary}"
+                            VerticalAlignment="Top"
+                            Padding="20,12"
+                            IsVisible="{Binding HasSelectedTransactions}"
+                            ZIndex="20">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+                            <!-- Selected Count Display -->
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding SelectedCountText}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimary}"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,20,0" />
+
+                            <!-- Spacer -->
+                            <StackPanel Grid.Column="1" />
+
+                            <!-- Bulk Apply Tag AutoCompleteBox -->
+                            <StackPanel Grid.Column="2" Spacing="4" Margin="0,0,10,0">
+                                <TextBlock Text="{DynamicResource Locale_Ledger_BulkTag_Label}"
+                                           Classes="FormLabel"
+                                           FontSize="11" />
+                                <AutoCompleteBox Text="{Binding BulkTag}"
+                                                 ItemsSource="{Binding AvailableTags}"
+                                                 Watermark="{DynamicResource Locale_Ledger_BulkTag_Placeholder}"
+                                                 MinWidth="150" />
+                            </StackPanel>
+
+                            <!-- Bulk Apply Payee AutoCompleteBox -->
+                            <StackPanel Grid.Column="3" Spacing="4" Margin="0,0,10,0">
+                                <TextBlock Text="{DynamicResource Locale_Ledger_BulkPayee_Label}"
+                                           Classes="FormLabel"
+                                           FontSize="11" />
+                                <AutoCompleteBox Text="{Binding BulkPayee}"
+                                                 ItemsSource="{Binding AvailablePayees}"
+                                                 Watermark="{DynamicResource Locale_Ledger_BulkPayee_Placeholder}"
+                                                 MinWidth="150" />
+                            </StackPanel>
+
+                            <!-- Apply to All Button -->
+                            <Button Grid.Column="4"
+                                    Content="{DynamicResource Locale_Ledger_BulkApply_Button}"
+                                    Classes="Primary"
+                                    Command="{Binding ApplyBulkChangesCommand}"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,10,0" />
+
+                            <!-- Cancel Selection Button -->
+                            <Button Grid.Column="5"
+                                    Content="{DynamicResource Locale_Ledger_CancelSelection_Button}"
+                                    Classes="Secondary"
+                                    Command="{Binding CancelSelectionCommand}"
+                                    VerticalAlignment="Bottom" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- =====================================================================
+                 ZONE 3: Footer Pagination Bar
+                 ===================================================================== -->
+            <Border Grid.Row="2" Classes="Card" Margin="20,10,20,20" Padding="15,10">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+                    <!-- Page Info Text (Left) -->
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding PageInfo}"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondary}" />
+
+                    <!-- Page Size Selector -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="0,0,15,0">
+                        <TextBlock Text="{DynamicResource Locale_Ledger_PageSize_Label}"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextSecondary}" />
+                        <ComboBox ItemsSource="{Binding PageSizeOptions}"
+                                SelectedItem="{Binding SelectedPageSize}"
+                                MinWidth="80" />
+                    </StackPanel>
+
+                    <!-- Previous Button -->
+                    <Button Grid.Column="2"
+                            Content="◀"
+                            Classes="Secondary"
+                            Command="{Binding PreviousPageCommand}"
+                            IsEnabled="{Binding CanGoPrevious}"
+                            Margin="0,0,5,0"
+                            ToolTip.Tip="{DynamicResource Locale_Ledger_Previous_Button}" />
+
+                    <!-- Next Button -->
+                    <Button Grid.Column="3"
+                            Content="▶"
+                            Classes="Secondary"
+                            Command="{Binding NextPageCommand}"
+                            IsEnabled="{Binding CanGoNext}"
+                            ToolTip.Tip="{DynamicResource Locale_Ledger_Next_Button}" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- =====================================================================
+             ZONE 3: Right Slide-In Panel (Edit Transaction Details)
+             ===================================================================== -->
+        <Border Grid.Column="1"
+                Classes="Card"
+                Width="400"
+                Margin="0,20,20,20"
+                IsVisible="{Binding IsPanelVisible}">
+            <ScrollViewer>
+                <StackPanel Spacing="20">
+                    <!-- Panel Header -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Text="{DynamicResource Locale_Ledger_Panel_Title}"
+                                   Classes="H2" />
+                        <Button Grid.Column="1"
+                                Content="✕"
+                                Classes="GhostIcon"
+                                Command="{Binding CancelEditCommand}"
+                                FontSize="18" />
+                    </Grid>
+
+                    <Separator Background="{DynamicResource BorderSubtle}" />
+
+                    <!-- Audit Trail: Raw Amount Text (Read-Only, Fixed Binding) -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{DynamicResource Locale_Ledger_Panel_RawAmount_Label}"
+                                   Classes="FormLabel" />
+                        <Border Background="{DynamicResource BackgroundPrimary}"
+                                CornerRadius="6"
+                                Padding="12,8">
+                            <TextBlock Text="{Binding RawAmountText}"
+                                       Foreground="{DynamicResource TextSecondary}"
+                                       FontFamily="Consolas,Monaco,Courier New"
+                                       FontSize="12" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Editable Date Field -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{DynamicResource Locale_Ledger_Panel_Date_Label}"
+                                   Classes="FormLabel" />
+                        <DatePicker SelectedDate="{Binding EditDate}" />
+                    </StackPanel>
+
+                    <!-- Editable Debit Field -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{DynamicResource Locale_Ledger_Panel_Debit_Label}"
+                                   Classes="FormLabel" />
+                        <TextBox Text="{Binding EditDebit}"
+                                 Watermark="0.00" />
+                    </StackPanel>
+
+                    <!-- Editable Credit Field -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{DynamicResource Locale_Ledger_Panel_Credit_Label}"
+                                   Classes="FormLabel" />
+                        <TextBox Text="{Binding EditCredit}"
+                                 Watermark="0.00" />
+                    </StackPanel>
+
+                    <!-- Editable Payee (AutoCompleteBox) -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{DynamicResource Locale_Ledger_Panel_Payee_Label}"
+                                   Classes="FormLabel" />
+                        <AutoCompleteBox Text="{Binding EditPayee}"
+                                         ItemsSource="{Binding AvailablePayees}"
+                                         Watermark="{DynamicResource Locale_Ledger_Panel_Payee_Placeholder}" />
+                    </StackPanel>
+
+                    <!-- Editable Tag (AutoCompleteBox) -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{DynamicResource Locale_Ledger_Panel_Tag_Label}"
+                                   Classes="FormLabel" />
+                        <AutoCompleteBox Text="{Binding EditTag}"
+                                         ItemsSource="{Binding AvailableTags}"
+                                         Watermark="{DynamicResource Locale_Ledger_Panel_Tag_Placeholder}" />
+                    </StackPanel>
+
+                    <!-- Memo Field -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{DynamicResource Locale_Ledger_Panel_Memo_Label}"
+                                   Classes="FormLabel" />
+                        <TextBox Text="{Binding EditMemo}"
+                                 Watermark="{DynamicResource Locale_Ledger_Panel_Memo_Placeholder}"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 Height="60" />
+                    </StackPanel>
+
+                    <!-- Split Transaction Section (Fully Scaffolded) -->
+                    <Expander Header="{DynamicResource Locale_Ledger_Panel_SplitTransaction_Label}"
+                              IsExpanded="False">
+                        <StackPanel Spacing="12" Margin="0,10,0,0">
+                            <!-- ItemsControl for Split Lines -->
+                            <ItemsControl ItemsSource="{Binding MockSplitTransactions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource BackgroundPrimary}"
+                                                CornerRadius="6"
+                                                Padding="12"
+                                                Margin="0,0,0,8">
+                                            <Grid ColumnDefinitions="*,*,Auto" RowDefinitions="Auto,Auto">
+                                                <!-- Split Amount TextBox -->
+                                                <StackPanel Grid.Column="0" Grid.Row="0" Spacing="4" Margin="0,0,10,0">
+                                                    <TextBlock Text="{DynamicResource Locale_Ledger_Split_Amount_Label}"
+                                                               Classes="FormLabel"
+                                                               FontSize="11" />
+                                                    <TextBox Text="{Binding SplitAmount}"
+                                                             Watermark="0.00" />
+                                                </StackPanel>
+
+                                                <!-- Tag AutoCompleteBox -->
+                                                <StackPanel Grid.Column="1" Grid.Row="0" Spacing="4" Margin="0,0,10,0">
+                                                    <TextBlock Text="{DynamicResource Locale_Ledger_Split_Tag_Label}"
+                                                               Classes="FormLabel"
+                                                               FontSize="11" />
+                                                    <AutoCompleteBox Text="{Binding SplitTag}"
+                                                                     ItemsSource="{Binding $parent[UserControl].((vm:TransactionReviewViewModel)DataContext).AvailableTags}"
+                                                                     Watermark="{DynamicResource Locale_Ledger_Panel_Tag_Placeholder}" />
+                                                </StackPanel>
+
+                                                <!-- Remove Button -->
+                                                <Button Grid.Column="2" Grid.Row="0"
+                                                        Content="✕"
+                                                        Classes="GhostIcon"
+                                                        Command="{Binding $parent[UserControl].((vm:TransactionReviewViewModel)DataContext).RemoveSplitLineCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        VerticalAlignment="Bottom"
+                                                        ToolTip.Tip="{DynamicResource Locale_Ledger_Split_Remove_Button}" />
+
+                                                <!-- Payee AutoCompleteBox (Second Row) -->
+                                                <StackPanel Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="2" Spacing="4" Margin="0,8,0,0">
+                                                    <TextBlock Text="{DynamicResource Locale_Ledger_Split_Payee_Label}"
+                                                               Classes="FormLabel"
+                                                               FontSize="11" />
+                                                    <AutoCompleteBox Text="{Binding SplitPayee}"
+                                                                     ItemsSource="{Binding $parent[UserControl].((vm:TransactionReviewViewModel)DataContext).AvailablePayees}"
+                                                                     Watermark="{DynamicResource Locale_Ledger_Panel_Payee_Placeholder}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Add Split Line Button -->
+                            <Button Content="{DynamicResource Locale_Ledger_AddSplitLine_Button}"
+                                    Classes="Secondary"
+                                    Command="{Binding AddSplitLineCommand}"
+                                    HorizontalAlignment="Stretch" />
+                        </StackPanel>
+                    </Expander>
+
+                    <Separator Background="{DynamicResource BorderSubtle}" />
+
+                    <!-- Action Buttons -->
+                    <Grid ColumnDefinitions="*, 10, *">
+                        <Button Grid.Column="0"
+                                Content="{DynamicResource Locale_Ledger_Panel_Cancel_Button}"
+                                Classes="Secondary"
+                                Command="{Binding CancelEditCommand}"
+                                HorizontalAlignment="Stretch" />
+
+                        <Button Grid.Column="2"
+                                Content="{DynamicResource Locale_Ledger_Panel_StageUpdates_Button}"
+                                Classes="Primary"
+                                Command="{Binding StageUpdatesCommand}"
+                                HorizontalAlignment="Stretch" />
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- =====================================================================
+        ZONE 4: Embedded Full-Screen Staging Overlay (Z-Index 105)
+        ===================================================================== -->
+        <Grid Background="#CC000000"
+              ZIndex="105"
+              Grid.ColumnSpan="2"
+              IsVisible="{Binding IsStagingModalVisible}">
+
+            <Border
+                Classes="Card"
+                Width="1440"
+                Height="810"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Padding="0"
+                DataContext="{Binding StagingViewModel}">
+                <Grid RowDefinitions="Auto,*,Auto">
+
+                    <!-- Header -->
+                    <Border Grid.Row="0" Background="{DynamicResource BackgroundSecondary}" Padding="30,20" CornerRadius="8,8,0,0">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Text="{DynamicResource Locale_Ledger_StagingModal_Title}" Classes="H1" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Content="✕" Classes="GhostIcon" Command="{Binding CloseCommand}" FontSize="24" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Main Content (DataGrid) -->
+                    <ScrollViewer Grid.Row="1" Padding="30,20">
+                        <StackPanel Spacing="15">
+                            <TextBlock Text="{DynamicResource Locale_Ledger_StagingModal_Subtitle}" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+                            <DataGrid ItemsSource="{Binding StagedCorrections}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal" HeadersVisibility="Column" CanUserReorderColumns="False" CanUserResizeColumns="True" FontFeatures="tnum" MinHeight="400">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Date}" Binding="{Binding Date, StringFormat='{}{0:dd-MMM-yyyy}'}" Width="120" />
+                                    <DataGridTextColumn Header="{DynamicResource Locale_Ledger_StagingModal_OriginalMerchant}" Binding="{Binding OriginalMerchant}" Width="200" />
+                                    <DataGridTextColumn Header="{DynamicResource Locale_Ledger_StagingModal_NewPayee}" Binding="{Binding NewPayee}" Width="180" />
+                                    <DataGridTextColumn Header="{DynamicResource Locale_Ledger_StagingModal_NewTag}" Binding="{Binding NewTag}" Width="180" />
+
+                                    <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Debit}" Width="140">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding CorrectedDebit, StringFormat='{}{0:N2}'}" HorizontalAlignment="Right" Foreground="{DynamicResource TextDanger}" FontFeatures="tnum" Margin="0,0,12,0" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Credit}" Width="140">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding CorrectedCredit, StringFormat='{}{0:N2}'}" HorizontalAlignment="Right" Foreground="{DynamicResource AccentSuccess}" FontFeatures="tnum" Margin="0,0,12,0" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_StagingModal_Actions}" Width="*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Content="🗑" Classes="GhostIcon" Command="{Binding $parent[UserControl].((vm:StagingReviewModalViewModel)DataContext).DiscardCorrectionCommand}" CommandParameter="{Binding}" FontSize="16" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Footer -->
+                    <Border Grid.Row="2" Background="{DynamicResource BackgroundSecondary}" Padding="30,20" CornerRadius="0,0,8,8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding FooterSummary}" FontWeight="SemiBold" FontSize="16" Foreground="{DynamicResource TextPrimary}" />
+                                <TextBlock Text="{DynamicResource Locale_Ledger_StagingModal_FooterHelper}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="{DynamicResource Locale_Ledger_StagingModal_CommitButton}" Classes="Primary" Command="{Binding CommitUpdatesCommand}" FontSize="18" FontWeight="Bold" Padding="40,15" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
