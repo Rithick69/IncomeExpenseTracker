@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:IncomeExpenditureTracker.UI.Reports.ViewModels"
+             xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
              x:Class="IncomeExpenditureTracker.UI.Reports.Views.SpendTrackerView"
              x:DataType="vm:SpendTrackerViewModel">
 
@@ -68,38 +69,11 @@
                         <TextBlock Classes="H2"
                                    Text="{DynamicResource Locale_Reports_Chart_MonthlyTrend}"/>
 
-                        <!-- LiveCharts2 Placeholder (To be implemented after package install) -->
-                        <!-- EXAMPLE INTEGRATION:
-                        <lvc:CartesianChart Series="{Binding MonthlySeries}"
+                        <!-- LiveCharts2 Column Chart: Monthly Income vs Expense -->
+                        <lvc:CartesianChart Series="{Binding MonthlyTrendSeries}"
+                                            Height="350"
                                             XAxes="{Binding XAxes}"
-                                            YAxes="{Binding YAxes}"
-                                            Height="350"/>
-                        -->
-
-                        <!-- MOCK PLACEHOLDER: Visual representation of the chart -->
-                        <Border Background="{DynamicResource BackgroundPrimary}"
-                                CornerRadius="8"
-                                Height="350"
-                                Padding="16">
-                            <StackPanel VerticalAlignment="Center"
-                                        HorizontalAlignment="Center"
-                                        Spacing="12">
-                                <TextBlock Classes="H3"
-                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Title}"
-                                           HorizontalAlignment="Center"/>
-                                <TextBlock Classes="Subtitle"
-                                           TextWrapping="Wrap"
-                                           TextAlignment="Center"
-                                           MaxWidth="400"
-                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Description}"/>
-                                <TextBlock Classes="HelperText"
-                                           TextWrapping="Wrap"
-                                           TextAlignment="Center"
-                                           Foreground="{DynamicResource AccentIndigo}"
-                                           MaxWidth="450"
-                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Package}"/>
-                            </StackPanel>
-                        </Border>
+                                            LegendPosition="Top"/>
 
                     </StackPanel>
                 </Border>
@@ -114,30 +88,10 @@
                         <TextBlock Classes="H2"
                                    Text="{DynamicResource Locale_Reports_Chart_CategoryBreakdown}"/>
 
-                        <!-- LiveCharts2 Placeholder (To be implemented after package install) -->
-                        <!-- EXAMPLE INTEGRATION:
-                        <lvc:PieChart Series="{Binding CategorySeries}"
-                                      Height="320"/>
-                        -->
-
-                        <!-- MOCK PLACEHOLDER: Visual representation of the doughnut chart -->
-                        <Border Background="{DynamicResource BackgroundPrimary}"
-                                CornerRadius="8"
-                                Height="350"
-                                Padding="16">
-                            <StackPanel VerticalAlignment="Center"
-                                        HorizontalAlignment="Center"
-                                        Spacing="12">
-                                <TextBlock Classes="H3"
-                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Title}"
-                                           HorizontalAlignment="Center"/>
-                                <TextBlock Classes="Subtitle"
-                                           TextWrapping="Wrap"
-                                           TextAlignment="Center"
-                                           MaxWidth="300"
-                                           Text="{DynamicResource Locale_Reports_Chart_Placeholder_Doughnut}"/>
-                            </StackPanel>
-                        </Border>
+                        <!-- LiveCharts2 Pie Chart: Category-wise Expense Breakdown -->
+                        <lvc:PieChart Series="{Binding CategoryBreakdownSeries}"
+                                      Height="350"
+                                      LegendPosition="Right"/>
 
                     </StackPanel>
                 </Border>
@@ -153,21 +107,10 @@
                     <TextBlock Classes="H2"
                                Text="{DynamicResource Locale_Reports_Table_MonthlyBreakdown}"/>
 
-                    <!-- DataGrid with Mock Data Display -->
-                    <DataGrid ItemsSource="{Binding MonthlyIncomeData}"
-                              AutoGenerateColumns="False"
-                              IsReadOnly="True"
-                              GridLinesVisibility="Horizontal"
-                              Height="300">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_Table_Month}"
-                                                Binding="{Binding Month}"
-                                                Width="*"/>
-                            <DataGridTextColumn Header="{DynamicResource Locale_Reports_Table_Income}"
-                                                Binding="{Binding Value, StringFormat='₹{0:N2}'}"
-                                                Width="*"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
+                    <TextBlock Classes="Subtitle"
+                               Text="Charts are now powered by LiveCharts2. Toggle to table view for detailed breakdown (feature coming soon)."
+                               TextWrapping="Wrap"
+                               Opacity="0.7"/>
 
                 </StackPanel>
             </Border>

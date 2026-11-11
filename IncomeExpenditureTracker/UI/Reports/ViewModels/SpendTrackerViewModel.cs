@@ -6,6 +6,10 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using IncomeExpenditureTracker.Services.Analytics;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.UI.Shared;
+using LiveChartsCore;
+using LiveChartsCore.SkiaSharpView;
+using LiveChartsCore.SkiaSharpView.Painting;
+using SkiaSharp;
 
 namespace IncomeExpenditureTracker.UI.Reports.ViewModels
 {
@@ -41,26 +45,29 @@ namespace IncomeExpenditureTracker.UI.Reports.ViewModels
         private decimal _netCashflow;
 
         // ============================================================================
-        // LIVECHARTS2 MOCK DATA COLLECTIONS
+        // LIVECHARTS2 SERIES COLLECTIONS
         // ============================================================================
-        // NOTE: These collections will hold mock data to render charts immediately.
-        // In production, these will be populated via IAnalyticsService queries.
-        // LiveCharts2 requires: Install-Package LiveChartsCore.SkiaSharpView.Avalonia
 
         /// <summary>
-        /// Mock monthly income data points for the bar chart
+        /// Series collection for the monthly income/expense bar chart
         /// </summary>
-        public ObservableCollection<MonthlyDataPoint> MonthlyIncomeData { get; } = new();
+        public ISeries[] MonthlyTrendSeries { get; set; } = Array.Empty<ISeries>();
 
         /// <summary>
-        /// Mock monthly expense data points for the bar chart
+        /// Series collection for the category-wise expense pie chart
         /// </summary>
-        public ObservableCollection<MonthlyDataPoint> MonthlyExpenseData { get; } = new();
+        public ISeries[] CategoryBreakdownSeries { get; set; } = Array.Empty<ISeries>();
 
         /// <summary>
-        /// Mock category-wise expense data for the doughnut chart
+        /// X-Axis configuration for the monthly trend chart
         /// </summary>
-        public ObservableCollection<CategoryDataPoint> CategoryExpenseData { get; } = new();
+        public Axis[] XAxes { get; set; } = new Axis[]
+        {
+            new Axis
+            {
+                Labels = new string[] { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+            }
+        };
 
         // ============================================================================
         // CONSTRUCTOR & MOCK DATA INITIALIZATION
@@ -79,6 +86,7 @@ namespace IncomeExpenditureTracker.UI.Reports.ViewModels
         /// <summary>
         /// Populates mock data for immediate UI rendering without database queries.
         /// This method demonstrates the expected data shape for LiveCharts2 integration.
+        /// WHY: LiveCharts2 requires ISeries[] collections for rendering.
         /// </summary>
         private void LoadMockData()
         {
@@ -88,44 +96,45 @@ namespace IncomeExpenditureTracker.UI.Reports.ViewModels
             NetCashflow = TotalIncome - TotalExpense; // 130000
 
             // Mock Monthly Income/Expense Trends (Last 12 Months)
-            var mockMonthlyData = new[]
+            var incomeValues = new double[] { 35000, 38000, 40000, 42000, 37000, 39000, 41000, 38000, 36000, 40000, 42000, 44000 };
+            var expenseValues = new double[] { 25000, 27000, 30000, 28000, 26000, 29000, 31000, 27000, 25000, 28000, 30000, 32000 };
+
+            // Create LiveCharts2 Column Series for Monthly Trend
+            MonthlyTrendSeries = new ISeries[]
             {
-                new { Month = "Jan", Income = 35000m, Expense = 25000m },
-                new { Month = "Feb", Income = 38000m, Expense = 27000m },
-                new { Month = "Mar", Income = 40000m, Expense = 30000m },
-                new { Month = "Apr", Income = 42000m, Expense = 28000m },
-                new { Month = "May", Income = 37000m, Expense = 26000m },
-                new { Month = "Jun", Income = 39000m, Expense = 29000m },
-                new { Month = "Jul", Income = 41000m, Expense = 31000m },
-                new { Month = "Aug", Income = 38000m, Expense = 27000m },
-                new { Month = "Sep", Income = 36000m, Expense = 25000m },
-                new { Month = "Oct", Income = 40000m, Expense = 28000m },
-                new { Month = "Nov", Income = 42000m, Expense = 30000m },
-                new { Month = "Dec", Income = 44000m, Expense = 32000m }
+                new ColumnSeries<double>
+                {
+                    Name = "Income",
+                    Values = incomeValues,
+                    Fill = new SolidColorPaint(SKColors.Green),
+                    Stroke = null,
+                    DataLabelsPaint = new SolidColorPaint(SKColors.Black),
+                    DataLabelsSize = 12,
+                    DataLabelsPosition = LiveChartsCore.Measure.DataLabelsPosition.Top
+                },
+                new ColumnSeries<double>
+                {
+                    Name = "Expense",
+                    Values = expenseValues,
+                    Fill = new SolidColorPaint(SKColors.Red),
+                    Stroke = null,
+                    DataLabelsPaint = new SolidColorPaint(SKColors.Black),
+                    DataLabelsSize = 12,
+                    DataLabelsPosition = LiveChartsCore.Measure.DataLabelsPosition.Top
+                }
             };
 
-            foreach (var dataPoint in mockMonthlyData)
+            // Mock Category-wise Expense Breakdown for Pie Chart
+            CategoryBreakdownSeries = new ISeries[]
             {
-                MonthlyIncomeData.Add(new MonthlyDataPoint(dataPoint.Month, (double)dataPoint.Income));
-                MonthlyExpenseData.Add(new MonthlyDataPoint(dataPoint.Month, (double)dataPoint.Expense));
-            }
-
-            // Mock Category-wise Expense Breakdown for Doughnut Chart
-            var mockCategoryData = new[]
-            {
-                new { Category = "Housing", Amount = 80000m },
-                new { Category = "Food & Dining", Amount = 60000m },
-                new { Category = "Transportation", Amount = 45000m },
-                new { Category = "Utilities", Amount = 35000m },
-                new { Category = "Entertainment", Amount = 40000m },
-                new { Category = "Healthcare", Amount = 30000m },
-                new { Category = "Miscellaneous", Amount = 30000m }
+                new PieSeries<double> { Name = "Housing", Values = new double[] { 80000 } },
+                new PieSeries<double> { Name = "Food & Dining", Values = new double[] { 60000 } },
+                new PieSeries<double> { Name = "Transportation", Values = new double[] { 45000 } },
+                new PieSeries<double> { Name = "Utilities", Values = new double[] { 35000 } },
+                new PieSeries<double> { Name = "Entertainment", Values = new double[] { 40000 } },
+                new PieSeries<double> { Name = "Healthcare", Values = new double[] { 30000 } },
+                new PieSeries<double> { Name = "Miscellaneous", Values = new double[] { 30000 } }
             };
-
-            foreach (var dataPoint in mockCategoryData)
-            {
-                CategoryExpenseData.Add(new CategoryDataPoint(dataPoint.Category, (double)dataPoint.Amount));
-            }
         }
 
         // ============================================================================
@@ -142,13 +151,8 @@ namespace IncomeExpenditureTracker.UI.Reports.ViewModels
             // For now, the mock data remains static
             // Example:
             // var summaries = await _analyticsService.GetMonthlySpendSummaryAsync(startDate, endDate);
-            // MonthlyIncomeData.Clear();
-            // MonthlyExpenseData.Clear();
-            // foreach (var summary in summaries)
-            // {
-            //     MonthlyIncomeData.Add(new MonthlyDataPoint(summary.MonthLabel, (double)summary.Income));
-            //     MonthlyExpenseData.Add(new MonthlyDataPoint(summary.MonthLabel, (double)summary.Expense));
-            // }
+            // Recreate MonthlyTrendSeries with fresh data
+            // Recreate CategoryBreakdownSeries with fresh data
         }
 
         // ============================================================================
@@ -162,17 +166,4 @@ namespace IncomeExpenditureTracker.UI.Reports.ViewModels
         }
     }
 
-    // ============================================================================
-    // DATA TRANSFER OBJECTS FOR LIVECHARTS2
-    // ============================================================================
-
-    /// <summary>
-    /// Represents a single data point for monthly income/expense charts.
-    /// </summary>
-    public record MonthlyDataPoint(string Month, double Value);
-
-    /// <summary>
-    /// Represents a single data point for category-wise expense breakdown.
-    /// </summary>
-    public record CategoryDataPoint(string Category, double Value);
 }

@@ -5,6 +5,10 @@ using IncomeExpenditureTracker.Services.Analytics;
 using IncomeExpenditureTracker.Services.Export;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.UI.Shared;
+using LiveChartsCore;
+using LiveChartsCore.SkiaSharpView;
+using LiveChartsCore.SkiaSharpView.Painting;
+using SkiaSharp;
 
 namespace IncomeExpenditureTracker.UI.Reports.ViewModels
 {
@@ -47,13 +51,24 @@ namespace IncomeExpenditureTracker.UI.Reports.ViewModels
         private int _transactionCount;
 
         // ============================================================================
-        // LIVECHARTS2 & DATAGRID MOCK DATA COLLECTIONS
+        // LIVECHARTS2 SERIES & DATAGRID COLLECTIONS
         // ============================================================================
 
         /// <summary>
-        /// Mock monthly spending data points for the line chart
+        /// Series collection for the monthly spending line chart
         /// </summary>
-        public ObservableCollection<MonthlyDataPoint> MonthlySpendingData { get; } = new();
+        public ISeries[] MonthlySpendingSeries { get; set; } = Array.Empty<ISeries>();
+
+        /// <summary>
+        /// X-Axis configuration for the monthly spending chart
+        /// </summary>
+        public Axis[] XAxes { get; set; } = new Axis[]
+        {
+            new Axis
+            {
+                Labels = new string[] { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+            }
+        };
 
         /// <summary>
         /// Mock transaction data for the DataGrid
@@ -101,26 +116,22 @@ namespace IncomeExpenditureTracker.UI.Reports.ViewModels
             TransactionCount = 48;
 
             // Mock Monthly Spending Trend for Line Chart (Last 12 Months)
-            var mockMonthlyData = new[]
-            {
-                new { Month = "Jan", Spend = 5500m },
-                new { Month = "Feb", Spend = 6200m },
-                new { Month = "Mar", Spend = 6800m },
-                new { Month = "Apr", Spend = 5900m },
-                new { Month = "May", Spend = 6100m },
-                new { Month = "Jun", Spend = 6400m },
-                new { Month = "Jul", Spend = 6700m },
-                new { Month = "Aug", Spend = 5800m },
-                new { Month = "Sep", Spend = 5600m },
-                new { Month = "Oct", Spend = 6300m },
-                new { Month = "Nov", Spend = 6500m },
-                new { Month = "Dec", Spend = 7200m }
-            };
+            var spendingValues = new double[] { 5500, 6200, 6800, 5900, 6100, 6400, 6700, 5800, 5600, 6300, 6500, 7200 };
 
-            foreach (var dataPoint in mockMonthlyData)
+            // Create LiveCharts2 Line Series for Monthly Spending Trend
+            MonthlySpendingSeries = new ISeries[]
             {
-                MonthlySpendingData.Add(new MonthlyDataPoint(dataPoint.Month, (double)dataPoint.Spend));
-            }
+                new LineSeries<double>
+                {
+                    Name = "Groceries Spending",
+                    Values = spendingValues,
+                    Fill = null,
+                    Stroke = new SolidColorPaint(SKColors.Blue) { StrokeThickness = 3 },
+                    GeometryStroke = new SolidColorPaint(SKColors.Blue) { StrokeThickness = 3 },
+                    GeometryFill = new SolidColorPaint(SKColors.White),
+                    GeometrySize = 8
+                }
+            };
 
             // Mock Transaction Details for DataGrid
             var mockTransactions = new[]

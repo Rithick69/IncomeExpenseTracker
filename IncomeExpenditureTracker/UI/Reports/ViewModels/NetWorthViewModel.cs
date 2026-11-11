@@ -5,6 +5,10 @@ using IncomeExpenditureTracker.Services.Analytics;
 using IncomeExpenditureTracker.Services.Export;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.UI.Shared;
+using LiveChartsCore;
+using LiveChartsCore.SkiaSharpView;
+using LiveChartsCore.SkiaSharpView.Painting;
+using SkiaSharp;
 
 namespace IncomeExpenditureTracker.UI.Reports.ViewModels
 {
@@ -47,23 +51,24 @@ namespace IncomeExpenditureTracker.UI.Reports.ViewModels
         private decimal _netWorthChange;
 
         // ============================================================================
-        // LIVECHARTS2 MOCK DATA COLLECTIONS
+        // LIVECHARTS2 SERIES COLLECTIONS
         // ============================================================================
 
         /// <summary>
-        /// Mock monthly asset values for the stacked area chart (positive values)
+        /// Series collection for the net worth stacked area chart
         /// </summary>
-        public ObservableCollection<MonthlyDataPoint> AssetsData { get; } = new();
+        public ISeries[] NetWorthSeries { get; set; } = Array.Empty<ISeries>();
 
         /// <summary>
-        /// Mock monthly liability values for the stacked area chart (negative values)
+        /// X-Axis configuration for the net worth chart
         /// </summary>
-        public ObservableCollection<MonthlyDataPoint> LiabilitiesData { get; } = new();
-
-        /// <summary>
-        /// Mock net worth trend line (Assets - Liabilities)
-        /// </summary>
-        public ObservableCollection<MonthlyDataPoint> NetWorthData { get; } = new();
+        public Axis[] XAxes { get; set; } = new Axis[]
+        {
+            new Axis
+            {
+                Labels = new string[] { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+            }
+        };
 
         // ============================================================================
         // CONSTRUCTOR & MOCK DATA INITIALIZATION
@@ -94,30 +99,40 @@ namespace IncomeExpenditureTracker.UI.Reports.ViewModels
             NetWorthChange = 12.5m; // +12.5% growth
 
             // Mock Monthly Assets/Liabilities Trend for Stacked Area Chart (Last 12 Months)
-            var mockData = new[]
-            {
-                new { Month = "Jan", Assets = 950000m, Liabilities = 220000m },
-                new { Month = "Feb", Assets = 970000m, Liabilities = 215000m },
-                new { Month = "Mar", Assets = 990000m, Liabilities = 210000m },
-                new { Month = "Apr", Assets = 1010000m, Liabilities = 205000m },
-                new { Month = "May", Assets = 1030000m, Liabilities = 200000m },
-                new { Month = "Jun", Assets = 1060000m, Liabilities = 195000m },
-                new { Month = "Jul", Assets = 1090000m, Liabilities = 190000m },
-                new { Month = "Aug", Assets = 1120000m, Liabilities = 188000m },
-                new { Month = "Sep", Assets = 1150000m, Liabilities = 186000m },
-                new { Month = "Oct", Assets = 1180000m, Liabilities = 184000m },
-                new { Month = "Nov", Assets = 1210000m, Liabilities = 182000m },
-                new { Month = "Dec", Assets = 1250000m, Liabilities = 180000m }
-            };
+            var assetsValues = new double[] { 950000, 970000, 990000, 1010000, 1030000, 1060000, 1090000, 1120000, 1150000, 1180000, 1210000, 1250000 };
+            var liabilitiesValues = new double[] { 220000, 215000, 210000, 205000, 200000, 195000, 190000, 188000, 186000, 184000, 182000, 180000 };
+            var netWorthValues = new double[] { 730000, 755000, 780000, 805000, 830000, 865000, 900000, 932000, 964000, 996000, 1028000, 1070000 };
 
-            foreach (var dataPoint in mockData)
+            // Create LiveCharts2 Stacked Area Series for Net Worth Visualization
+            NetWorthSeries = new ISeries[]
             {
-                AssetsData.Add(new MonthlyDataPoint(dataPoint.Month, (double)dataPoint.Assets));
-                // Liabilities stored as negative values for stacked area chart
-                LiabilitiesData.Add(new MonthlyDataPoint(dataPoint.Month, (double)-dataPoint.Liabilities));
-                // Net Worth = Assets - Liabilities
-                NetWorthData.Add(new MonthlyDataPoint(dataPoint.Month, (double)(dataPoint.Assets - dataPoint.Liabilities)));
-            }
+                new StackedAreaSeries<double>
+                {
+                    Name = "Assets",
+                    Values = assetsValues,
+                    Fill = new SolidColorPaint(SKColors.Green.WithAlpha(100)),
+                    Stroke = new SolidColorPaint(SKColors.Green) { StrokeThickness = 2 },
+                    GeometrySize = 0
+                },
+                new StackedAreaSeries<double>
+                {
+                    Name = "Liabilities",
+                    Values = liabilitiesValues,
+                    Fill = new SolidColorPaint(SKColors.Red.WithAlpha(100)),
+                    Stroke = new SolidColorPaint(SKColors.Red) { StrokeThickness = 2 },
+                    GeometrySize = 0
+                },
+                new LineSeries<double>
+                {
+                    Name = "Net Worth",
+                    Values = netWorthValues,
+                    Fill = null,
+                    Stroke = new SolidColorPaint(SKColors.Blue) { StrokeThickness = 3 },
+                    GeometryStroke = new SolidColorPaint(SKColors.Blue) { StrokeThickness = 3 },
+                    GeometryFill = new SolidColorPaint(SKColors.White),
+                    GeometrySize = 6
+                }
+            };
         }
 
         // ============================================================================

@@ -66,12 +66,49 @@
                         CommandParameter="DataTaxonomy"
                         Background="Transparent" Foreground="{DynamicResource TextPrimary}"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
-                    <Button
-                        Content="{DynamicResource Locale_Navigation_Menu_Reports}"
-                        Command="{Binding NavigateCommand}"
-                        CommandParameter="Reports"
-                        Background="Transparent" Foreground="{DynamicResource TextPrimary}"
-                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,8" />
+
+                    <!-- Reports & Analytics Nested Submenu -->
+                    <!-- Uses Expander to create a collapsible parent menu with two child items -->
+                    <Expander Header="{DynamicResource Locale_Navigation_Menu_Reports_Analytics}"
+                              IsExpanded="True">
+                        <Expander.Styles>
+                            <Style Selector="Expander">
+                                <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                            </Style>
+                            <Style Selector="Expander /template/ ToggleButton">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+                                <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                                <Setter Property="Padding" Value="10,8"/>
+                            </Style>
+                        </Expander.Styles>
+                        <StackPanel>
+                            <!-- Indented submenu items using left margin -->
+                            <Button
+                                Content="{DynamicResource Locale_Navigation_Menu_Reports_Insights}"
+                                Command="{Binding NavigateCommand}"
+                                CommandParameter="ReportsHub"
+                                Background="Transparent"
+                                Foreground="{DynamicResource TextSecondary}"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,8"
+                                Margin="20,0,0,0" />
+                            <Button
+                                Content="{DynamicResource Locale_Navigation_Menu_Planning_Simulations}"
+                                Command="{Binding NavigateCommand}"
+                                CommandParameter="PlanningHub"
+                                Background="Transparent"
+                                Foreground="{DynamicResource TextSecondary}"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,8"
+                                Margin="20,0,0,0" />
+                        </StackPanel>
+                    </Expander>
+
                     <Button
                         Content="{DynamicResource Locale_Navigation_Menu_Audit_Logs}"
                         Command="{Binding NavigateCommand}"

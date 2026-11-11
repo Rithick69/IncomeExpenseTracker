@@ -16,6 +16,9 @@ using IncomeExpenditureTracker.Services.Orchestration;
 using IncomeExpenditureTracker.Services.Tagging;
 using IncomeExpenditureTracker.Services.Entities;
 using IncomeExpenditureTracker.Services.Messaging;
+using IncomeExpenditureTracker.Services.Analytics;
+using IncomeExpenditureTracker.Services.Export;
+using IncomeExpenditureTracker.Services.Planning;
 using IncomeExpenditureTracker.UI.Shell;
 using IncomeExpenditureTracker.UI.Shared;
 using IncomeExpenditureTracker.UI.Gatekeeper;
@@ -232,5 +235,18 @@ public static class ServiceRegistration
         services.AddSingleton<ITagService, TagService>();
         services.AddTransient<ITagEngine, TagEngine>();
         services.AddTransient<IDescriptionParser, DescriptionParser>();
+
+        // ---------------------------------------------------------
+        // Analytics & Reporting
+        // ---------------------------------------------------------
+        // Singleton because it maintains no mutable state and can be safely shared across ViewModels
+        services.AddSingleton<IAnalyticsService, AnalyticsService>();
+        services.AddTransient<IExportService, ExportService>();
+
+        // ---------------------------------------------------------
+        // Planning & Forecasting
+        // ---------------------------------------------------------
+        // Singleton because it maintains no mutable state and can be safely shared across ViewModels
+        services.AddSingleton<IPlanningService, PlanningService>();
     }
 }

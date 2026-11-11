@@ -15,6 +15,9 @@
     <system:String x:Key="Locale_Navigation_Menu_Statement_Import">Import Hub</system:String>
     <system:String x:Key="Locale_Navigation_Menu_Data_Taxonomy">Data &amp; Taxonomy</system:String>
     <system:String x:Key="Locale_Navigation_Menu_Reports">Reports</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Reports_Analytics">Reports &amp; Analytics</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Reports_Insights">Reports &amp; Insights</system:String>
+    <system:String x:Key="Locale_Navigation_Menu_Planning_Simulations">Planning &amp; Simulations</system:String>
     <system:String x:Key="Locale_Navigation_Menu_Audit_Logs">Audit Logs</system:String>
 
     <!-- GATEKEEPER MODULE -->
@@ -28,15 +31,36 @@
     <system:String x:Key="Locale_Gatekeeper_Button_Register">Generate Encrypted Vault</system:String>
     <system:String x:Key="Locale_Gatekeeper_Text_CurrencyWarning">This profile operates strictly in the selected currency. Imported foreign amounts will be recorded at a 1:1 face value without conversion.</system:String>
 
-    <!-- Dashboard Module -->
+    <!-- ========================================== -->
+    <!-- DASHBOARD MODULE                          -->
+    <!-- ========================================== -->
+
+    <!-- Zone 1: Welcome & Triage -->
     <system:String x:Key="Locale_Dashboard_Title">Dashboard</system:String>
-    <system:String x:Key="Locale_Dashboard_WelcomeMessage">Welcome to your financial command center.</system:String>
-    <system:String x:Key="Locale_Dashboard_Placeholder_NetWorth">Net Worth Tracker (Coming Soon)</system:String>
-    <system:String x:Key="Locale_Dashboard_Placeholder_CashFlow">Cash Flow (Coming Soon)</system:String>
-    <!-- Dashboard Quick Links -->
-    <system:String x:Key="Locale_Dashboard_Button_ManageData">Manage Data &amp; Taxonomy</system:String>
-    <system:String x:Key="Locale_Dashboard_Button_ViewReports">View Reports &amp; Analytics</system:String>
-    <system:String x:Key="Locale_Dashboard_Button_PlanningHub">Financial Planning</system:String>
+    <system:String x:Key="Locale_Dashboard_Greeting">Welcome back,</system:String>
+    <system:String x:Key="Locale_Dashboard_Button_ReviewTransactions">Review Transactions</system:String>
+    <system:String x:Key="Locale_Dashboard_Button_ManageData">Manage Taxonomy</system:String>
+
+    <!-- Zone 2: KPI Spark-Cards -->
+    <system:String x:Key="Locale_Dashboard_Card_MtdCashFlow">Month-to-Date Cash Flow</system:String>
+    <system:String x:Key="Locale_Dashboard_Label_Inflow">Inflow:</system:String>
+    <system:String x:Key="Locale_Dashboard_Label_Outflow">Outflow:</system:String>
+    <system:String x:Key="Locale_Dashboard_Card_NetWorth">Net Worth</system:String>
+    <system:String x:Key="Locale_Dashboard_Label_TotalAssets">Total Assets - Liabilities</system:String>
+    <system:String x:Key="Locale_Dashboard_Card_ActiveGoal">Active Goal</system:String>
+
+    <!-- Zone 3: Visual Pulse -->
+    <system:String x:Key="Locale_Dashboard_Chart_ExpenseSparkline">Rolling 30-Day Expense Trend</system:String>
+    <system:String x:Key="Locale_Dashboard_Chart_ExpenseSparkline_Helper">Daily expense visualization for quick spending pattern recognition.</system:String>
+
+    <!-- Zone 4: Activity & Navigation -->
+    <system:String x:Key="Locale_Dashboard_Section_QuickActions">Quick Actions</system:String>
+    <system:String x:Key="Locale_Dashboard_Button_ImportStatement">Import Statement</system:String>
+    <system:String x:Key="Locale_Dashboard_Button_ViewAisSummary">View AIS/Tax Summary</system:String>
+    <system:String x:Key="Locale_Dashboard_Button_RunSimulators">Run Simulators</system:String>
+    <system:String x:Key="Locale_Dashboard_Button_ManageTaxonomy">Manage Taxonomy</system:String>
+    <system:String x:Key="Locale_Dashboard_Section_RecentActivity">Recent Activity</system:String>
+    <system:String x:Key="Locale_Dashboard_Button_ViewFullLedger">View Full Ledger</system:String>
 
     <!-- ========================================== -->
     <!-- DATA TAXONOMY HUB                        -->

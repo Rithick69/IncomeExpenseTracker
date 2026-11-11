@@ -1,0 +1,301 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:IncomeExpenditureTracker.UI.Dashboard.ViewModels"
+             xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
+             xmlns:dto="using:IncomeExpenditureTracker.Services.Dashboard"
+             x:Class="IncomeExpenditureTracker.UI.Dashboard.Views.DashboardView"
+             x:DataType="vm:DashboardViewModel">
+
+    <!-- High-Speed Landing Page: 4 Vertical Zones -->
+    <!-- Designed for rapid visual scanning and quick navigation -->
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="24" Margin="16">
+
+            <!-- ================================================================ -->
+            <!-- ZONE 1: WELCOME & DYNAMIC TRIAGE CENTER                         -->
+            <!-- ================================================================ -->
+            <StackPanel Spacing="12">
+
+                <!-- Personalized Greeting -->
+                <TextBlock Classes="H1">
+                    <Run Text="{DynamicResource Locale_Dashboard_Greeting}"/>
+                    <Run Text="{Binding ProfileName}" FontWeight="Bold"/>
+                </TextBlock>
+
+                <!-- Dynamic Alert Banners (Conditionally Styled by Severity) -->
+                <!-- WHY: ItemsControl allows dynamic rendering of N alerts without manual XAML duplication -->
+                <ItemsControl ItemsSource="{Binding SystemAlerts}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="dto:AlertBannerDTO">
+                            <Border CornerRadius="8"
+                                    Padding="16"
+                                    Margin="0,4">
+
+                                <!-- WHY: Data triggers dynamically set background color based on severity -->
+                                <Border.Styles>
+                                    <Style Selector="Border">
+                                        <!-- Default: Info (Blue) -->
+                                        <Setter Property="Background" Value="{DynamicResource AccentIndigo}"/>
+                                    </Style>
+                                    <Style Selector="Border[Tag=Warning]">
+                                        <Setter Property="Background" Value="#FFA500"/>
+                                    </Style>
+                                    <Style Selector="Border[Tag=Critical]">
+                                        <Setter Property="Background" Value="#DC3545"/>
+                                    </Style>
+                                </Border.Styles>
+
+                                <!-- WHY: Bind Tag property to Severity enum for style selector matching -->
+                                <Border.Tag>
+                                    <Binding Path="Severity"/>
+                                </Border.Tag>
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="4">
+                                        <TextBlock Text="{Binding Title}"
+                                                   FontWeight="Bold"
+                                                   FontSize="14"
+                                                   Foreground="#FFFFFF"/>
+                                        <TextBlock Text="{Binding Message}"
+                                                   FontSize="12"
+                                                   Foreground="#FFFFFF"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+
+                                    <!-- Optional CTA Button -->
+                                    <!-- WHY: Only visible if ActionLocaleKey is not null -->
+                                    <Button Grid.Column="1"
+                                            Content="{Binding ActionLocaleKey}"
+                                            Command="{Binding $parent[UserControl].DataContext.HandleAlertActionCommand}"
+                                            CommandParameter="{Binding}"
+                                            Classes="Secondary"
+                                            Foreground="#FFFFFF"
+                                            Background="Transparent"
+                                            BorderBrush="#FFFFFF"
+                                            BorderThickness="1"
+                                            IsVisible="{Binding ActionLocaleKey, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                            VerticalAlignment="Center"
+                                            Margin="12,0,0,0"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+            </StackPanel>
+
+            <!-- ================================================================ -->
+            <!-- ZONE 2: KPI SPARK-CARDS (3 Horizontal Cards)                    -->
+            <!-- ================================================================ -->
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="16">
+
+                <!-- CARD 1: Month-to-Date Cash Flow -->
+                <Border Grid.Column="0" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Dashboard_Card_MtdCashFlow}"
+                                   Classes="H2"/>
+
+                        <!-- Inflow vs Outflow Mini-Stats -->
+                        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{DynamicResource Locale_Dashboard_Label_Inflow}"
+                                           Classes="Subtitle"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding MtdInflow, StringFormat='₹{0:N2}'}"
+                                           Foreground="#28A745"
+                                           FontWeight="SemiBold"
+                                           FontFeatures="tnum"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{DynamicResource Locale_Dashboard_Label_Outflow}"
+                                           Classes="Subtitle"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding MtdOutflow, StringFormat='₹{0:N2}'}"
+                                           Foreground="#DC3545"
+                                           FontWeight="SemiBold"
+                                           FontFeatures="tnum"/>
+                            </StackPanel>
+
+                            <!-- Net Cash Flow (Large Display Number) -->
+                            <TextBlock Grid.Row="2"
+                                       Text="{Binding MtdNetCashFlow, StringFormat='₹{0:N2}'}"
+                                       Classes="DisplayNumber"
+                                       FontFeatures="tnum"
+                                       Margin="0,8,0,0"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- CARD 2: Net Worth -->
+                <Border Grid.Column="1" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Dashboard_Card_NetWorth}"
+                                   Classes="H2"/>
+                        <TextBlock Text="{DynamicResource Locale_Dashboard_Label_TotalAssets}"
+                                   Classes="Subtitle"/>
+                        <TextBlock Text="{Binding CurrentNetWorth, StringFormat='₹{0:N2}'}"
+                                   Classes="DisplayNumber"
+                                   FontFeatures="tnum"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- CARD 3: Active Goal Progress -->
+                <Border Grid.Column="2" Classes="Card">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{DynamicResource Locale_Dashboard_Card_ActiveGoal}"
+                                   Classes="H2"/>
+                        <TextBlock Text="{Binding ActiveGoalName}"
+                                   Classes="Subtitle"/>
+
+                        <!-- Progress Bar -->
+                        <!-- WHY: Visual indicator of goal completion status -->
+                        <ProgressBar Value="{Binding ActiveGoalPercentage}"
+                                     Maximum="100"
+                                     Height="8"
+                                     Foreground="{DynamicResource AccentIndigo}"
+                                     Background="{DynamicResource BorderSubtle}"
+                                     CornerRadius="4"/>
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding ActiveGoalCurrent, StringFormat='₹{0:N0}'}"
+                                       Classes="H3"
+                                       FontFeatures="tnum"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding ActiveGoalPercentage, StringFormat='{}{0:F1}%'}"
+                                       Classes="Subtitle"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <TextBlock Text="{Binding ActiveGoalTarget, StringFormat='Target: ₹{0:N0}'}"
+                                   Classes="HelperText"
+                                   FontFeatures="tnum"/>
+                    </StackPanel>
+                </Border>
+
+            </Grid>
+
+            <!-- ================================================================ -->
+            <!-- ZONE 3: VISUAL PULSE (30-Day Expense Sparkline)                 -->
+            <!-- ================================================================ -->
+            <Border Classes="Card">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{DynamicResource Locale_Dashboard_Chart_ExpenseSparkline}"
+                               Classes="H2"/>
+
+                    <!-- LiveCharts2 Sparkline Chart -->
+                    <!-- WHY: Minimal configuration for a clean, axis-free sparkline visualization -->
+                    <lvc:CartesianChart Series="{Binding ExpenseSparklineSeries}"
+                                        Height="120"
+                                        TooltipPosition="Hidden"/>
+
+                    <TextBlock Text="{DynamicResource Locale_Dashboard_Chart_ExpenseSparkline_Helper}"
+                               Classes="HelperText"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ================================================================ -->
+            <!-- ZONE 4: ACTIVITY & NAVIGATION                                   -->
+            <!-- ================================================================ -->
+            <StackPanel Spacing="16">
+
+                <!-- ROW 1: Deep Link Navigation Buttons -->
+                <Border Classes="Card">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{DynamicResource Locale_Dashboard_Section_QuickActions}"
+                                   Classes="H2"/>
+
+                        <!-- WHY: WrapPanel ensures responsive button layout on smaller screens -->
+                        <WrapPanel Orientation="Horizontal" ItemWidth="220" ItemHeight="44">
+                            <Button Classes="Primary"
+                                    Content="{DynamicResource Locale_Dashboard_Button_ImportStatement}"
+                                    Command="{Binding NavigateToImportCommand}"
+                                    Margin="0,0,12,12"
+                                    HorizontalAlignment="Stretch"/>
+
+                            <Button Classes="Primary"
+                                    Content="{DynamicResource Locale_Dashboard_Button_ViewAisSummary}"
+                                    Command="{Binding NavigateToAisSummaryCommand}"
+                                    Margin="0,0,12,12"
+                                    HorizontalAlignment="Stretch"/>
+
+                            <Button Classes="Primary"
+                                    Content="{DynamicResource Locale_Dashboard_Button_RunSimulators}"
+                                    Command="{Binding NavigateToSimulatorsCommand}"
+                                    Margin="0,0,12,12"
+                                    HorizontalAlignment="Stretch"/>
+
+                            <Button Classes="Primary"
+                                    Content="{DynamicResource Locale_Dashboard_Button_ManageTaxonomy}"
+                                    Command="{Binding NavigateToTaxonomyCommand}"
+                                    Margin="0,0,12,12"
+                                    HorizontalAlignment="Stretch"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ROW 2: Recent Activity Feed -->
+                <Border Classes="Card">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="{DynamicResource Locale_Dashboard_Section_RecentActivity}"
+                                       Classes="H2"/>
+
+                            <Button Grid.Column="1"
+                                    Content="{DynamicResource Locale_Dashboard_Button_ViewFullLedger}"
+                                    Command="{Binding NavigateToLedgerCommand}"
+                                    Classes="Secondary"
+                                    VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <!-- Recent Transactions DataGrid (Read-Only) -->
+                        <!-- WHY: FontFeatures="tnum" ensures proper tabular alignment of currency values -->
+                        <DataGrid ItemsSource="{Binding RecentTransactions}"
+                                  IsReadOnly="True"
+                                  CanUserReorderColumns="False"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="False"
+                                  GridLinesVisibility="Horizontal"
+                                  HeadersVisibility="Column"
+                                  AutoGenerateColumns="False"
+                                  FontFeatures="tnum"
+                                  MaxHeight="250">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Date}"
+                                                    Binding="{Binding TransactionDate, StringFormat='{}{0:dd-MMM-yyyy}'}"
+                                                    Width="120"/>
+
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Merchant}"
+                                                    Binding="{Binding Description}"
+                                                    Width="*"/>
+
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Payee}"
+                                                    Binding="{Binding PayeeName}"
+                                                    Width="150"/>
+
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Tag}"
+                                                    Binding="{Binding TagName}"
+                                                    Width="150"/>
+
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Debit}"
+                                                    Binding="{Binding DebitAmount, StringFormat='₹{0:N2}'}"
+                                                    Width="120"/>
+
+                                <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Credit}"
+                                                    Binding="{Binding CreditAmount, StringFormat='₹{0:N2}'}"
+                                                    Width="120"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

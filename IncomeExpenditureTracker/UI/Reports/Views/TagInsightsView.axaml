@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:IncomeExpenditureTracker.UI.Reports.ViewModels"
+             xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
              x:Class="IncomeExpenditureTracker.UI.Reports.Views.TagInsightsView"
              x:DataType="vm:TagInsightsViewModel">
 
@@ -76,31 +77,11 @@
                     <TextBlock Classes="H3"
                                Text="{DynamicResource Locale_Reports_TagInsights_ChartTitle}"/>
 
-                    <!-- Placeholder for LiveCharts2 Line Chart -->
-                    <Border Background="{DynamicResource BackgroundSecondary}"
-                            Height="300"
-                            CornerRadius="8">
-                        <StackPanel HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    Spacing="12">
-                            <TextBlock Classes="H3"
-                                       Text="{DynamicResource Locale_Reports_Chart_Placeholder_Title}"
-                                       HorizontalAlignment="Center"
-                                       Opacity="0.7"/>
-                            <TextBlock Classes="Subtitle"
-                                       Text="{DynamicResource Locale_Reports_TagInsights_ChartPlaceholder}"
-                                       HorizontalAlignment="Center"
-                                       TextWrapping="Wrap"
-                                       MaxWidth="500"
-                                       TextAlignment="Center"
-                                       Opacity="0.6"/>
-                            <TextBlock Classes="Caption"
-                                       Text="{DynamicResource Locale_Reports_Chart_Placeholder_Package}"
-                                       HorizontalAlignment="Center"
-                                       FontFamily="Consolas,Menlo,monospace"
-                                       Opacity="0.5"/>
-                        </StackPanel>
-                    </Border>
+                    <!-- LiveCharts2 Line Chart: Month-over-Month Spending Trend -->
+                    <lvc:CartesianChart Series="{Binding MonthlySpendingSeries}"
+                                        Height="300"
+                                        XAxes="{Binding XAxes}"
+                                        LegendPosition="Top"/>
                 </StackPanel>
             </Border>
 
