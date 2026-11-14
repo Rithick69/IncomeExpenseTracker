@@ -10,7 +10,6 @@ using Microsoft.Extensions.Logging;
 using IncomeExpenditureTracker.Models;
 using IncomeExpenditureTracker.Services.Messaging;
 using IncomeExpenditureTracker.Services.Database;
-using DocumentFormat.OpenXml.Office.CustomUI;
 
 namespace IncomeExpenditureTracker.Services.Entities;
 
@@ -27,19 +26,16 @@ namespace IncomeExpenditureTracker.Services.Entities;
 //
 // Responsibilities:
 // • Batch insert transactions
-// • Query transactions
+// • Query transactions (with running balance)
 // • Delete transactions by import batch
 // ------------------------------------------------------------
 public class TransactionService : ITransactionService, IDisposable
 {
     private readonly IDatabaseService _database;
-
     private readonly ILogger<TransactionService> _logger;
-
     private readonly IApplicationBroker _broker;
 
     private readonly ConcurrentDictionary<string, Lazy<Task<List<Transaction>>>> _transactionsCache = new(StringComparer.OrdinalIgnoreCase);
-
     private readonly ConcurrentDictionary<string, Lazy<Task<int>>> _transactionCountCache = new(StringComparer.OrdinalIgnoreCase);
 
     public TransactionService(IDatabaseService database, ILogger<TransactionService> logger, IApplicationBroker broker)
@@ -60,21 +56,6 @@ public class TransactionService : ITransactionService, IDisposable
     // ------------------------------------------------------------
     // INSERT TRANSACTIONS (BATCH INSERT)
     // ------------------------------------------------------------
-    // Inserts a list of transactions into the database.
-    //
-    // This uses batch execution via Dapper which is much faster
-    // than inserting rows individually.
-    //
-    // Performance example:
-    //
-    // 1000 rows
-    // Single inserts → ~2 seconds
-    // Batch insert   → ~0.1 seconds
-    //
-    // A database transaction is used to ensure atomicity:
-    //
-    // If any insert fails → entire batch rolls back.
-    // ------------------------------------------------------------
     public async Task InsertTransactionsAsync(
         List<Transaction> transactions,
         IDbConnection? conn = null,
@@ -90,7 +71,6 @@ public class TransactionService : ITransactionService, IDisposable
             var now = DateTime.UtcNow;
             foreach (var txn in transactions)
             {
-                // Ensure CreatedDate is set. Transaction.CreatedDate is a DateTime.
                 if (txn.CreatedDate == default)
                 {
                     txn.CreatedDate = now;
@@ -103,14 +83,14 @@ public class TransactionService : ITransactionService, IDisposable
                     Date, AccountId, Description, Source,
                     Credit, Debit, ImportBatchId,
                     TagId, PayeeId, TransactionHash, CreatedDate,
-                    ReviewStatus, RawAmountText
+                    ReviewStatus, RawAmountText, Memo, ParentTransactionId, LinkedTransactionId
                 )
                 VALUES
                 (
                     @Date, @AccountId, @Description, @Source,
                     @Credit, @Debit, @ImportBatchId,
                     @TagId, @PayeeId, @TransactionHash, @CreatedDate,
-                    @ReviewStatus, @RawAmountText
+                    @ReviewStatus, @RawAmountText, @Memo, @ParentTransactionId, @LinkedTransactionId
                 );";
 
             if (conn != null && tx != null)
@@ -131,7 +111,7 @@ public class TransactionService : ITransactionService, IDisposable
                     var cmd = new CommandDefinition(
                         sql,
                         transactions,
-                        transaction: tx,
+                        transaction: transaction,
                         cancellationToken: cancelToken
                     );
                     await connection.ExecuteAsync(cmd);
@@ -153,8 +133,8 @@ public class TransactionService : ITransactionService, IDisposable
 
     /// <summary>
     /// Retrieves a paginated list of transactions based on UI filters.
-    /// Utilizes dynamic SQL building to ensure SQLite leverages B-Tree indexes
-    /// (e.g., idx_transactions_accountid) instead of performing full table scans.
+    /// Utilizes dynamic SQL building and a correlated subquery to dynamically
+    /// calculate the RunningBalance for each row without fetching the entire table.
     /// </summary>
     public async Task<List<Transaction>> GetFilteredTransactionsAsync(
         TransactionFilterArgs args,
@@ -163,20 +143,17 @@ public class TransactionService : ITransactionService, IDisposable
         CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-
         ArgumentNullException.ThrowIfNull(args);
         var cacheKey = GetCacheKey(args);
 
         try
         {
-            // 1. Transaction Safety: Bypass cache completely
             if (conn != null && tx != null)
             {
                 return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
                     await BuildAndExecuteFilterQueryAsync(connection, transaction, args, cancelToken), conn, tx, ct);
             }
 
-            // 2. Cache Stampede Protection
             var cachedLazy = _transactionsCache.GetOrAdd(cacheKey, _ => new Lazy<Task<List<Transaction>>>(async () =>
             {
                 try
@@ -186,14 +163,12 @@ public class TransactionService : ITransactionService, IDisposable
                 }
                 catch
                 {
-                    // 3. Fault Eviction
                     _transactionsCache.TryRemove(cacheKey, out var _);
                     throw;
                 }
             }, LazyThreadSafetyMode.ExecutionAndPublication));
 
             return await cachedLazy.Value;
-
         }
         catch (OperationCanceledException)
         {
@@ -202,7 +177,7 @@ public class TransactionService : ITransactionService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch filtered transactions.");
-            throw; // Bubble-Up Principle: Let the ViewModel catch and display the error
+            throw;
         }
     }
 
@@ -218,19 +193,16 @@ public class TransactionService : ITransactionService, IDisposable
     {
         ct.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(args);
-
         var cacheKey = GetCacheKey(args) + "_COUNT";
 
         try
         {
-            // 1. Transaction Safety: Bypass cache completely
             if (conn != null && tx != null)
             {
                 return await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
                     await BuildAndExecuteFilterCountQueryAsync(connection, transaction, args, cancelToken), conn, tx, ct);
             }
 
-            // 2. Cache Stampede Protection
             var cachedLazy = _transactionCountCache.GetOrAdd(cacheKey, _ => new Lazy<Task<int>>(async () =>
             {
                 try
@@ -240,14 +212,12 @@ public class TransactionService : ITransactionService, IDisposable
                 }
                 catch
                 {
-                    // 3. Fault Eviction
                     _transactionCountCache.TryRemove(cacheKey, out var _);
                     throw;
                 }
             }, LazyThreadSafetyMode.ExecutionAndPublication));
 
             return await cachedLazy.Value;
-
         }
         catch (OperationCanceledException)
         {
@@ -262,12 +232,6 @@ public class TransactionService : ITransactionService, IDisposable
 
     // ------------------------------------------------------------
     // DELETE TRANSACTIONS BY IMPORT BATCH
-    // ------------------------------------------------------------
-    // Removes all transactions belonging to a specific import.
-    //
-    // Useful if:
-    // • User imported wrong file
-    // • Duplicate import occurred
     // ------------------------------------------------------------
     public async Task DeleteByBatchIdAsync(
         int batchId,
@@ -306,7 +270,7 @@ public class TransactionService : ITransactionService, IDisposable
     }
 
     // -------------------------------------------------------------------------
-    // DASHBOARD RETRIEVAL IMPLEMENTATIONS
+    // BULK UPDATE / CORRECTIONS (PHASE 9)
     // -------------------------------------------------------------------------
 
     public async Task UpdateTransactionsBulkAsync(
@@ -318,16 +282,15 @@ public class TransactionService : ITransactionService, IDisposable
         ct.ThrowIfCancellationRequested();
         try
         {
-            // Dapper automatically iterates over the IEnumerable when passed to ExecuteAsync.
             const string sql = @"
                 UPDATE Transactions
                 SET TagId = @TargetTagId,
                     PayeeId = @PayeeId,
                     Date = @Date,
-                    Source = @Source,
                     Debit = @Debit,
                     Credit = @Credit,
-                    ReviewStatus = @ReviewStatus
+                    ReviewStatus = @ReviewStatus,
+                    Memo = @Memo
                 WHERE Id = @TransactionId;";
 
             await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
@@ -355,6 +318,123 @@ public class TransactionService : ITransactionService, IDisposable
         }
     }
 
+    // -------------------------------------------------------------------------
+    // PHASE 9: SPLITS & TRANSFERS
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Splits a single transaction into multiple child transactions atomically.
+    /// Enforces a strict math guardrail to ensure the split amounts exactly match the parent.
+    /// </summary>
+    public async Task SplitTransactionAsync(
+        int originalId,
+        List<Transaction> children,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (children == null || children.Count == 0) return;
+
+        await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+        {
+            // 1. Fetch the parent to validate math
+            var parent = await connection.QuerySingleOrDefaultAsync<Transaction>(
+                "SELECT Debit, Credit, AccountId, ImportBatchId, Date, Source, TransactionHash, CreatedDate FROM Transactions WHERE Id = @Id;",
+                new { Id = originalId }, transaction);
+
+            if (parent == null) throw new InvalidOperationException($"Parent transaction {originalId} not found.");
+
+            // 2. Math Guardrail
+            var totalChildDebit = children.Sum(c => c.Debit);
+            var totalChildCredit = children.Sum(c => c.Credit);
+
+            if (parent.Debit != totalChildDebit || parent.Credit != totalChildCredit)
+            {
+                throw new InvalidOperationException("Split math mismatch. The sum of the children must exactly equal the parent's Debit/Credit.");
+            }
+
+            // 3. Flag the parent as a split (Assuming 16 is ReviewFlags.IsSplitParent)
+            await connection.ExecuteAsync(
+                "UPDATE Transactions SET ReviewStatus = (ReviewStatus | 16) WHERE Id = @Id;",
+                new { Id = originalId }, transaction);
+
+            // 4. Prepare children to inherit critical parent data
+            var now = DateTime.UtcNow;
+            foreach (var child in children)
+            {
+                child.ParentTransactionId = originalId;
+                child.AccountId = parent.AccountId;
+                child.ImportBatchId = parent.ImportBatchId;
+                child.Date = parent.Date;
+                child.Source = parent.Source;
+                child.TransactionHash = $"{parent.TransactionHash}_split_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
+                child.CreatedDate = now;
+            }
+
+            // 5. Insert children
+            const string insertSql = @"
+                INSERT INTO Transactions (
+                    Date, AccountId, Description, Source, Credit, Debit, ImportBatchId,
+                    TagId, PayeeId, TransactionHash, CreatedDate, ReviewStatus, RawAmountText, Memo, ParentTransactionId
+                ) VALUES (
+                    @Date, @AccountId, @Description, @Source, @Credit, @Debit, @ImportBatchId,
+                    @TagId, @PayeeId, @TransactionHash, @CreatedDate, @ReviewStatus, @RawAmountText, @Memo, @ParentTransactionId
+                );";
+
+            await connection.ExecuteAsync(insertSql, children, transaction);
+            return true;
+        }, conn, tx, ct);
+
+        InvalidateCache();
+    }
+
+    /// <summary>
+    /// Links a Debit transaction to a Credit transaction to form a transfer,
+    /// applying a fallback Transfer tag and mapping their LinkedTransactionId.
+    /// </summary>
+    public async Task LinkTransferAsync(
+        int debitTransactionId,
+        int creditTransactionId,
+        int systemTransferTagId,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+        {
+            var debitTx = await connection.QuerySingleOrDefaultAsync<Transaction>(
+                "SELECT Debit FROM Transactions WHERE Id = @Id;", new { Id = debitTransactionId }, transaction);
+            var creditTx = await connection.QuerySingleOrDefaultAsync<Transaction>(
+                "SELECT Credit FROM Transactions WHERE Id = @Id;", new { Id = creditTransactionId }, transaction);
+
+            if (debitTx == null || creditTx == null) throw new InvalidOperationException("One or both transactions not found.");
+
+            // Math validation: Debit must exactly match Credit
+            if (debitTx.Debit != creditTx.Credit)
+            {
+                throw new InvalidOperationException($"Transfer mismatch: Debit ({debitTx.Debit}) does not match Credit ({creditTx.Credit}).");
+            }
+
+            const string updateSql = @"
+                UPDATE Transactions
+                SET LinkedTransactionId = @LinkedId, TagId = @TagId
+                WHERE Id = @TargetId;";
+
+            // Update Debit row to point to Credit row
+            await connection.ExecuteAsync(updateSql, new { LinkedId = creditTransactionId, TagId = systemTransferTagId, TargetId = debitTransactionId }, transaction);
+
+            // Update Credit row to point to Debit row
+            await connection.ExecuteAsync(updateSql, new { LinkedId = debitTransactionId, TagId = systemTransferTagId, TargetId = creditTransactionId }, transaction);
+
+            return true;
+        }, conn, tx, ct);
+
+        InvalidateCache();
+    }
+
     public async Task ReassignTransactionsToFallbackTagAsync(
         int oldTagId,
         int fallbackTagId,
@@ -373,11 +453,7 @@ public class TransactionService : ITransactionService, IDisposable
             {
                 var cmd = new CommandDefinition(
                     sql,
-                    new
-                    {
-                        OldTagId = oldTagId,
-                        FallbackTagId = fallbackTagId
-                    },
+                    new { OldTagId = oldTagId, FallbackTagId = fallbackTagId },
                     transaction: tx,
                     cancellationToken: ct
                 );
@@ -388,14 +464,10 @@ public class TransactionService : ITransactionService, IDisposable
                 await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                 {
                     var cmd = new CommandDefinition(
-                    sql,
-                    new
-                    {
-                        OldTagId = oldTagId,
-                        FallbackTagId = fallbackTagId
-                    },
-                    cancellationToken: cancelToken
-                );
+                        sql,
+                        new { OldTagId = oldTagId, FallbackTagId = fallbackTagId },
+                        cancellationToken: cancelToken
+                    );
                     await c.ExecuteAsync(cmd);
                 }, ct);
             }
@@ -432,11 +504,7 @@ public class TransactionService : ITransactionService, IDisposable
             {
                 var cmd = new CommandDefinition(
                     sql,
-                    new
-                    {
-                        Source = source,
-                        TagId = tagId
-                    },
+                    new { Source = source, TagId = tagId },
                     transaction: tx,
                     cancellationToken: ct
                 );
@@ -447,14 +515,10 @@ public class TransactionService : ITransactionService, IDisposable
                 await _database.ExecuteWithRetryAsync(async (c, cancelToken) =>
                 {
                     var cmd = new CommandDefinition(
-                    sql,
-                    new
-                    {
-                        Source = source,
-                        TagId = tagId
-                    },
-                    cancellationToken: cancelToken
-                );
+                        sql,
+                        new { Source = source, TagId = tagId },
+                        cancellationToken: cancelToken
+                    );
                     await c.ExecuteAsync(cmd);
                 }, ct);
             }
@@ -472,6 +536,10 @@ public class TransactionService : ITransactionService, IDisposable
         }
     }
 
+    // -------------------------------------------------------------------------
+    // PRIVATE HELPER METHODS
+    // -------------------------------------------------------------------------
+
     private async Task<T> ExecuteDbActionAsync<T>(
         Func<IDbConnection, IDbTransaction?, CancellationToken, Task<T>> action,
         IDbConnection? existingConn,
@@ -486,12 +554,10 @@ public class TransactionService : ITransactionService, IDisposable
         return await _database.ExecuteWithRetryAsync(async (connection, cancelToken) => await action(connection, null, cancelToken), ct);
     }
 
-
     private static string GetCacheKey(TransactionFilterArgs args)
     {
-        return $"FILTER:{args.BatchId}_{args.AccountId}_{args.Source}_{args.SearchText}_{args.IsTriageMode}_{(int?)args.SpecificError}_{args.Limit}_{args.Offset}";
+        return $"FILTER:{args.BatchId}_{args.AccountId}_{args.Source}_{args.SearchText}_{args.IsTriageMode}_{(int?)args.SpecificError}_{args.DateFrom:yyyyMMdd}_{args.DateTo:yyyyMMdd}_{args.Limit}_{args.Offset}";
     }
-
 
     private void InvalidateCache()
     {
@@ -500,7 +566,7 @@ public class TransactionService : ITransactionService, IDisposable
         _logger.LogInformation("Evicted TransactionService RAM cache due to data mutation.");
     }
 
-    private (List<string>, DynamicParameters) generateFilterParameters(TransactionFilterArgs args)
+    private (List<string>, DynamicParameters) GenerateFilterParameters(TransactionFilterArgs args)
     {
         var conditions = new List<string>();
         var parameters = new DynamicParameters();
@@ -519,7 +585,6 @@ public class TransactionService : ITransactionService, IDisposable
 
         if (!string.IsNullOrWhiteSpace(args.Source))
         {
-            // Exact match for the B-Tree index (idx_transactions_source)
             conditions.Add("Source = @Source");
             parameters.Add("@Source", args.Source);
         }
@@ -530,30 +595,36 @@ public class TransactionService : ITransactionService, IDisposable
             parameters.Add("@SearchText", $"%{args.SearchText}%");
         }
 
-        // 1. Specific Error Filter (e.g., UI dropdown selects "Missing Payee")
+        // Bitwise evaluation for specific triage banners
         if (args.SpecificError.HasValue && args.SpecificError.Value != ReviewFlags.None)
         {
-            // We use a bitwise AND (&) operation instead of standard equality (ReviewStatus = @ErrorFlag).
-            // Because errors are stacked using [Flags], a row might hold multiple errors simultaneously
-            // (e.g., InvalidAmount [1] + MissingPayee [4] = ReviewStatus of 5).
-            // The bitwise AND evaluates if the specific error bit is flipped ON inside the compound integer
-            // (e.g., 5 & 4 = 4), ensuring we find the row regardless of what other errors are stacked on it.
             conditions.Add("(ReviewStatus & @ErrorFlag) = @ErrorFlag");
             parameters.Add("@ErrorFlag", (int)args.SpecificError.Value);
         }
-        // 2. General Triage Mode (UI toggle "Show All Errors")
         else if (args.IsTriageMode.HasValue && args.IsTriageMode.Value)
         {
             conditions.Add("ReviewStatus > 0");
         }
 
+        // Date Range Filters
+        if (args.DateFrom.HasValue)
+        {
+            conditions.Add("Date >= @DateFrom");
+            parameters.Add("@DateFrom", args.DateFrom.Value.ToString("yyyy-MM-dd"));
+        }
+
+        if (args.DateTo.HasValue)
+        {
+            conditions.Add("Date <= @DateTo");
+            parameters.Add("@DateTo", args.DateTo.Value.ToString("yyyy-MM-dd"));
+        }
+
         return (conditions, parameters);
     }
 
-    // Helper method to keep the DB logic clean and reusable
     private async Task<int> BuildAndExecuteFilterCountQueryAsync(IDbConnection connection, IDbTransaction? transaction, TransactionFilterArgs args, CancellationToken ct)
     {
-        var (conditions, parameters) = generateFilterParameters(args);
+        var (conditions, parameters) = GenerateFilterParameters(args);
 
         var sql = "SELECT COUNT(1) FROM Transactions";
         if (conditions.Any())
@@ -571,18 +642,28 @@ public class TransactionService : ITransactionService, IDisposable
         return await connection.ExecuteScalarAsync<int>(cmd);
     }
 
-    // Helper method to keep the DB logic clean and reusable
     private async Task<List<Transaction>> BuildAndExecuteFilterQueryAsync(IDbConnection connection, IDbTransaction? transaction, TransactionFilterArgs args, CancellationToken ct)
     {
-        var (conditions, parameters) = generateFilterParameters(args);
+        var (conditions, parameters) = GenerateFilterParameters(args);
 
-        var sql = "SELECT * FROM Transactions";
+        // Core query pulling transaction fields and the dynamic running balance using a correlated subquery
+        var sql = @"
+            SELECT
+                t.*,
+                (
+                    SELECT SUM(sub.Credit - sub.Debit)
+                    FROM Transactions sub
+                    WHERE sub.AccountId = t.AccountId
+                      AND (sub.Date < t.Date OR (sub.Date = t.Date AND sub.Id <= t.Id))
+                ) AS RunningBalance
+            FROM Transactions t";
+
         if (conditions.Any())
         {
             sql += " WHERE " + string.Join(" AND ", conditions);
         }
 
-        sql += " ORDER BY Date DESC";
+        sql += " ORDER BY t.Date DESC, t.Id DESC";
 
         if (args.Limit.HasValue)
         {

@@ -43,7 +43,9 @@ public readonly record struct TransactionFilterArgs(
     bool? IsTriageMode = null, // ADDED: True = Only show rows with ReviewStatus > 0
     ReviewFlags? SpecificError = null,     // Target a specific error (e.g., MissingPayee)
     int? Limit = 50,
-    int? Offset = 0
+    int? Offset = 0,
+    DateTime? DateFrom = null,
+    DateTime? DateTo = null
 );
 
 /// <summary>

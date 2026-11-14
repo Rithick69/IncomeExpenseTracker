@@ -26,4 +26,14 @@ public interface ITransactionReviewOrchestrator
     /// Atomically wipes all transactions associated with an ImportBatchId and removes the batch record.
     /// </summary>
     Task RevertImportBatchAsync(int batchId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Validates and splits a single transaction into multiple child transactions.
+    /// </summary>
+    Task SplitTransactionAsync(int originalId, List<Transaction> children, CancellationToken ct = default);
+
+    /// <summary>
+    /// Links two selected transactions (one debit, one credit) together as a Transfer.
+    /// </summary>
+    Task LinkTransferAsync(int debitTransactionId, int creditTransactionId, int systemTransferTagId, CancellationToken ct = default);
 }

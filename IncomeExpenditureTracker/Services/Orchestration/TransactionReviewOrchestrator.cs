@@ -85,6 +85,77 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         }
     }
 
+    // =========================================================================
+    // PHASE 9: SPLITS & TRANSFERS FACADE
+    // =========================================================================
+
+    public async Task SplitTransactionAsync(int originalId, List<Transaction> children, CancellationToken ct = default)
+    {
+        try
+        {
+            // The service handles the database transaction and math validation
+            await _transactionService.SplitTransactionAsync(originalId, children, conn: null, tx: null, ct);
+
+            _logger.LogInformation("Successfully split transaction {OriginalId} into {ChildCount} children.", originalId, children.Count);
+
+            // Broadcast a generic batch update message to silently refresh the UI grids
+            _broker.Send(new BatchUpdateCompletedMessage(children.Count));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Catch the specific math validation exceptions thrown by the service layer
+            _logger.LogWarning(ex, "Math validation failed during split of transaction {OriginalId}.", originalId);
+            _broker.Send(new ToastNotificationMessage(ex.Message, NotificationType.Warning));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to split transaction {OriginalId}.", originalId);
+            _broker.Send(new CrudErrorMessage(
+                DomainEntity.Transaction,
+                CrudOperation.Update,
+                "Locale_Error_Split_Transaction"
+            ));
+            throw;
+        }
+    }
+
+    public async Task LinkTransferAsync(int debitTransactionId, int creditTransactionId, int systemTransferTagId, CancellationToken ct = default)
+    {
+        try
+        {
+            await _transactionService.LinkTransferAsync(debitTransactionId, creditTransactionId, systemTransferTagId, conn: null, tx: null, ct);
+
+            _logger.LogInformation("Successfully linked Debit {DebitId} and Credit {CreditId} as a transfer.", debitTransactionId, creditTransactionId);
+            _broker.Send(new ToastNotificationMessage("Transactions successfully linked as a Transfer.", NotificationType.Success));
+
+            // Trigger grid refresh
+            _broker.Send(new BatchUpdateCompletedMessage(2));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Math validation failed during transfer linking.");
+            _broker.Send(new ToastNotificationMessage(ex.Message, NotificationType.Warning));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to link transfers {DebitId} and {CreditId}.", debitTransactionId, creditTransactionId);
+            _broker.Send(new CrudErrorMessage(
+                DomainEntity.Transaction,
+                CrudOperation.Update,
+                "Locale_Error_Link_Transfer"
+            ));
+            throw;
+        }
+    }
+
     public async Task ApplyCorrectionsAsync(IReadOnlyCollection<TransactionCorrectionDTO> corrections, CancellationToken ct = default)
     {
         if (corrections == null || !corrections.Any()) return;

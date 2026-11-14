@@ -81,4 +81,31 @@ public class Transaction
     /// 0 (None) means the transaction is completely clean.
     /// </summary>
     public ReviewFlags ReviewStatus { get; set; }
+
+    // =========================================================================
+    // PHASE 9: ADVANCED TRACKING PROPERTIES
+    // =========================================================================
+
+    /// <summary>
+    /// Personal notes added by the user (e.g., "Dinner with Rahul").
+    /// </summary>
+    public string? Memo { get; set; }
+
+    /// <summary>
+    /// Used for Split Transactions. If this row is a child of a split,
+    /// this holds the ID of the original parent transaction.
+    /// </summary>
+    public int? ParentTransactionId { get; set; }
+
+    /// <summary>
+    /// Used for YNAB-style transfers. Links a Debit in one account
+    /// to a Credit in another account.
+    /// </summary>
+    public int? LinkedTransactionId { get; set; }
+
+    /// <summary>
+    /// Calculated dynamically via SQL. Not persisted in the table.
+    /// Represents the true account balance up to this transaction.
+    /// </summary>
+    public decimal RunningBalance { get; set; }
 }

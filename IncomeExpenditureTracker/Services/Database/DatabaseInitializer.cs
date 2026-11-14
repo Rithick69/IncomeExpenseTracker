@@ -217,18 +217,25 @@ public class DatabaseInitializer : IDatabaseInitializer
                     AccountId INTEGER,
                     Description TEXT,
                     Source TEXT,
-                    Credit REAL,
-                    Debit REAL,
+                    Credit REAL NOT NULL DEFAULT 0,
+                    Debit REAL NOT NULL DEFAULT 0,
                     ImportBatchId INTEGER,
                     TagId INTEGER,
                     PayeeId INTEGER,
-                    TransactionHash TEXT,
+                    TransactionHash TEXT NOT NULL UNIQUE,
                     CreatedDate DATETIME DEFAULT (datetime('now')),
                     ReviewStatus INTEGER DEFAULT 0,
-                    RawAmountText TEXT,
-                    FOREIGN KEY(TagId) REFERENCES Tags(Id),
-                    FOREIGN KEY(AccountId) REFERENCES Accounts(Id),
-                    FOREIGN KEY(PayeeId) REFERENCES Payees(Id)
+                    RawAmountText TEXT NOT NULL,
+                    -- Phase 9 New Columns
+                    Memo TEXT,
+                    ParentTransactionId INTEGER,
+                    LinkedTransactionId INTEGER,
+
+                    FOREIGN KEY(AccountId) REFERENCES Accounts(Id) ON DELETE RESTRICT,
+                    FOREIGN KEY(TagId) REFERENCES Tags(Id) ON DELETE SET NULL,
+                    FOREIGN KEY(PayeeId) REFERENCES Payees(Id) ON DELETE RESTRICT,
+                    FOREIGN KEY(ImportBatchId) REFERENCES ImportBatches(Id) ON DELETE CASCADE,
+                    FOREIGN KEY(ParentTransactionId) REFERENCES Transactions(Id) ON DELETE CASCADE,
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_transactions_accountid ON Transactions(AccountId);

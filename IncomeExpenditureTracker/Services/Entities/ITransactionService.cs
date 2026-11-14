@@ -81,4 +81,31 @@ public interface ITransactionService
         IDbConnection? conn = null,
         IDbTransaction? tx = null,
         CancellationToken ct = default);
+
+    // =========================================================================
+    // PHASE 9: SPLITS & TRANSFERS
+    // =========================================================================
+
+    /// <summary>
+    /// Splits a single transaction into multiple child transactions atomically.
+    /// Enforces strict math guardrails.
+    /// </summary>
+    Task SplitTransactionAsync(
+        int originalId,
+        List<Transaction> children,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Links a Debit transaction to a Credit transaction to form a transfer,
+    /// applying a fallback Transfer tag and mapping their LinkedTransactionId.
+    /// </summary>
+    Task LinkTransferAsync(
+        int debitTransactionId,
+        int creditTransactionId,
+        int systemTransferTagId,
+        IDbConnection? conn = null,
+        IDbTransaction? tx = null,
+        CancellationToken ct = default);
 }
