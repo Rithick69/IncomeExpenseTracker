@@ -123,6 +123,23 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         }
     }
 
+    public async Task RevertSplitAsync(int parentTransactionId, CancellationToken ct = default)
+    {
+        try
+        {
+            await _transactionService.RevertSplitAsync(parentTransactionId, conn: null, tx: null, ct);
+            _logger.LogInformation("Successfully reverted split for parent {ParentId}.", parentTransactionId);
+            _broker.Send(new ToastNotificationMessage("Split reverted successfully.", NotificationType.Success));
+            _broker.Send(new BatchUpdateCompletedMessage(1));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to revert split for {ParentId}.", parentTransactionId);
+            _broker.Send(new CrudErrorMessage(DomainEntity.Transaction, CrudOperation.Delete, "Locale_Error_Revert_Split"));
+            throw;
+        }
+    }
+
     public async Task LinkTransferAsync(int debitTransactionId, int creditTransactionId, int systemTransferTagId, CancellationToken ct = default)
     {
         try
@@ -151,6 +168,24 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
                 DomainEntity.Transaction,
                 CrudOperation.Update,
                 "Locale_Error_Link_Transfer"
+            ));
+            throw;
+        }
+    }
+
+    public async Task<decimal> GetTotalGlobalBalanceAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await _transactionService.GetTotalGlobalBalanceAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve total global balance.");
+            _broker.Send(new CrudErrorMessage(
+                DomainEntity.Transaction,
+                CrudOperation.Read,
+                "Locale_Error_Read_GlobalBalance"
             ));
             throw;
         }

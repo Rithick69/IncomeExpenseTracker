@@ -388,6 +388,7 @@
     <system:String x:Key="Locale_Ledger_Grid_Tag">Tag</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Debit">Debit</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Credit">Credit</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Balance">Running Balance</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Status">Status</system:String>
 
     <!-- Slide-In Edit Panel -->
@@ -401,10 +402,13 @@
     <system:String x:Key="Locale_Ledger_Panel_Tag_Label">Tag</system:String>
     <system:String x:Key="Locale_Ledger_Panel_Tag_Placeholder">Select or type tag...</system:String>
     <system:String x:Key="Locale_Ledger_Panel_SplitTransaction_Label">Split Transaction</system:String>
+    <system:String x:Key="Locale_Ledger_CommitSplit_Button">Commit Split</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_RevertSplit_Button">Revert Split</system:String>
     <system:String x:Key="Locale_Ledger_Panel_SplitTransaction_Placeholder">Split transaction feature coming soon</system:String>
     <system:String x:Key="Locale_Ledger_Panel_Memo_Label">Memo</system:String>
     <system:String x:Key="Locale_Ledger_Panel_Memo_Placeholder">Add personal notes...</system:String>
     <system:String x:Key="Locale_Ledger_Panel_Cancel_Button">Cancel</system:String>
+    <system:String x:Key="Locale_Ledger_LinkTransfer_Button">Link Transfer</system:String>
     <system:String x:Key="Locale_Ledger_Panel_StageUpdates_Button">Stage Updates</system:String>
 
     <!-- Split Transaction Controls -->

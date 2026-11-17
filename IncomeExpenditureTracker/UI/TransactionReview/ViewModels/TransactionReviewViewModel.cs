@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Collections;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using IncomeExpenditureTracker.Models;
@@ -53,7 +54,7 @@ public partial class TransactionReviewViewModel : ViewModelBase
     /// <summary>
     /// Computed property to control visibility of the "Review X Edits" button.
     /// </summary>
-    public bool HasStagedEdits => _stagedEditsCount > 0;
+    public bool HasStagedEdits => StagedEditsCount > 0;
 
     // =============================================================================
     // DATAGRID DATA SOURCE (Main Grid - Zone 2)
@@ -64,7 +65,27 @@ public partial class TransactionReviewViewModel : ViewModelBase
     /// Populated with mock data for UI preview purposes.
     /// In production, this will be updated via delta patching when background sweeps occur.
     /// </summary>
-    public ObservableCollection<TransactionRowViewModel> Transactions { get; } = new();
+    private readonly ObservableCollection<TransactionRowViewModel> _rawTransactions = new();
+
+    /// <summary>
+    /// The grouped and sorted view bound directly to the Avalonia DataGrid.
+    /// </summary>
+    public DataGridCollectionView TransactionsView { get; }
+
+    /// <summary>
+    /// Triggers when the user changes the "Group By" dropdown.
+    /// </summary>
+    partial void OnSelectedGroupByChanged(string value)
+    {
+        TransactionsView.GroupDescriptions.Clear();
+
+        if (value == "Date")
+            TransactionsView.GroupDescriptions.Add(new DataGridPathGroupDescription("Date"));
+        else if (value == "Payee")
+            TransactionsView.GroupDescriptions.Add(new DataGridPathGroupDescription("PayeeName"));
+        else if (value == "Account")
+            TransactionsView.GroupDescriptions.Add(new DataGridPathGroupDescription("AccountName"));
+    }
 
     // =============================================================================
     // SLIDE-IN PANEL PROPERTIES (Right Panel - Zone 3)
@@ -155,14 +176,16 @@ public partial class TransactionReviewViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<AccountFilterItem> AvailableAccounts { get; } = new();
 
-    private Account _selectedAccount;
-    public Account SelectedAccount
+    private Account? _selectedAccount;
+    public Account? SelectedAccount
     {
         get => _selectedAccount;
         set
         {
             SetProperty(ref _selectedAccount, value);
             SelectedAccountId = value?.Id ?? 0;
+            BalanceLabel = IsAccountSelected ? "Account Balance:" : "Total Balance:";
+            _ = RefreshGridAsync();
         }
     }
 
@@ -183,7 +206,7 @@ public partial class TransactionReviewViewModel : ViewModelBase
     /// Controls the visibility of the "Revert Batch" button.
     /// Only visible when a specific batch is selected.
     /// </summary>
-    public bool IsBatchSelected => _selectedImportBatch != null;
+    public bool IsBatchSelected => SelectedImportBatch != null;
 
     /// <summary>
     /// Mock data source for the Group By ComboBox.
@@ -201,8 +224,19 @@ public partial class TransactionReviewViewModel : ViewModelBase
     /// Count of currently selected transactions for bulk updates.
     /// Used to control visibility of the bulk actions bar.
     /// </summary>
-    [ObservableProperty]
     private int _selectedCount = 0;
+
+    public int SelectedCount
+    {
+        get => _selectedCount;
+        set
+        {
+            SetProperty(ref _selectedCount, value);
+            OnPropertyChanged(nameof(HasSelectedTransactions));
+            OnPropertyChanged(nameof(SelectedCountText));
+            OnPropertyChanged(nameof(CanLinkTransfer)); // Triggers the Transfer button
+        }
+    }
 
     /// <summary>
     /// Computed property to control visibility of the bulk actions bar.
@@ -282,6 +316,14 @@ public partial class TransactionReviewViewModel : ViewModelBase
 
     public StagingReviewModalViewModel StagingViewModel { get; }
 
+    [ObservableProperty]
+    private decimal _currentFilterBalance = 0m;
+
+    [ObservableProperty]
+    private string _balanceLabel = "Total Balance:";
+
+    public bool IsAccountSelected => SelectedAccountId.HasValue && SelectedAccountId > 0;
+
     // =============================================================================
     // CONSTRUCTOR & INITIALIZATION
     // =============================================================================
@@ -293,166 +335,254 @@ public partial class TransactionReviewViewModel : ViewModelBase
     {
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
 
-        // Populate mock data for UI preview
-        InitializeMockData();
+        // Initialize Collection View
+        TransactionsView = new DataGridCollectionView(_rawTransactions);
 
         StagingViewModel = new StagingReviewModalViewModel(orchestrator, broker)
         {
             CloseAction = () => IsStagingModalVisible = false
         };
+
+        // Fetch initial data
+        _ = RefreshGridAsync();
+    }
+
+    // Computed property to enable the Transfer button ONLY when exactly 2 rows are selected
+    public bool CanLinkTransfer => _selectedCount == 2;
+
+    [RelayCommand]
+    private async Task LinkAsTransferAsync()
+    {
+        var selectedTxns = _rawTransactions.Where(t => t.IsSelected).ToList();
+        if (selectedTxns.Count != 2) return;
+
+        var tx1 = selectedTxns[0];
+        var tx2 = selectedTxns[1];
+
+        // Ensure one is Debit and one is Credit mathematically
+        int debitId = tx1.Debit > 0 ? tx1.Id : tx2.Id;
+        int creditId = tx1.Credit > 0 ? tx1.Id : tx2.Id;
+
+        // In a real scenario, fetch the System Transfer Tag ID dynamically from MasterData
+        int systemTransferTagId = 999;
+
+        await _orchestrator.LinkTransferAsync(debitId, creditId, systemTransferTagId);
+
+        // Clear selection
+        CancelSelection();
+    }
+
+    [RelayCommand]
+    private async Task CommitSplitAsync()
+    {
+        if (SelectedTransaction == null || !MockSplitTransactions.Any()) return;
+
+        decimal targetTotal = SelectedTransaction.Debit > 0 ? SelectedTransaction.Debit : SelectedTransaction.Credit;
+        decimal currentSplitTotal = 0m;
+        var childTransactions = new List<Transaction>();
+
+        foreach (var split in MockSplitTransactions)
+        {
+            if (decimal.TryParse(split.SplitAmount, out decimal amount))
+            {
+                currentSplitTotal += amount;
+
+                // Construct the child entity mapping
+                childTransactions.Add(new Transaction
+                {
+                    Debit = SelectedTransaction.Debit > 0 ? amount : 0,
+                    Credit = SelectedTransaction.Credit > 0 ? amount : 0,
+                    // Note: Tags/Payees should ideally be resolved to IDs here via MasterData orchestration
+                    ReviewStatus = ReviewFlags.None,
+                    RawAmountText = SelectedTransaction.Debit > 0 ? $"Dr: {amount}" : $"Cr: {amount}"
+                });
+            }
+        }
+
+        // FRACTIONAL MATH GUARDRAIL
+        // If there is a slight fractional difference (e.g., 0.01), auto-correct the last split line.
+        decimal difference = targetTotal - currentSplitTotal;
+        if (difference != 0 && childTransactions.Any())
+        {
+            var lastChild = childTransactions.Last();
+            if (SelectedTransaction.Debit > 0)
+                lastChild.Debit += difference;
+            else
+                lastChild.Credit += difference;
+
+            lastChild.RawAmountText = SelectedTransaction.Debit > 0 ? $"Dr: {lastChild.Debit}" : $"Cr: {lastChild.Credit}";
+
+            Broker.Send(new ToastNotificationMessage($"Fractional difference of {difference:N2} auto-corrected on the last line.", NotificationType.Info));
+        }
+
+        // Execute the backend call
+        await _orchestrator.SplitTransactionAsync(SelectedTransaction.Id, childTransactions);
+
+        IsPanelVisible = false;
+    }
+
+    [RelayCommand]
+    private async Task RevertSplitAsync()
+    {
+        if (SelectedTransaction == null || !SelectedTransaction.IsSplitParent) return;
+
+        await _orchestrator.RevertSplitAsync(SelectedTransaction.Id);
+
+        IsPanelVisible = false;
+        await RefreshGridAsync(); // Reload grid to show restored parent
     }
 
     /// <summary>
     /// Populates the ViewModel with dummy mock data so the UI can be previewed immediately.
     /// This method will be removed once real data fetching is implemented.
     /// </summary>
-    private void InitializeMockData()
-    {
-        // Mock Payees for AutoCompleteBox
-        AvailablePayees.Add("Amazon");
-        AvailablePayees.Add("Zomato");
-        AvailablePayees.Add("Swiggy");
-        AvailablePayees.Add("Infosys Ltd");
-        AvailablePayees.Add("Netflix");
-        AvailablePayees.Add("Uber");
-        AvailablePayees.Add("Groww");
+    // private void InitializeMockData()
+    // {
+    //     // Mock Payees for AutoCompleteBox
+    //     AvailablePayees.Add("Amazon");
+    //     AvailablePayees.Add("Zomato");
+    //     AvailablePayees.Add("Swiggy");
+    //     AvailablePayees.Add("Infosys Ltd");
+    //     AvailablePayees.Add("Netflix");
+    //     AvailablePayees.Add("Uber");
+    //     AvailablePayees.Add("Groww");
 
-        // Mock Tags for AutoCompleteBox
-        AvailableTags.Add("Food & Dining");
-        AvailableTags.Add("Salary");
-        AvailableTags.Add("Investment");
-        AvailableTags.Add("Entertainment");
-        AvailableTags.Add("Transport");
-        AvailableTags.Add("Shopping");
-        AvailableTags.Add("Utilities");
+    //     // Mock Tags for AutoCompleteBox
+    //     AvailableTags.Add("Food & Dining");
+    //     AvailableTags.Add("Salary");
+    //     AvailableTags.Add("Investment");
+    //     AvailableTags.Add("Entertainment");
+    //     AvailableTags.Add("Transport");
+    //     AvailableTags.Add("Shopping");
+    //     AvailableTags.Add("Utilities");
 
-        // Mock Accounts for ComboBox
-        AvailableAccounts.Add(new AccountFilterItem { Id = 1, DisplayName = "HDFC Savings - 4532" });
-        AvailableAccounts.Add(new AccountFilterItem { Id = 2, DisplayName = "ICICI Credit Card - 8876" });
-        AvailableAccounts.Add(new AccountFilterItem { Id = 3, DisplayName = "SBI Salary Account - 1209" });
+    //     // Mock Accounts for ComboBox
+    //     AvailableAccounts.Add(new AccountFilterItem { Id = 1, DisplayName = "HDFC Savings - 4532" });
+    //     AvailableAccounts.Add(new AccountFilterItem { Id = 2, DisplayName = "ICICI Credit Card - 8876" });
+    //     AvailableAccounts.Add(new AccountFilterItem { Id = 3, DisplayName = "SBI Salary Account - 1209" });
 
-        // Mock Import Batches for ComboBox
-        AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 1, DisplayName = "Nov 2026 - HDFC Statement (500 txns)" });
-        AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 2, DisplayName = "Oct 2026 - ICICI Statement (320 txns)" });
-        AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 3, DisplayName = "Sep 2026 - SBI Statement (450 txns)" });
+    //     // Mock Import Batches for ComboBox
+    //     AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 1, DisplayName = "Nov 2026 - HDFC Statement (500 txns)" });
+    //     AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 2, DisplayName = "Oct 2026 - ICICI Statement (320 txns)" });
+    //     AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 3, DisplayName = "Sep 2026 - SBI Statement (450 txns)" });
 
-        // Mock Group By Options
-        GroupByOptions.Add("None");
-        GroupByOptions.Add("Date");
-        GroupByOptions.Add("Payee");
-        GroupByOptions.Add("Account");
+    //     // Mock Group By Options
+    //     GroupByOptions.Add("None");
+    //     GroupByOptions.Add("Date");
+    //     GroupByOptions.Add("Payee");
+    //     GroupByOptions.Add("Account");
 
-        // Mock Page Size Options
-        PageSizeOptions.Add(50);
-        PageSizeOptions.Add(100);
-        PageSizeOptions.Add(200);
+    //     // Mock Page Size Options
+    //     PageSizeOptions.Add(50);
+    //     PageSizeOptions.Add(100);
+    //     PageSizeOptions.Add(200);
 
-        // Mock Transactions for DataGrid
-        Transactions.Add(new TransactionRowViewModel
-        {
-            Id = 1,
-            Date = new DateTime(2026, 11, 8),
-            AccountName = "HDFC Savings",
-            SanitizedSource = "Zomato",
-            RawDescription = "UPI/P2M/123456789/ZOMATO LTD/Food Order/HDFC BANK",
-            PayeeName = "Zomato",
-            TagName = "Food & Dining",
-            Debit = 450.00m,
-            Credit = 0m,
-            ReviewStatus = ReviewFlags.None,
-            RawAmountText = "Dr: 450.00"
-        });
+    //     // Mock Transactions for DataGrid
+    //     Transactions.Add(new TransactionRowViewModel
+    //     {
+    //         Id = 1,
+    //         Date = new DateTime(2026, 11, 8),
+    //         AccountName = "HDFC Savings",
+    //         SanitizedSource = "Zomato",
+    //         RawDescription = "UPI/P2M/123456789/ZOMATO LTD/Food Order/HDFC BANK",
+    //         PayeeName = "Zomato",
+    //         TagName = "Food & Dining",
+    //         Debit = 450.00m,
+    //         Credit = 0m,
+    //         ReviewStatus = ReviewFlags.None,
+    //         RawAmountText = "Dr: 450.00"
+    //     });
 
-        Transactions.Add(new TransactionRowViewModel
-        {
-            Id = 2,
-            Date = new DateTime(2026, 11, 7),
-            AccountName = "SBI Salary Account",
-            SanitizedSource = "Infosys Ltd",
-            RawDescription = "NEFT-INFOSYS LIMITED-SALARY CREDIT NOV 2026",
-            PayeeName = "Infosys Ltd",
-            TagName = "Salary",
-            Debit = 0m,
-            Credit = 95000.00m,
-            ReviewStatus = ReviewFlags.None,
-            RawAmountText = "Cr: 95000.00"
-        });
+    //     Transactions.Add(new TransactionRowViewModel
+    //     {
+    //         Id = 2,
+    //         Date = new DateTime(2026, 11, 7),
+    //         AccountName = "SBI Salary Account",
+    //         SanitizedSource = "Infosys Ltd",
+    //         RawDescription = "NEFT-INFOSYS LIMITED-SALARY CREDIT NOV 2026",
+    //         PayeeName = "Infosys Ltd",
+    //         TagName = "Salary",
+    //         Debit = 0m,
+    //         Credit = 95000.00m,
+    //         ReviewStatus = ReviewFlags.None,
+    //         RawAmountText = "Cr: 95000.00"
+    //     });
 
-        Transactions.Add(new TransactionRowViewModel
-        {
-            Id = 3,
-            Date = new DateTime(2026, 11, 6),
-            AccountName = "ICICI Credit Card",
-            SanitizedSource = "Amazon Pay",
-            RawDescription = "AMAZON PAY INDIA PVT LTD BANGALORE",
-            PayeeName = null, // Missing Payee
-            TagName = null, // Missing Tag
-            Debit = 1299.00m,
-            Credit = 0m,
-            ReviewStatus = ReviewFlags.MissingPayee | ReviewFlags.MissingTag,
-            RawAmountText = "Dr: 1299.00"
-        });
+    //     Transactions.Add(new TransactionRowViewModel
+    //     {
+    //         Id = 3,
+    //         Date = new DateTime(2026, 11, 6),
+    //         AccountName = "ICICI Credit Card",
+    //         SanitizedSource = "Amazon Pay",
+    //         RawDescription = "AMAZON PAY INDIA PVT LTD BANGALORE",
+    //         PayeeName = null, // Missing Payee
+    //         TagName = null, // Missing Tag
+    //         Debit = 1299.00m,
+    //         Credit = 0m,
+    //         ReviewStatus = ReviewFlags.MissingPayee | ReviewFlags.MissingTag,
+    //         RawAmountText = "Dr: 1299.00"
+    //     });
 
-        Transactions.Add(new TransactionRowViewModel
-        {
-            Id = 4,
-            Date = new DateTime(2026, 11, 5),
-            AccountName = "HDFC Savings",
-            SanitizedSource = "Netflix",
-            RawDescription = "NETFLIX.COM BILL PAYMENT",
-            PayeeName = "Netflix",
-            TagName = "Entertainment",
-            Debit = 649.00m,
-            Credit = 0m,
-            ReviewStatus = ReviewFlags.None,
-            RawAmountText = "Dr: 649.00"
-        });
+    //     Transactions.Add(new TransactionRowViewModel
+    //     {
+    //         Id = 4,
+    //         Date = new DateTime(2026, 11, 5),
+    //         AccountName = "HDFC Savings",
+    //         SanitizedSource = "Netflix",
+    //         RawDescription = "NETFLIX.COM BILL PAYMENT",
+    //         PayeeName = "Netflix",
+    //         TagName = "Entertainment",
+    //         Debit = 649.00m,
+    //         Credit = 0m,
+    //         ReviewStatus = ReviewFlags.None,
+    //         RawAmountText = "Dr: 649.00"
+    //     });
 
-        Transactions.Add(new TransactionRowViewModel
-        {
-            Id = 5,
-            Date = new DateTime(2026, 11, 4),
-            AccountName = "HDFC Savings",
-            SanitizedSource = "Groww Invest",
-            RawDescription = "UPI/P2M/987654321/GROWW INVEST TECH PVT/MF Purchase/HDFC",
-            PayeeName = "Groww",
-            TagName = null, // Missing Tag
-            Debit = 5000.00m,
-            Credit = 0m,
-            ReviewStatus = ReviewFlags.MissingTag,
-            RawAmountText = "Dr: 5000.00"
-        });
+    //     Transactions.Add(new TransactionRowViewModel
+    //     {
+    //         Id = 5,
+    //         Date = new DateTime(2026, 11, 4),
+    //         AccountName = "HDFC Savings",
+    //         SanitizedSource = "Groww Invest",
+    //         RawDescription = "UPI/P2M/987654321/GROWW INVEST TECH PVT/MF Purchase/HDFC",
+    //         PayeeName = "Groww",
+    //         TagName = null, // Missing Tag
+    //         Debit = 5000.00m,
+    //         Credit = 0m,
+    //         ReviewStatus = ReviewFlags.MissingTag,
+    //         RawAmountText = "Dr: 5000.00"
+    //     });
 
-        Transactions.Add(new TransactionRowViewModel
-        {
-            Id = 6,
-            Date = new DateTime(2026, 11, 3),
-            AccountName = "ICICI Credit Card",
-            SanitizedSource = "Uber India",
-            RawDescription = "UBER INDIA SYSTEMS PVT LTD BANGALORE",
-            PayeeName = "Uber",
-            TagName = "Transport",
-            Debit = 285.00m,
-            Credit = 0m,
-            ReviewStatus = ReviewFlags.None,
-            RawAmountText = "Dr: 285.00"
-        });
+    //     Transactions.Add(new TransactionRowViewModel
+    //     {
+    //         Id = 6,
+    //         Date = new DateTime(2026, 11, 3),
+    //         AccountName = "ICICI Credit Card",
+    //         SanitizedSource = "Uber India",
+    //         RawDescription = "UBER INDIA SYSTEMS PVT LTD BANGALORE",
+    //         PayeeName = "Uber",
+    //         TagName = "Transport",
+    //         Debit = 285.00m,
+    //         Credit = 0m,
+    //         ReviewStatus = ReviewFlags.None,
+    //         RawAmountText = "Dr: 285.00"
+    //     });
 
-        Transactions.Add(new TransactionRowViewModel
-        {
-            Id = 7,
-            Date = new DateTime(2026, 11, 2),
-            AccountName = "HDFC Savings",
-            SanitizedSource = "Unknown Merchant",
-            RawDescription = "POS PURCHASE-INVALID AMOUNT TEXT",
-            PayeeName = null,
-            TagName = null,
-            Debit = 0m,
-            Credit = 0m,
-            ReviewStatus = ReviewFlags.InvalidAmount | ReviewFlags.MissingPayee | ReviewFlags.MissingTag,
-            RawAmountText = "INVALID"
-        });
-    }
+    //     Transactions.Add(new TransactionRowViewModel
+    //     {
+    //         Id = 7,
+    //         Date = new DateTime(2026, 11, 2),
+    //         AccountName = "HDFC Savings",
+    //         SanitizedSource = "Unknown Merchant",
+    //         RawDescription = "POS PURCHASE-INVALID AMOUNT TEXT",
+    //         PayeeName = null,
+    //         TagName = null,
+    //         Debit = 0m,
+    //         Credit = 0m,
+    //         ReviewStatus = ReviewFlags.InvalidAmount | ReviewFlags.MissingPayee | ReviewFlags.MissingTag,
+    //         RawAmountText = "INVALID"
+    //     });
+    // }
 
     // =============================================================================
     // COMMANDS (User Actions)
@@ -563,24 +693,69 @@ public partial class TransactionReviewViewModel : ViewModelBase
 
     /// <summary>
     /// Refreshes the DataGrid by fetching transactions from the orchestrator based on current filters.
-    /// This is a placeholder for the actual keyset cursor paging logic.
     /// </summary>
     [RelayCommand]
     private async Task RefreshGridAsync()
     {
-        // Placeholder: In production, this would call:
-        // var filters = new TransactionFilterArgs(
-        //     AccountId: SelectedAccountId,
-        //     SearchText: SearchText,
-        //     IsTriageMode: IsTriageMode,
-        //     Limit: 50,
-        //     Offset: 0
-        // );
-        // var result = await _orchestrator.GetTransactionsAsync(filters);
-        // Then perform delta patching on the Transactions collection
+        try
+        {
+            // 1. Build the filter arguments based on current UI state
+            var filters = new TransactionFilterArgs(
+                BatchId: SelectedImportBatch?.Id,
+                AccountId: SelectedAccountId,
+                SearchText: SearchText,
+                IsTriageMode: IsTriageMode,
+                DateFrom: StartDate,
+                DateTo: EndDate,
+                Limit: SelectedPageSize,
+                Offset: 0 // Reset to 0 on a fresh filter refresh. Pagination offset logic will handle next/prev.
+            );
 
-        Broker.Send(new ToastNotificationMessage("Grid refresh triggered (mock)", NotificationType.Info));
-        await Task.CompletedTask;
+            // 2. Fetch from Database
+            var result = await _orchestrator.GetTransactionsAsync(filters);
+
+            if (IsAccountSelected && result.Items.Any())
+            {
+                // Pull the specific account's running balance from the View
+                CurrentFilterBalance = result.Items.First().RunningBalance;
+            }
+            else if (!IsAccountSelected)
+            {
+                // Pull the global summation across all accounts
+                CurrentFilterBalance = await _orchestrator.GetTotalGlobalBalanceAsync();
+            }
+            else
+            {
+                CurrentFilterBalance = 0m;
+            }
+
+            // 3. Clear existing and repopulate
+            _rawTransactions.Clear();
+
+            // Note: In production, you'd want to cache the Account/Payee/Tag names in dictionaries
+            // from your MasterData service to avoid N+1 queries. For now, we map them directly.
+            foreach (var txn in result.Items)
+            {
+                _rawTransactions.Add(TransactionRowViewModel.FromEntity(
+                    txn,
+                    accountName: $"Account {txn.AccountId}", // Placeholder: Resolve real name via MasterData
+                    payeeName: txn.PayeeId.HasValue ? $"Payee {txn.PayeeId}" : null,
+                    tagName: txn.TagId.HasValue ? $"Tag {txn.TagId}" : null
+                ));
+            }
+
+            // 4. Update Pagination UI
+            PageInfo = $"Showing 1-{result.Items.Count()} of {result.TotalCount} transactions";
+            CanGoPrevious = false; // We are on page 1
+            CanGoNext = result.TotalCount > SelectedPageSize;
+
+            Broker.Send(new ToastNotificationMessage("Grid Refreshed.", NotificationType.Info));
+        }
+        catch (Exception)
+        {
+            // Logging is handled by the orchestrator, just show generic UI fallback if needed
+            Broker.Send(new ToastNotificationMessage("Failed to load transactions.", NotificationType.Error));
+        }
     }
 
     // =============================================================================
@@ -728,7 +903,7 @@ public partial class TransactionReviewViewModel : ViewModelBase
 /// Represents a single row in the DataGrid.
 /// This is a lightweight ViewModel that mirrors the Transaction entity but adds UI-specific properties.
 /// </summary>
-public class TransactionRowViewModel : ObservableObject
+public partial class TransactionRowViewModel : ObservableObject
 {
     private int _id;
     private bool _isSelected;
@@ -742,6 +917,11 @@ public class TransactionRowViewModel : ObservableObject
     private decimal _credit;
     private ReviewFlags _reviewStatus;
     private string? _rawAmountText;
+
+    [ObservableProperty] private decimal _runningBalance;
+    [ObservableProperty] private string? _memo;
+    [ObservableProperty] private int? _parentTransactionId;
+    [ObservableProperty] private int? _linkedTransactionId;
 
     public int Id
     {
@@ -815,11 +995,40 @@ public class TransactionRowViewModel : ObservableObject
         set => SetProperty(ref _rawAmountText, value);
     }
 
+    // UI Helpers
+    public bool IsSplitParent => ReviewStatus.HasFlag(ReviewFlags.IsSplitParent); // Assuming IsSplitParent is 16
+    public bool IsTransfer => LinkedTransactionId.HasValue;
+
     /// <summary>
     /// Computed property to display the review status as a human-readable string.
     /// Used in the DataGrid Status column.
     /// </summary>
     public string StatusDisplay => ReviewStatus == ReviewFlags.None ? "Clean" : ReviewStatus.ToString();
+
+    /// <summary>
+    /// Maps a raw database Transaction entity to this UI ViewModel.
+    /// </summary>
+    public static TransactionRowViewModel FromEntity(Transaction txn, string accountName, string? payeeName, string? tagName)
+    {
+        return new TransactionRowViewModel
+        {
+            Id = txn.Id,
+            Date = txn.Date,
+            AccountName = accountName, // Passed in from a dictionary lookup for speed
+            SanitizedSource = txn.Source,
+            RawDescription = txn.Description,
+            PayeeName = payeeName,
+            TagName = tagName,
+            Debit = txn.Debit,
+            Credit = txn.Credit,
+            ReviewStatus = txn.ReviewStatus,
+            RawAmountText = txn.RawAmountText,
+            RunningBalance = txn.RunningBalance, // The dynamic SQL column
+            Memo = txn.Memo,
+            ParentTransactionId = txn.ParentTransactionId,
+            LinkedTransactionId = txn.LinkedTransactionId
+        };
+    }
 }
 
 /// <summary>

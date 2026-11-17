@@ -336,44 +336,47 @@ public class TransactionService : ITransactionService, IDisposable
         ct.ThrowIfCancellationRequested();
         if (children == null || children.Count == 0) return;
 
-        await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+        try
         {
-            // 1. Fetch the parent to validate math
-            var parent = await connection.QuerySingleOrDefaultAsync<Transaction>(
-                "SELECT Debit, Credit, AccountId, ImportBatchId, Date, Source, TransactionHash, CreatedDate FROM Transactions WHERE Id = @Id;",
-                new { Id = originalId }, transaction);
 
-            if (parent == null) throw new InvalidOperationException($"Parent transaction {originalId} not found.");
-
-            // 2. Math Guardrail
-            var totalChildDebit = children.Sum(c => c.Debit);
-            var totalChildCredit = children.Sum(c => c.Credit);
-
-            if (parent.Debit != totalChildDebit || parent.Credit != totalChildCredit)
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
-                throw new InvalidOperationException("Split math mismatch. The sum of the children must exactly equal the parent's Debit/Credit.");
-            }
+                // 1. Fetch the parent to validate math
+                var parent = await connection.QuerySingleOrDefaultAsync<Transaction>(
+                    "SELECT Debit, Credit, AccountId, ImportBatchId, Date, Source, TransactionHash, CreatedDate FROM Transactions WHERE Id = @Id;",
+                    new { Id = originalId }, transaction);
 
-            // 3. Flag the parent as a split (Assuming 16 is ReviewFlags.IsSplitParent)
-            await connection.ExecuteAsync(
-                "UPDATE Transactions SET ReviewStatus = (ReviewStatus | 16) WHERE Id = @Id;",
-                new { Id = originalId }, transaction);
+                if (parent == null) throw new InvalidOperationException($"Parent transaction {originalId} not found.");
 
-            // 4. Prepare children to inherit critical parent data
-            var now = DateTime.UtcNow;
-            foreach (var child in children)
-            {
-                child.ParentTransactionId = originalId;
-                child.AccountId = parent.AccountId;
-                child.ImportBatchId = parent.ImportBatchId;
-                child.Date = parent.Date;
-                child.Source = parent.Source;
-                child.TransactionHash = $"{parent.TransactionHash}_split_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
-                child.CreatedDate = now;
-            }
+                // 2. Math Guardrail
+                var totalChildDebit = children.Sum(c => c.Debit);
+                var totalChildCredit = children.Sum(c => c.Credit);
 
-            // 5. Insert children
-            const string insertSql = @"
+                if (parent.Debit != totalChildDebit || parent.Credit != totalChildCredit)
+                {
+                    throw new InvalidOperationException("Split math mismatch. The sum of the children must exactly equal the parent's Debit/Credit.");
+                }
+
+                // 3. Flag the parent as a split (Assuming 16 is ReviewFlags.IsSplitParent)
+                await connection.ExecuteAsync(
+                    "UPDATE Transactions SET ReviewStatus = (ReviewStatus | 16) WHERE Id = @Id;",
+                    new { Id = originalId }, transaction);
+
+                // 4. Prepare children to inherit critical parent data
+                var now = DateTime.UtcNow;
+                foreach (var child in children)
+                {
+                    child.ParentTransactionId = originalId;
+                    child.AccountId = parent.AccountId;
+                    child.ImportBatchId = parent.ImportBatchId;
+                    child.Date = parent.Date;
+                    child.Source = parent.Source;
+                    child.TransactionHash = $"{parent.TransactionHash}_split_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
+                    child.CreatedDate = now;
+                }
+
+                // 5. Insert children
+                const string insertSql = @"
                 INSERT INTO Transactions (
                     Date, AccountId, Description, Source, Credit, Debit, ImportBatchId,
                     TagId, PayeeId, TransactionHash, CreatedDate, ReviewStatus, RawAmountText, Memo, ParentTransactionId
@@ -382,11 +385,60 @@ public class TransactionService : ITransactionService, IDisposable
                     @TagId, @PayeeId, @TransactionHash, @CreatedDate, @ReviewStatus, @RawAmountText, @Memo, @ParentTransactionId
                 );";
 
-            await connection.ExecuteAsync(insertSql, children, transaction);
-            return true;
-        }, conn, tx, ct);
+                await connection.ExecuteAsync(insertSql, children, transaction);
+                return true;
+            }, conn, tx, ct);
 
-        InvalidateCache();
+            InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to split transaction ID {OriginalId} into {ChildCount} children.", originalId, children.Count);
+            throw;
+        }
+    }
+
+    public async Task RevertSplitAsync(
+            int parentTransactionId,
+            IDbConnection? conn = null,
+            IDbTransaction? tx = null,
+            CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        try
+        {
+
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+            {
+                // 1. Delete all child splits
+                await connection.ExecuteAsync(
+                    "DELETE FROM Transactions WHERE ParentTransactionId = @ParentId;",
+                    new { ParentId = parentTransactionId }, transaction);
+
+                // 2. Remove the IsSplitParent flag (16) using bitwise AND NOT (~16)
+                await connection.ExecuteAsync(
+                    "UPDATE Transactions SET ReviewStatus = (ReviewStatus & ~16) WHERE Id = @ParentId;",
+                    new { ParentId = parentTransactionId }, transaction);
+
+                return true;
+            }, conn, tx, ct);
+
+            InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to revert split for parent transaction ID {ParentId}.", parentTransactionId);
+            throw;
+        }
     }
 
     /// <summary>
@@ -403,36 +455,49 @@ public class TransactionService : ITransactionService, IDisposable
     {
         ct.ThrowIfCancellationRequested();
 
-        await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
+        try
         {
-            var debitTx = await connection.QuerySingleOrDefaultAsync<Transaction>(
-                "SELECT Debit FROM Transactions WHERE Id = @Id;", new { Id = debitTransactionId }, transaction);
-            var creditTx = await connection.QuerySingleOrDefaultAsync<Transaction>(
-                "SELECT Credit FROM Transactions WHERE Id = @Id;", new { Id = creditTransactionId }, transaction);
 
-            if (debitTx == null || creditTx == null) throw new InvalidOperationException("One or both transactions not found.");
-
-            // Math validation: Debit must exactly match Credit
-            if (debitTx.Debit != creditTx.Credit)
+            await ExecuteDbActionAsync(async (connection, transaction, cancelToken) =>
             {
-                throw new InvalidOperationException($"Transfer mismatch: Debit ({debitTx.Debit}) does not match Credit ({creditTx.Credit}).");
-            }
+                var debitTx = await connection.QuerySingleOrDefaultAsync<Transaction>(
+                    "SELECT Debit FROM Transactions WHERE Id = @Id;", new { Id = debitTransactionId }, transaction);
+                var creditTx = await connection.QuerySingleOrDefaultAsync<Transaction>(
+                    "SELECT Credit FROM Transactions WHERE Id = @Id;", new { Id = creditTransactionId }, transaction);
 
-            const string updateSql = @"
+                if (debitTx == null || creditTx == null) throw new InvalidOperationException("One or both transactions not found.");
+
+                // Math validation: Debit must exactly match Credit
+                if (debitTx.Debit != creditTx.Credit)
+                {
+                    throw new InvalidOperationException($"Transfer mismatch: Debit ({debitTx.Debit}) does not match Credit ({creditTx.Credit}).");
+                }
+
+                const string updateSql = @"
                 UPDATE Transactions
                 SET LinkedTransactionId = @LinkedId, TagId = @TagId
                 WHERE Id = @TargetId;";
 
-            // Update Debit row to point to Credit row
-            await connection.ExecuteAsync(updateSql, new { LinkedId = creditTransactionId, TagId = systemTransferTagId, TargetId = debitTransactionId }, transaction);
+                // Update Debit row to point to Credit row
+                await connection.ExecuteAsync(updateSql, new { LinkedId = creditTransactionId, TagId = systemTransferTagId, TargetId = debitTransactionId }, transaction);
 
-            // Update Credit row to point to Debit row
-            await connection.ExecuteAsync(updateSql, new { LinkedId = debitTransactionId, TagId = systemTransferTagId, TargetId = creditTransactionId }, transaction);
+                // Update Credit row to point to Debit row
+                await connection.ExecuteAsync(updateSql, new { LinkedId = debitTransactionId, TagId = systemTransferTagId, TargetId = creditTransactionId }, transaction);
 
-            return true;
-        }, conn, tx, ct);
+                return true;
+            }, conn, tx, ct);
 
-        InvalidateCache();
+            InvalidateCache();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to link transfer between Debit ID {DebitId} and Credit ID {CreditId}.", debitTransactionId, creditTransactionId);
+            throw;
+        }
     }
 
     public async Task ReassignTransactionsToFallbackTagAsync(
@@ -532,6 +597,28 @@ public class TransactionService : ITransactionService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to execute retroactive sweep for Source '{Source}' to TagId {TagId}.", source, tagId);
+            throw;
+        }
+    }
+
+    public async Task<decimal> GetTotalGlobalBalanceAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await _database.ExecuteWithRetryAsync(async (conn, cancelToken) =>
+            {
+                // Fast aggregate of all money in vs money out
+                const string sql = "SELECT COALESCE(SUM(Credit - Debit), 0) FROM Transactions;";
+                return await conn.ExecuteScalarAsync<decimal>(new CommandDefinition(sql, cancellationToken: cancelToken));
+            }, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to calculate total global balance.");
             throw;
         }
     }
@@ -646,24 +733,16 @@ public class TransactionService : ITransactionService, IDisposable
     {
         var (conditions, parameters) = GenerateFilterParameters(args);
 
-        // Core query pulling transaction fields and the dynamic running balance using a correlated subquery
-        var sql = @"
-            SELECT
-                t.*,
-                (
-                    SELECT SUM(sub.Credit - sub.Debit)
-                    FROM Transactions sub
-                    WHERE sub.AccountId = t.AccountId
-                      AND (sub.Date < t.Date OR (sub.Date = t.Date AND sub.Id <= t.Id))
-                ) AS RunningBalance
-            FROM Transactions t";
+        // Query the View instead of the Table.
+        // The RunningBalance is already calculated natively by SQLite.
+        var sql = "SELECT * FROM vw_TransactionBalances";
 
         if (conditions.Any())
         {
             sql += " WHERE " + string.Join(" AND ", conditions);
         }
 
-        sql += " ORDER BY t.Date DESC, t.Id DESC";
+        sql += " ORDER BY Date DESC, Id DESC";
 
         if (args.Limit.HasValue)
         {
@@ -677,13 +756,7 @@ public class TransactionService : ITransactionService, IDisposable
             }
         }
 
-        var cmd = new CommandDefinition(
-            sql,
-            parameters,
-            transaction: transaction,
-            cancellationToken: ct
-        );
-
+        var cmd = new CommandDefinition(sql, parameters, transaction: transaction, cancellationToken: ct);
         var transactions = await connection.QueryAsync<Transaction>(cmd);
         return transactions.ToList();
     }

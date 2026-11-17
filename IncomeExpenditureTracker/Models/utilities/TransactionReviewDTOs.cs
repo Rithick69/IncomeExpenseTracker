@@ -14,7 +14,8 @@ public enum ReviewFlags
     InvalidDate = 2,
     MissingPayee = 4,
     MissingTag = 8,
-    InvalidDescription = 16,
+    IsSplitParent = 16,
+    InvalidDescription = 32,
 }
 
 /// <summary>

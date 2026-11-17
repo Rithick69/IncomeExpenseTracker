@@ -236,10 +236,20 @@ public class DatabaseInitializer : IDatabaseInitializer
                     FOREIGN KEY(PayeeId) REFERENCES Payees(Id) ON DELETE RESTRICT,
                     FOREIGN KEY(ImportBatchId) REFERENCES ImportBatches(Id) ON DELETE CASCADE,
                     FOREIGN KEY(ParentTransactionId) REFERENCES Transactions(Id) ON DELETE CASCADE,
+                    FOREIGN KEY(LinkedTransactionId) REFERENCES Transactions(Id) ON DELETE SET NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_transactions_accountid ON Transactions(AccountId);
                 CREATE INDEX IF NOT EXISTS idx_transactions_source ON Transactions(Source);
+
+                CREATE VIEW IF NOT EXISTS vw_TransactionBalances AS
+                SELECT
+                    t.*,
+                    SUM(t.Credit - t.Debit) OVER (
+                        PARTITION BY t.AccountId
+                        ORDER BY t.Date ASC, t.Id ASC
+                    ) AS RunningBalance
+                FROM Transactions t;
 
                 ------------------------------------------------------------
                 -- PAYEES

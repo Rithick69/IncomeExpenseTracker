@@ -108,4 +108,12 @@ public interface ITransactionService
         IDbConnection? conn = null,
         IDbTransaction? tx = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes all child splits and restores the parent transaction to its original state.
+    /// </summary>
+    Task RevertSplitAsync(int parentTransactionId, IDbConnection? conn = null, IDbTransaction? tx = null, CancellationToken ct = default);
+
+    Task<decimal> GetTotalGlobalBalanceAsync(
+        CancellationToken ct = default);
 }

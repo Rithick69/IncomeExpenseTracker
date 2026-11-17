@@ -53,7 +53,7 @@ public partial class StagingReviewModalViewModel : ViewModelBase
     /// </summary>
     public string FooterSummary => $"Total Edits: {TotalEditsCount} | Ready to Commit";
 
-    public Action CloseAction { get; set; }
+    public Action? CloseAction { get; set; }
 
     // =============================================================================
     // CONSTRUCTOR & INITIALIZATION
@@ -171,7 +171,7 @@ public partial class StagingReviewModalViewModel : ViewModelBase
         StagedCorrections.Clear();
         OnPropertyChanged(nameof(TotalEditsCount));
         OnPropertyChanged(nameof(FooterSummary));
-        _isVisible = false;
+        IsVisible = false;
         OnPropertyChanged(nameof(IsVisible));
 
         await Task.CompletedTask;

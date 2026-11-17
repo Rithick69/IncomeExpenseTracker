@@ -36,4 +36,8 @@ public interface ITransactionReviewOrchestrator
     /// Links two selected transactions (one debit, one credit) together as a Transfer.
     /// </summary>
     Task LinkTransferAsync(int debitTransactionId, int creditTransactionId, int systemTransferTagId, CancellationToken ct = default);
+
+    Task RevertSplitAsync(int parentId, CancellationToken ct = default);
+
+    Task<decimal> GetTotalGlobalBalanceAsync(CancellationToken ct = default);
 }

@@ -60,7 +60,7 @@
                     </Button>
 
                     <!-- Row 1: Date Range + Account + Import Batch + Group By Filters -->
-                    <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="15">
+                    <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="15">
                         <StackPanel Spacing="6">
                             <TextBlock Text="{DynamicResource Locale_Ledger_StartDate_Label}"
                                        Classes="FormLabel" />
@@ -134,6 +134,24 @@
                                 Command="{Binding RefreshGridCommand}"
                                 VerticalAlignment="Bottom" />
                     </StackPanel>
+                    <Border Grid.Row="1" Grid.Column="3"
+                            Background="{DynamicResource BackgroundSecondary}"
+                            CornerRadius="6"
+                            Padding="15,8"
+                            VerticalAlignment="Bottom">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <!-- Binds to "Total Balance:" or "Account Balance:" -->
+                            <TextBlock Text="{Binding BalanceLabel}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondary}" />
+                            <TextBlock Text="{Binding CurrentFilterBalance, StringFormat='{}{0:N2}'}"
+                                       FontWeight="Bold"
+                                       FontSize="16"
+                                       Foreground="{DynamicResource TextPrimary}"
+                                       FontFeatures="tnum"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </Border>
 
@@ -143,7 +161,7 @@
             <Border Grid.Row="1" Classes="Card" Margin="20,10,20,20">
                 <Grid>
                     <!-- Main DataGrid -->
-                    <DataGrid ItemsSource="{Binding Transactions}"
+                    <DataGrid ItemsSource="{Binding TransactionsView}"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               GridLinesVisibility="Horizontal"
@@ -157,24 +175,24 @@
                         <DataGrid.Columns>
                             <!-- Select Checkbox Column -->
                             <DataGridCheckBoxColumn Header="{DynamicResource Locale_Ledger_Grid_Select}"
-                                                    Binding="{Binding IsSelected}"
+                                                    Binding="{Binding IsSelected, DataType=vm:TransactionRowViewModel}"
                                                     Width="60" />
 
                             <!-- Date Column -->
                             <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Date}"
-                                                Binding="{Binding Date, StringFormat='{}{0:dd-MMM-yyyy}'}"
+                                                Binding="{Binding Date, StringFormat='{}{0:dd-MMM-yyyy}', DataType=vm:TransactionRowViewModel}"
                                                 Width="120" />
 
                             <!-- Account Column -->
                             <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Account}"
-                                                Binding="{Binding AccountName}"
+                                                Binding="{Binding AccountName, DataType=vm:TransactionRowViewModel}"
                                                 Width="150" />
 
                             <!-- Merchant Template Column (Bold Sanitized + Muted Raw) -->
                             <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Merchant}"
                                                     Width="250">
                                 <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
+                                    <DataTemplate x:DataType="vm:TransactionRowViewModel">
                                         <StackPanel Spacing="4" Margin="0,6">
                                             <TextBlock Text="{Binding SanitizedSource}"
                                                        FontWeight="SemiBold"
@@ -190,19 +208,19 @@
 
                             <!-- Payee Column -->
                             <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Payee}"
-                                                Binding="{Binding PayeeName}"
+                                                Binding="{Binding PayeeName, DataType=vm:TransactionRowViewModel}"
                                                 Width="140" />
 
                             <!-- Tag Column -->
                             <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Tag}"
-                                                Binding="{Binding TagName}"
+                                                Binding="{Binding TagName, DataType=vm:TransactionRowViewModel}"
                                                 Width="140" />
 
                             <!-- Debit Column (Explicit Width, Right-Aligned, Padding to prevent overlap) -->
                             <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Debit}"
                                                     Width="120">
                                 <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
+                                    <DataTemplate x:DataType="vm:TransactionRowViewModel">
                                         <TextBlock Text="{Binding Debit, StringFormat='{}{0:N2}'}"
                                                    HorizontalAlignment="Right"
                                                    Foreground="{DynamicResource TextDanger}"
@@ -216,7 +234,7 @@
                             <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Credit}"
                                                     Width="120">
                                 <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
+                                    <DataTemplate x:DataType="vm:TransactionRowViewModel">
                                         <TextBlock Text="{Binding Credit, StringFormat='{}{0:N2}'}"
                                                    HorizontalAlignment="Right"
                                                    Foreground="{DynamicResource AccentSuccess}"
@@ -226,9 +244,23 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
+                            <!-- Running Balance Column -->
+                            <DataGridTemplateColumn Header="{DynamicResource Locale_Ledger_Grid_Balance}"
+                                                    Width="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="vm:TransactionRowViewModel">
+                                        <TextBlock Text="{Binding RunningBalance, StringFormat='{}{0:N2}'}"
+                                                   HorizontalAlignment="Right"
+                                                   Foreground="{DynamicResource TextPrimary}"
+                                                   FontFeatures="tnum"
+                                                   Margin="0,0,12,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
                             <!-- Status Column -->
                             <DataGridTextColumn Header="{DynamicResource Locale_Ledger_Grid_Status}"
-                                                Binding="{Binding StatusDisplay}"
+                                                Binding="{Binding StatusDisplay, DataType=vm:TransactionRowViewModel}"
                                                 Width="*" />
                         </DataGrid.Columns>
                     </DataGrid>
@@ -240,7 +272,7 @@
                             Padding="20,12"
                             IsVisible="{Binding HasSelectedTransactions}"
                             ZIndex="20">
-                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto">
                             <!-- Selected Count Display -->
                             <TextBlock Grid.Column="0"
                                        Text="{Binding SelectedCountText}"
@@ -282,8 +314,17 @@
                                     VerticalAlignment="Bottom"
                                     Margin="0,0,10,0" />
 
-                            <!-- Cancel Selection Button -->
+                            <!-- Link as Transfer Button -->
                             <Button Grid.Column="5"
+                                    Content="{DynamicResource Locale_Ledger_LinkTransfer_Button}"
+                                    Classes="Secondary"
+                                    Command="{Binding LinkAsTransferCommand}"
+                                    IsEnabled="{Binding CanLinkTransfer}"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,10,0" />
+
+                            <!-- Cancel Selection Button -->
+                            <Button Grid.Column="6"
                                     Content="{DynamicResource Locale_Ledger_CancelSelection_Button}"
                                     Classes="Secondary"
                                     Command="{Binding CancelSelectionCommand}"
@@ -481,29 +522,47 @@
                             </ItemsControl>
 
                             <!-- Add Split Line Button -->
-                            <Button Content="{DynamicResource Locale_Ledger_AddSplitLine_Button}"
-                                    Classes="Secondary"
-                                    Command="{Binding AddSplitLineCommand}"
-                                    HorizontalAlignment="Stretch" />
+                            <Grid ColumnDefinitions="*, 10, *">
+                                <Button Grid.Column="0"
+                                        Content="{DynamicResource Locale_Ledger_AddSplitLine_Button}"
+                                        Classes="Secondary"
+                                        Command="{Binding AddSplitLineCommand}"
+                                        HorizontalAlignment="Stretch" />
+
+                                <Button Grid.Column="2"
+                                        Content="{DynamicResource Locale_Ledger_CommitSplit_Button}"
+                                        Classes="Primary"
+                                        Command="{Binding CommitSplitCommand}"
+                                        HorizontalAlignment="Stretch" />
+                            </Grid>
                         </StackPanel>
                     </Expander>
 
                     <Separator Background="{DynamicResource BorderSubtle}" />
 
                     <!-- Action Buttons -->
-                    <Grid ColumnDefinitions="*, 10, *">
-                        <Button Grid.Column="0"
-                                Content="{DynamicResource Locale_Ledger_Panel_Cancel_Button}"
-                                Classes="Secondary"
-                                Command="{Binding CancelEditCommand}"
-                                HorizontalAlignment="Stretch" />
+                    <StackPanel Spacing="10">
+                        <Grid ColumnDefinitions="*, 10, *">
+                            <Button Grid.Column="0"
+                                    Content="{DynamicResource Locale_Ledger_Panel_Cancel_Button}"
+                                    Classes="Secondary"
+                                    Command="{Binding CancelEditCommand}"
+                                    HorizontalAlignment="Stretch" />
 
-                        <Button Grid.Column="2"
-                                Content="{DynamicResource Locale_Ledger_Panel_StageUpdates_Button}"
-                                Classes="Primary"
-                                Command="{Binding StageUpdatesCommand}"
+                            <Button Grid.Column="2"
+                                    Content="{DynamicResource Locale_Ledger_Panel_StageUpdates_Button}"
+                                    Classes="Primary"
+                                    Command="{Binding StageUpdatesCommand}"
+                                    HorizontalAlignment="Stretch" />
+                        </Grid>
+
+                        <!-- Revert Split Button (Only visible if the selected transaction is a Split Parent) -->
+                        <Button Content="{DynamicResource Locale_Ledger_Panel_RevertSplit_Button}"
+                                Background="{DynamicResource TextDanger}"
+                                Command="{Binding RevertSplitCommand}"
+                                IsVisible="{Binding SelectedTransaction.IsSplitParent}"
                                 HorizontalAlignment="Stretch" />
-                    </Grid>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
         </Border>
