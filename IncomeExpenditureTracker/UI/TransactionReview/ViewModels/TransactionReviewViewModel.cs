@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Collections;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using IncomeExpenditureTracker.Models;
@@ -14,20 +18,38 @@ using IncomeExpenditureTracker.UI.Shared;
 namespace IncomeExpenditureTracker.UI.TransactionReview;
 
 /// <summary>
-/// ViewModel for the Hybrid Ledger where users review transactions, triage errors, and perform inline edits.
-/// Designed to work with keyset cursor paging and delta patching for optimal performance.
+/// ViewModel for the Hybrid Ledger screen.
+/// Manages cross-page SQLite filtering and sorting, MasterData taxonomy lookups,
+/// inline editing, split transactions, transfer linking, bulk actions, and staged checkout.
 /// </summary>
 public partial class TransactionReviewViewModel : ViewModelBase
 {
+    // =============================================================================
+    // 1. DEPENDENCIES & INTERNAL STATE
+    // =============================================================================
+
     private readonly ITransactionReviewOrchestrator _orchestrator;
+    private readonly IMasterDataOrchestrator _masterDataOrchestrator;
+
+    private bool _isInitializing = true;
+    private bool _isUpdatingSelection = false;
+    private int _currentOffset = 0;
+    private int _totalCount = 0;
+    private CancellationTokenSource? _searchDebounceCts;
+
+    // Fast O(1) MasterData lookup dictionaries for grid mapping and ID resolution
+    private Dictionary<int, string> _accountNamesById = new();
+    private Dictionary<int, string> _payeeNamesById = new();
+    private Dictionary<int, string> _tagNamesById = new();
+    private Dictionary<string, int> _payeeIdsByName = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, int> _tagIdsByName = new(StringComparer.OrdinalIgnoreCase);
 
     // =============================================================================
-    // FILTER & SEARCH PROPERTIES (Top Action Bar - Zone 1)
+    // 2. ZONE 1: TOP ACTION BAR (FILTERS, SEARCH, SORTING & BALANCE WIDGET)
     // =============================================================================
 
     /// <summary>
-    /// When enabled, filters the grid to show only transactions with ReviewStatus > 0.
-    /// This allows users to focus exclusively on rows requiring attention.
+    /// When enabled, filters the ledger to show only transactions with ReviewStatus > 0.
     /// </summary>
     [ObservableProperty]
     private bool _isTriageMode = false;
@@ -36,45 +58,167 @@ public partial class TransactionReviewViewModel : ViewModelBase
     private string _searchText = string.Empty;
 
     [ObservableProperty]
-    private DateTime? _startDate = null;
+    private DateTimeOffset? _startDate = null;
 
     [ObservableProperty]
-    private DateTime? _endDate = null;
+    private DateTimeOffset? _endDate = null;
 
     [ObservableProperty]
     private int? _selectedAccountId = null;
 
     /// <summary>
-    /// Number of staged edits pending commit to the database.
-    /// Displayed in the "Review X Edits" button badge.
+    /// Account filter options populated from MasterData (includes "All Accounts" at Id = 0).
     /// </summary>
+    public ObservableCollection<AccountFilterItem> AvailableAccounts { get; } = new();
+
+    private AccountFilterItem? _selectedAccount;
+    public AccountFilterItem? SelectedAccount
+    {
+        get => _selectedAccount;
+        set
+        {
+            if (SetProperty(ref _selectedAccount, value))
+            {
+                SelectedAccountId = (value != null && value.Id > 0) ? value.Id : null;
+                OnPropertyChanged(nameof(IsAccountSelected));
+                OnPropertyChanged(nameof(HasActiveFilters));
+                BalanceLabel = IsAccountSelected ? "Account Balance:" : "Total Balance:";
+
+                if (!_isInitializing)
+                {
+                    _currentOffset = 0;
+                    _ = RefreshGridAsync();
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Import batch filter options populated from MasterData (includes "All Batches" at Id = 0).
+    /// </summary>
+    public ObservableCollection<ImportBatchFilterItem> AvailableImportBatches { get; } = new();
+
     [ObservableProperty]
-    private int _stagedEditsCount = 0;
+    [NotifyPropertyChangedFor(nameof(IsBatchSelected))]
+    private ImportBatchFilterItem? _selectedImportBatch = null;
+
+    public bool IsAccountSelected => SelectedAccountId.HasValue && SelectedAccountId.Value > 0;
+    public bool IsBatchSelected => SelectedImportBatch != null && SelectedImportBatch.Id > 0;
 
     /// <summary>
-    /// Computed property to control visibility of the "Review X Edits" button.
+    /// Controls visibility of the "Reset Filters" button in the top action bar.
     /// </summary>
-    public bool HasStagedEdits => StagedEditsCount > 0;
+    public bool HasActiveFilters =>
+        IsTriageMode ||
+        !string.IsNullOrWhiteSpace(SearchText) ||
+        StartDate.HasValue ||
+        EndDate.HasValue ||
+        IsAccountSelected ||
+        IsBatchSelected;
+
+    // Cross-Page SQLite Sorting
+    public ObservableCollection<string> SortByOptions { get; } = new() { "Date", "Debit", "Credit" };
+
+    [ObservableProperty]
+    private string _selectedSortBy = "Date";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SortDirectionIcon))]
+    [NotifyPropertyChangedFor(nameof(SortDirectionTooltip))]
+    private bool _isSortDescending = true;
+
+    public string SortDirectionIcon => IsSortDescending ? "↓" : "↑";
+    public string SortDirectionTooltip => IsSortDescending
+        ? "Descending (Newest / High to Low)"
+        : "Ascending (Oldest / Low to High)";
+
+    // Highlighted Balance Widget
+    [ObservableProperty]
+    private decimal _currentFilterBalance = 0m;
+
+    [ObservableProperty]
+    private string _balanceLabel = "Total Balance:";
+
+    // Filter & Search Change Hooks
+    partial void OnStartDateChanged(DateTimeOffset? value)
+    {
+        OnPropertyChanged(nameof(HasActiveFilters));
+        if (_isInitializing) return;
+        _currentOffset = 0;
+        _ = RefreshGridAsync();
+    }
+
+    partial void OnEndDateChanged(DateTimeOffset? value)
+    {
+        OnPropertyChanged(nameof(HasActiveFilters));
+        if (_isInitializing) return;
+        _currentOffset = 0;
+        _ = RefreshGridAsync();
+    }
+
+    partial void OnSelectedImportBatchChanged(ImportBatchFilterItem? value)
+    {
+        OnPropertyChanged(nameof(HasActiveFilters));
+        if (_isInitializing) return;
+        _currentOffset = 0;
+        _ = RefreshGridAsync();
+    }
+
+    partial void OnSelectedSortByChanged(string value)
+    {
+        if (_isInitializing) return;
+        _currentOffset = 0;
+        _ = RefreshGridAsync();
+    }
+
+    partial void OnSearchTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasActiveFilters));
+        if (_isInitializing) return;
+
+        // Debounce live search by 300ms to avoid firing a SQLite query on every keystroke
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        _searchDebounceCts = new CancellationTokenSource();
+        var token = _searchDebounceCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(300, token);
+                await Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    _currentOffset = 0;
+                    await RefreshGridAsync();
+                });
+            }
+            catch (TaskCanceledException) { }
+        }, token);
+    }
 
     // =============================================================================
-    // DATAGRID DATA SOURCE (Main Grid - Zone 2)
+    // 3. ZONE 2: DATAGRID DATA SOURCE & NATIVE GROUPING
     // =============================================================================
 
-    /// <summary>
-    /// The main observable collection bound to the DataGrid.
-    /// Populated with mock data for UI preview purposes.
-    /// In production, this will be updated via delta patching when background sweeps occur.
-    /// </summary>
     private readonly ObservableCollection<TransactionRowViewModel> _rawTransactions = new();
 
     /// <summary>
-    /// The grouped and sorted view bound directly to the Avalonia DataGrid.
+    /// Grouped collection view bound directly to the Avalonia DataGrid.
     /// </summary>
     public DataGridCollectionView TransactionsView { get; }
 
-    /// <summary>
-    /// Triggers when the user changes the "Group By" dropdown.
-    /// </summary>
+    public ObservableCollection<string> GroupByOptions { get; } = new()
+    {
+        "None",
+        "Date",
+        "Payee",
+        "Account"
+    };
+
+    [ObservableProperty]
+    private string _selectedGroupBy = "None";
+
     partial void OnSelectedGroupByChanged(string value)
     {
         TransactionsView.GroupDescriptions.Clear();
@@ -88,254 +232,151 @@ public partial class TransactionReviewViewModel : ViewModelBase
     }
 
     // =============================================================================
-    // SLIDE-IN PANEL PROPERTIES (Right Panel - Zone 3)
+    // 4. ZONE 2 TOOLBAR & FLOATING BULK ACTIONS MODAL
     // =============================================================================
 
-    /// <summary>
-    /// Controls the visibility of the right-side edit panel.
-    /// True when a row is selected from the DataGrid.
-    /// </summary>
     [ObservableProperty]
-    private bool _isPanelVisible = false;
-
-    /// <summary>
-    /// The currently selected transaction for inline editing.
-    /// Null when no row is selected or the panel is closed.
-    /// </summary>
-    [ObservableProperty]
-    private TransactionRowViewModel? _selectedTransaction = null;
-
-    /// <summary>
-    /// Editable Date field in the slide-in panel.
-    /// Bound to a DatePicker for user corrections.
-    /// </summary>
-    [ObservableProperty]
-    private DateTime _editDate = DateTime.Today;
-
-    /// <summary>
-    /// Editable Debit field in the slide-in panel.
-    /// Bound to a TextBox for user corrections.
-    /// </summary>
-    [ObservableProperty]
-    private decimal _editDebit = 0m;
-
-    /// <summary>
-    /// Editable Credit field in the slide-in panel.
-    /// Bound to a TextBox for user corrections.
-    /// </summary>
-    [ObservableProperty]
-    private decimal _editCredit = 0m;
-
-    /// <summary>
-    /// Editable Payee autocomplete field.
-    /// Populated with available payees from the database.
-    /// </summary>
-    [ObservableProperty]
-    private string _editPayee = string.Empty;
-
-    /// <summary>
-    /// Editable Tag autocomplete field.
-    /// Populated with available tags from the database.
-    /// </summary>
-    [ObservableProperty]
-    private string _editTag = string.Empty;
-
-    /// <summary>
-    /// Editable Memo field for user notes.
-    /// Allows users to add personal comments to transactions.
-    /// </summary>
-    [ObservableProperty]
-    private string _editMemo = string.Empty;
-
-    /// <summary>
-    /// Raw amount text extracted from the selected transaction.
-    /// Displayed in the slide-in panel for audit trail purposes.
-    /// </summary>
-    [ObservableProperty]
-    private string _rawAmountText = string.Empty;
-
-    // =============================================================================
-    // AUTOCOMPLETE DATA SOURCES
-    // =============================================================================
-
-    /// <summary>
-    /// Mock data source for the Payee AutoCompleteBox.
-    /// In production, this will be fetched from the database via IMasterDataOrchestrator.
-    /// </summary>
-    public ObservableCollection<string> AvailablePayees { get; } = new();
-
-    /// <summary>
-    /// Mock data source for the Tag AutoCompleteBox.
-    /// In production, this will be fetched from the database via IMasterDataOrchestrator.
-    /// </summary>
-    public ObservableCollection<string> AvailableTags { get; } = new();
-
-    /// <summary>
-    /// Mock data source for the Account ComboBox in the top filter bar.
-    /// In production, this will be fetched from the database via IAccountService.
-    /// </summary>
-    public ObservableCollection<AccountFilterItem> AvailableAccounts { get; } = new();
-
-    private Account? _selectedAccount;
-    public Account? SelectedAccount
-    {
-        get => _selectedAccount;
-        set
-        {
-            SetProperty(ref _selectedAccount, value);
-            SelectedAccountId = value?.Id ?? 0;
-            BalanceLabel = IsAccountSelected ? "Account Balance:" : "Total Balance:";
-            _ = RefreshGridAsync();
-        }
-    }
-
-    // =============================================================================
-    // NEW FILTERS (Import Batch, Group By)
-    // =============================================================================
-
-    /// <summary>
-    /// Mock data source for the Import Batch ComboBox in the top filter bar.
-    /// In production, this will be fetched from the database via IImportBatchService.
-    /// </summary>
-    public ObservableCollection<ImportBatchFilterItem> AvailableImportBatches { get; } = new();
-
-    [ObservableProperty]
-    private ImportBatchFilterItem? _selectedImportBatch = null;
-
-    /// <summary>
-    /// Controls the visibility of the "Revert Batch" button.
-    /// Only visible when a specific batch is selected.
-    /// </summary>
-    public bool IsBatchSelected => SelectedImportBatch != null;
-
-    /// <summary>
-    /// Mock data source for the Group By ComboBox.
-    /// </summary>
-    public ObservableCollection<string> GroupByOptions { get; } = new();
-
-    [ObservableProperty]
-    private string _selectedGroupBy = "None";
-
-    // =============================================================================
-    // BULK ACTIONS PROPERTIES
-    // =============================================================================
-
-    /// <summary>
-    /// Count of currently selected transactions for bulk updates.
-    /// Used to control visibility of the bulk actions bar.
-    /// </summary>
+    [NotifyPropertyChangedFor(nameof(HasSelectedTransactions))]
+    [NotifyPropertyChangedFor(nameof(SelectedCountText))]
+    [NotifyPropertyChangedFor(nameof(CanLinkTransfer))]
+    [NotifyPropertyChangedFor(nameof(CanOpenBulkActions))]
+    [NotifyPropertyChangedFor(nameof(BulkActionsButtonText))]
     private int _selectedCount = 0;
 
-    public int SelectedCount
-    {
-        get => _selectedCount;
-        set
-        {
-            SetProperty(ref _selectedCount, value);
-            OnPropertyChanged(nameof(HasSelectedTransactions));
-            OnPropertyChanged(nameof(SelectedCountText));
-            OnPropertyChanged(nameof(CanLinkTransfer)); // Triggers the Transfer button
-        }
-    }
+    public bool HasSelectedTransactions => SelectedCount > 0;
+    public string SelectedCountText => $"{SelectedCount} {(SelectedCount == 1 ? "Transaction" : "Transactions")} Selected";
+    public bool CanLinkTransfer => SelectedCount == 2;
+    public bool CanOpenBulkActions => SelectedCount >= 2;
+    public string BulkActionsButtonText => SelectedCount >= 2 ? $"Bulk Actions ({SelectedCount})" : "Bulk Actions";
 
-    /// <summary>
-    /// Computed property to control visibility of the bulk actions bar.
-    /// </summary>
-    public bool HasSelectedTransactions => _selectedCount > 0;
+    [ObservableProperty]
+    private bool _isBulkActionsModalVisible = false;
 
-    /// <summary>
-    /// Display text for the selected count (e.g., "5 Transactions Selected").
-    /// </summary>
-    public string SelectedCountText => $"{_selectedCount} {(_selectedCount == 1 ? "Transaction" : "Transactions")} Selected";
+    [ObservableProperty]
+    private bool _isAllSelected = false;
 
-    /// <summary>
-    /// Tag to apply to all selected transactions in bulk.
-    /// </summary>
     [ObservableProperty]
     private string _bulkTag = string.Empty;
 
-    /// <summary>
-    /// Payee to apply to all selected transactions in bulk.
-    /// </summary>
     [ObservableProperty]
     private string _bulkPayee = string.Empty;
 
+    partial void OnIsAllSelectedChanged(bool value)
+    {
+        if (_isUpdatingSelection) return;
+
+        _isUpdatingSelection = true;
+        try
+        {
+            foreach (var row in _rawTransactions)
+            {
+                row.IsSelected = value;
+            }
+            SelectedCount = value ? _rawTransactions.Count : 0;
+        }
+        finally
+        {
+            _isUpdatingSelection = false;
+        }
+    }
+
     // =============================================================================
-    // PAGINATION PROPERTIES
+    // 5. ZONE 3 (BOTTOM): PAGINATION PROPERTIES
     // =============================================================================
 
-    /// <summary>
-    /// Display text for the current page info (e.g., "Showing 1-50 of 2,450 transactions").
-    /// </summary>
     [ObservableProperty]
-    private string _pageInfo = "Showing 1-50 of 2,450 transactions";
+    private string _pageInfo = "Showing 0 transactions";
 
-    /// <summary>
-    /// Available page size options for the ComboBox.
-    /// </summary>
-    public ObservableCollection<int> PageSizeOptions { get; } = new();
+    public ObservableCollection<int> PageSizeOptions { get; } = new() { 50, 100, 200 };
 
     [ObservableProperty]
     private int _selectedPageSize = 50;
 
-    /// <summary>
-    /// Controls whether the "Previous" button is enabled.
-    /// </summary>
     [ObservableProperty]
     private bool _canGoPrevious = false;
 
-    /// <summary>
-    /// Controls whether the "Next" button is enabled.
-    /// </summary>
     [ObservableProperty]
-    private bool _canGoNext = true;
+    private bool _canGoNext = false;
+
+    partial void OnSelectedPageSizeChanged(int value)
+    {
+        if (_isInitializing) return;
+        _currentOffset = 0;
+        _ = RefreshGridAsync();
+    }
 
     // =============================================================================
-    // SPLIT TRANSACTION MOCK DATA
+    // 6. ZONE 3 (RIGHT): SLIDE-IN EDIT PANEL, AUTOCOMPLETE & LIVE SPLIT SUMMARY
     // =============================================================================
 
-    /// <summary>
-    /// Mock collection for split transaction lines.
-    /// In production, this would be bound to a real split transaction model.
-    /// </summary>
+    [ObservableProperty]
+    private bool _isPanelVisible = false;
+
+    [ObservableProperty]
+    private TransactionRowViewModel? _selectedTransaction = null;
+
+    [ObservableProperty]
+    private DateTimeOffset? _editDate = DateTimeOffset.Now;
+
+    [ObservableProperty]
+    private decimal _editDebit = 0m;
+
+    [ObservableProperty]
+    private decimal _editCredit = 0m;
+
+    [ObservableProperty]
+    private string _editPayee = string.Empty;
+
+    [ObservableProperty]
+    private string _editTag = string.Empty;
+
+    [ObservableProperty]
+    private string _editMemo = string.Empty;
+
+    [ObservableProperty]
+    private string _rawAmountText = string.Empty;
+
+    // Shared AutoCompleteBox sources (populated from MasterData)
+    public ObservableCollection<string> AvailablePayees { get; } = new();
+    public ObservableCollection<string> AvailableTags { get; } = new();
+
+    // Split Transaction Lines & Live Allocation Summary
     public ObservableCollection<SplitLineViewModel> MockSplitTransactions { get; } = new();
 
+    [ObservableProperty] private decimal _splitTargetAmount = 0m;
+    [ObservableProperty] private decimal _splitAllocatedAmount = 0m;
+    [ObservableProperty] private decimal _splitRemainingAmount = 0m;
+    [ObservableProperty] private bool _canCommitSplit = false;
+    [ObservableProperty] private string _splitStatusColor = "#9CA3AF";
+
     // =============================================================================
-    // STAGING REVIEW MODAL CONTROL
+    // 7. ZONE 4: STAGING REVIEW MODAL CONTROL
     // =============================================================================
 
-    /// <summary>
-    /// Controls visibility of the StagingReviewModal full-screen overlay.
-    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStagedEdits))]
+    private int _stagedEditsCount = 0;
+
+    public bool HasStagedEdits => StagedEditsCount > 0;
+
+    [ObservableProperty]
     private bool _isStagingModalVisible = false;
-    public bool IsStagingModalVisible
-    {
-        get => _isStagingModalVisible;
-        set => SetProperty(ref _isStagingModalVisible, value);
-    }
 
     public StagingReviewModalViewModel StagingViewModel { get; }
 
-    [ObservableProperty]
-    private decimal _currentFilterBalance = 0m;
-
-    [ObservableProperty]
-    private string _balanceLabel = "Total Balance:";
-
-    public bool IsAccountSelected => SelectedAccountId.HasValue && SelectedAccountId > 0;
-
     // =============================================================================
-    // CONSTRUCTOR & INITIALIZATION
+    // 8. CONSTRUCTOR & MASTERDATA INITIALIZATION
     // =============================================================================
 
     public TransactionReviewViewModel(
         ITransactionReviewOrchestrator orchestrator,
+        IMasterDataOrchestrator masterDataOrchestrator,
         IApplicationBroker broker)
         : base(broker)
     {
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
+        _masterDataOrchestrator = masterDataOrchestrator ?? throw new ArgumentNullException(nameof(masterDataOrchestrator));
 
-        // Initialize Collection View
         TransactionsView = new DataGridCollectionView(_rawTransactions);
 
         StagingViewModel = new StagingReviewModalViewModel(orchestrator, broker)
@@ -343,12 +384,423 @@ public partial class TransactionReviewViewModel : ViewModelBase
             CloseAction = () => IsStagingModalVisible = false
         };
 
-        // Fetch initial data
-        _ = RefreshGridAsync();
+        // Keep badge count and row draft indicators synced with the staging cart
+        StagingViewModel.StagedCorrections.CollectionChanged += OnStagedCorrectionsChanged;
+        StagedEditsCount = StagingViewModel.StagedCorrections.Count;
+
+        _ = InitializeAsync();
     }
 
-    // Computed property to enable the Transfer button ONLY when exactly 2 rows are selected
-    public bool CanLinkTransfer => _selectedCount == 2;
+    /// <summary>
+    /// Loads taxonomy and filter dropdowns first so the initial grid fetch resolves real names.
+    /// </summary>
+    private async Task InitializeAsync()
+    {
+        try
+        {
+            await LoadMasterDataAsync();
+        }
+        finally
+        {
+            _isInitializing = false;
+        }
+
+        await RefreshGridAsync();
+    }
+
+    private async Task LoadMasterDataAsync()
+    {
+        try
+        {
+            var accountsTask = _masterDataOrchestrator.GetAllAccountsAsync();
+            var payeesTask = _masterDataOrchestrator.GetAllPayeesAsync();
+            var tagsTask = _masterDataOrchestrator.GetAllTagsAsync();
+            var batchesTask = _masterDataOrchestrator.GetAllImportBatchesAsync();
+            var entitiesTask = _masterDataOrchestrator.GetAllEntitiesAsync();
+
+            await Task.WhenAll(accountsTask, payeesTask, tagsTask, batchesTask, entitiesTask);
+
+            // 1. Entities & Accounts (builds formatted "Institution (Type) •••• 1234" display strings)
+            var accounts = accountsTask.Result;
+            var entityNamesById = entitiesTask.Result.ToDictionary(e => e.Id, e => e.Name);
+
+            _accountNamesById = accounts.ToDictionary(
+                a => a.Id,
+                a => FormatAccountDisplay(a, entityNamesById));
+
+            AvailableAccounts.Clear();
+            AvailableAccounts.Add(new AccountFilterItem { Id = 0, DisplayName = "All Accounts" });
+            foreach (var acc in accounts)
+            {
+                AvailableAccounts.Add(new AccountFilterItem
+                {
+                    Id = acc.Id,
+                    DisplayName = _accountNamesById[acc.Id]
+                });
+            }
+            SelectedAccount = AvailableAccounts.FirstOrDefault();
+
+            // 2. Payees
+            var payees = payeesTask.Result.ToList();
+            _payeeNamesById = payees.ToDictionary(p => p.Id, p => p.Name);
+            _payeeIdsByName = payees
+                .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+
+            AvailablePayees.Clear();
+            foreach (var payee in payees.OrderBy(p => p.Name))
+            {
+                AvailablePayees.Add(payee.Name);
+            }
+
+            // 3. Tags
+            var tags = tagsTask.Result;
+            _tagNamesById = tags.ToDictionary(t => t.Id, t => t.Name);
+            _tagIdsByName = tags
+                .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+
+            AvailableTags.Clear();
+            foreach (var tag in tags.OrderBy(t => t.Name))
+            {
+                AvailableTags.Add(tag.Name);
+            }
+
+            // 4. Import Batches
+            var batches = batchesTask.Result;
+            AvailableImportBatches.Clear();
+            AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 0, DisplayName = "All Batches" });
+            foreach (var batch in batches.OrderByDescending(b => b.Id))
+            {
+                AvailableImportBatches.Add(new ImportBatchFilterItem
+                {
+                    Id = batch.Id,
+                    DisplayName = $"Batch #{batch.Id} - {batch.FileName}"
+                });
+            }
+            SelectedImportBatch = AvailableImportBatches.FirstOrDefault();
+        }
+        catch (Exception)
+        {
+            Broker.Send(new ToastNotificationMessage("Failed to load filter & taxonomy data.", NotificationType.Error));
+        }
+    }
+
+    // =============================================================================
+    // 9. COMMANDS: GRID REFRESH, FILTERING & SORTING
+    // =============================================================================
+
+    [RelayCommand]
+    private async Task RefreshGridAsync()
+    {
+        try
+        {
+            int? batchId = (SelectedImportBatch != null && SelectedImportBatch.Id > 0)
+                ? SelectedImportBatch.Id
+                : null;
+
+            var filters = new TransactionFilterArgs(
+                BatchId: batchId,
+                AccountId: SelectedAccountId,
+                SearchText: string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim(),
+                IsTriageMode: IsTriageMode,
+                DateFrom: StartDate?.DateTime,
+                DateTo: EndDate?.DateTime,
+                SortBy: SelectedSortBy,
+                SortDescending: IsSortDescending,
+                Limit: SelectedPageSize,
+                Offset: _currentOffset
+            );
+
+            var result = await _orchestrator.GetTransactionsAsync(filters);
+            var items = result.Items.ToList();
+            _totalCount = result.TotalCount;
+
+            // Resolve Balance Widget (Account Balance uses latest chronological row regardless of sort order)
+            if (IsAccountSelected && items.Any())
+            {
+                CurrentFilterBalance = items
+                    .OrderByDescending(x => x.Date)
+                    .ThenByDescending(x => x.Id)
+                    .First()
+                    .RunningBalance;
+            }
+            else if (!IsAccountSelected)
+            {
+                CurrentFilterBalance = await _orchestrator.GetTotalGlobalBalanceAsync();
+            }
+            else
+            {
+                CurrentFilterBalance = 0m;
+            }
+
+            // Unsubscribe old rows before clearing to prevent memory leaks
+            foreach (var oldRow in _rawTransactions)
+            {
+                oldRow.PropertyChanged -= OnTransactionRowPropertyChanged;
+            }
+            _rawTransactions.Clear();
+
+            _isUpdatingSelection = true;
+            SelectedCount = 0;
+            IsAllSelected = false;
+            _isUpdatingSelection = false;
+
+            var stagedIds = StagingViewModel.StagedCorrections
+                .Select(c => c.TransactionId)
+                .ToHashSet();
+
+            foreach (var txn in items)
+            {
+                var accountName = _accountNamesById.TryGetValue(txn.AccountId, out var accName)
+                    ? accName
+                    : $"Account {txn.AccountId}";
+
+                string? payeeName = txn.PayeeId.HasValue
+                    ? (_payeeNamesById.TryGetValue(txn.PayeeId.Value, out var pName) ? pName : $"Payee {txn.PayeeId.Value}")
+                    : null;
+
+                string? tagName = txn.TagId.HasValue
+                    ? (_tagNamesById.TryGetValue(txn.TagId.Value, out var tName) ? tName : $"Tag {txn.TagId.Value}")
+                    : null;
+
+                var row = TransactionRowViewModel.FromEntity(txn, accountName, payeeName, tagName);
+                row.IsStaged = stagedIds.Contains(row.Id);
+                row.PropertyChanged += OnTransactionRowPropertyChanged;
+                _rawTransactions.Add(row);
+            }
+
+            // Update Pagination Summary
+            if (_totalCount == 0)
+            {
+                PageInfo = "Showing 0 transactions";
+            }
+            else
+            {
+                int start = _currentOffset + 1;
+                int end = Math.Min(_currentOffset + items.Count, _totalCount);
+                PageInfo = $"Showing {start}-{end} of {_totalCount:N0} transactions";
+            }
+
+            CanGoPrevious = _currentOffset > 0;
+            CanGoNext = (_currentOffset + SelectedPageSize) < _totalCount;
+        }
+        catch (Exception)
+        {
+            Broker.Send(new ToastNotificationMessage("Failed to load transactions.", NotificationType.Error));
+        }
+    }
+
+    [RelayCommand]
+    private async Task ToggleTriageModeAsync()
+    {
+        OnPropertyChanged(nameof(HasActiveFilters));
+        _currentOffset = 0;
+        await RefreshGridAsync();
+    }
+
+    [RelayCommand]
+    private async Task ToggleSortDirectionAsync()
+    {
+        IsSortDescending = !IsSortDescending;
+        _currentOffset = 0;
+        await RefreshGridAsync();
+    }
+
+    [RelayCommand]
+    private async Task SearchAsync()
+    {
+        _currentOffset = 0;
+        await RefreshGridAsync();
+    }
+
+    [RelayCommand]
+    private async Task ClearFiltersAsync()
+    {
+        _isInitializing = true;
+        try
+        {
+            IsTriageMode = false;
+            SearchText = string.Empty;
+            StartDate = null;
+            EndDate = null;
+            SelectedAccount = AvailableAccounts.FirstOrDefault();
+            SelectedImportBatch = AvailableImportBatches.FirstOrDefault();
+            SelectedGroupBy = "None";
+            SelectedSortBy = "Date";
+            IsSortDescending = true;
+            _currentOffset = 0;
+        }
+        finally
+        {
+            _isInitializing = false;
+            OnPropertyChanged(nameof(HasActiveFilters));
+        }
+
+        await RefreshGridAsync();
+    }
+
+    // =============================================================================
+    // 10. COMMANDS: ROW EDITING & STAGING
+    // =============================================================================
+
+    [RelayCommand]
+    private async Task ReviewPendingEditsAsync()
+    {
+        if (StagedEditsCount == 0) return;
+
+        IsStagingModalVisible = true;
+        await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private void SelectTransaction(TransactionRowViewModel? transaction)
+    {
+        ClearSplitLines();
+
+        if (transaction == null)
+        {
+            IsPanelVisible = false;
+            SelectedTransaction = null;
+            RecalculateSplitSummary();
+            return;
+        }
+
+        SelectedTransaction = transaction;
+        EditDate = new DateTimeOffset(transaction.Date);
+        EditDebit = transaction.Debit;
+        EditCredit = transaction.Credit;
+        EditPayee = transaction.PayeeName ?? string.Empty;
+        EditTag = transaction.TagName ?? string.Empty;
+        EditMemo = transaction.Memo ?? string.Empty;
+        RawAmountText = transaction.RawAmountText ?? string.Empty;
+        IsPanelVisible = true;
+
+        RecalculateSplitSummary();
+    }
+
+    [RelayCommand]
+    private async Task StageUpdatesAsync()
+    {
+        if (SelectedTransaction == null) return;
+
+        decimal originalDebit = SelectedTransaction.Debit;
+        decimal originalCredit = SelectedTransaction.Credit;
+
+        SelectedTransaction.Date = EditDate?.DateTime ?? SelectedTransaction.Date;
+        SelectedTransaction.Debit = EditDebit;
+        SelectedTransaction.Credit = EditCredit;
+        SelectedTransaction.PayeeName = string.IsNullOrWhiteSpace(EditPayee) ? null : EditPayee.Trim();
+        SelectedTransaction.TagName = string.IsNullOrWhiteSpace(EditTag) ? null : EditTag.Trim();
+        SelectedTransaction.Memo = string.IsNullOrWhiteSpace(EditMemo) ? null : EditMemo.Trim();
+
+        // Clear resolved taxonomy flags
+        if (!string.IsNullOrWhiteSpace(SelectedTransaction.PayeeName) && SelectedTransaction.ReviewStatus.HasFlag(ReviewFlags.MissingPayee))
+        {
+            SelectedTransaction.ReviewStatus &= ~ReviewFlags.MissingPayee;
+        }
+        if (!string.IsNullOrWhiteSpace(SelectedTransaction.TagName) && SelectedTransaction.ReviewStatus.HasFlag(ReviewFlags.MissingTag))
+        {
+            SelectedTransaction.ReviewStatus &= ~ReviewFlags.MissingTag;
+        }
+
+        StageOrUpdateCorrection(SelectedTransaction, originalDebit, originalCredit);
+        SelectedTransaction.IsStaged = true;
+
+        IsPanelVisible = false;
+        SelectedTransaction = null;
+
+        Broker.Send(new ToastNotificationMessage("Changes staged. Click 'Review Edits' to commit.", NotificationType.Success));
+        await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private void CancelEdit()
+    {
+        ClearSplitLines();
+        IsPanelVisible = false;
+        SelectedTransaction = null;
+    }
+
+    // =============================================================================
+    // 11. COMMANDS: BULK ACTIONS & TRANSFER LINKING
+    // =============================================================================
+
+    [RelayCommand]
+    private void OpenBulkActionsModal()
+    {
+        if (!CanOpenBulkActions) return;
+        IsBulkActionsModalVisible = true;
+    }
+
+    [RelayCommand]
+    private void CloseBulkActionsModal()
+    {
+        IsBulkActionsModalVisible = false;
+    }
+
+    [RelayCommand]
+    private async Task ApplyBulkChangesAsync()
+    {
+        var selectedRows = _rawTransactions.Where(t => t.IsSelected).ToList();
+        if (!selectedRows.Any()) return;
+
+        bool hasTag = !string.IsNullOrWhiteSpace(BulkTag);
+        bool hasPayee = !string.IsNullOrWhiteSpace(BulkPayee);
+
+        if (!hasTag && !hasPayee)
+        {
+            Broker.Send(new ToastNotificationMessage("Enter a Tag or Payee to apply in bulk.", NotificationType.Warning));
+            return;
+        }
+
+        foreach (var row in selectedRows)
+        {
+            if (hasTag)
+            {
+                row.TagName = BulkTag.Trim();
+                if (row.ReviewStatus.HasFlag(ReviewFlags.MissingTag))
+                    row.ReviewStatus &= ~ReviewFlags.MissingTag;
+            }
+
+            if (hasPayee)
+            {
+                row.PayeeName = BulkPayee.Trim();
+                if (row.ReviewStatus.HasFlag(ReviewFlags.MissingPayee))
+                    row.ReviewStatus &= ~ReviewFlags.MissingPayee;
+            }
+
+            StageOrUpdateCorrection(row, row.Debit, row.Credit);
+            row.IsStaged = true;
+        }
+
+        Broker.Send(new ToastNotificationMessage($"Staged bulk changes for {selectedRows.Count} transactions.", NotificationType.Success));
+        CancelSelection();
+        await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private void CancelSelection()
+    {
+        _isUpdatingSelection = true;
+        try
+        {
+            foreach (var row in _rawTransactions)
+            {
+                row.IsSelected = false;
+            }
+            SelectedCount = 0;
+            IsAllSelected = false;
+        }
+        finally
+        {
+            _isUpdatingSelection = false;
+        }
+
+        BulkTag = string.Empty;
+        BulkPayee = string.Empty;
+        IsBulkActionsModalVisible = false;
+    }
 
     [RelayCommand]
     private async Task LinkAsTransferAsync()
@@ -359,17 +811,65 @@ public partial class TransactionReviewViewModel : ViewModelBase
         var tx1 = selectedTxns[0];
         var tx2 = selectedTxns[1];
 
-        // Ensure one is Debit and one is Credit mathematically
-        int debitId = tx1.Debit > 0 ? tx1.Id : tx2.Id;
-        int creditId = tx1.Credit > 0 ? tx1.Id : tx2.Id;
+        var debitTx = tx1.Debit > 0 ? tx1 : (tx2.Debit > 0 ? tx2 : null);
+        var creditTx = tx1.Credit > 0 ? tx1 : (tx2.Credit > 0 ? tx2 : null);
 
-        // In a real scenario, fetch the System Transfer Tag ID dynamically from MasterData
-        int systemTransferTagId = 999;
+        if (debitTx == null || creditTx == null || debitTx.Id == creditTx.Id)
+        {
+            Broker.Send(new ToastNotificationMessage("Select one Debit transaction and one Credit transaction to link.", NotificationType.Warning));
+            return;
+        }
 
-        await _orchestrator.LinkTransferAsync(debitId, creditId, systemTransferTagId);
+        // Resolve or auto-create the system Transfer tag dynamically
+        if (!_tagIdsByName.TryGetValue("Transfer", out int systemTransferTagId))
+        {
+            systemTransferTagId = await _masterDataOrchestrator.GetOrCreateTagAsync("Transfer");
+            _tagIdsByName["Transfer"] = systemTransferTagId;
+            _tagNamesById[systemTransferTagId] = "Transfer";
+            if (!AvailableTags.Contains("Transfer")) AvailableTags.Add("Transfer");
+        }
 
-        // Clear selection
+        await _orchestrator.LinkTransferAsync(debitTx.Id, creditTx.Id, systemTransferTagId);
+
         CancelSelection();
+        await RefreshGridAsync();
+    }
+
+    // =============================================================================
+    // 12. COMMANDS: SPLIT TRANSACTIONS
+    // =============================================================================
+
+    [RelayCommand]
+    private void AddSplitLine()
+    {
+        var line = new SplitLineViewModel
+        {
+            LineNumber = MockSplitTransactions.Count + 1,
+            SplitAmount = SplitRemainingAmount > 0 ? SplitRemainingAmount.ToString("0.00") : "0.00",
+            SplitTag = string.Empty,
+            SplitPayee = string.Empty
+        };
+
+        line.PropertyChanged += OnSplitLinePropertyChanged;
+        MockSplitTransactions.Add(line);
+        RecalculateSplitSummary();
+    }
+
+    [RelayCommand]
+    private void RemoveSplitLine(SplitLineViewModel splitLine)
+    {
+        if (splitLine == null) return;
+
+        splitLine.PropertyChanged -= OnSplitLinePropertyChanged;
+        MockSplitTransactions.Remove(splitLine);
+
+        // Re-index remaining split card headers
+        for (int i = 0; i < MockSplitTransactions.Count; i++)
+        {
+            MockSplitTransactions[i].LineNumber = i + 1;
+        }
+
+        RecalculateSplitSummary();
     }
 
     [RelayCommand]
@@ -383,26 +883,40 @@ public partial class TransactionReviewViewModel : ViewModelBase
 
         foreach (var split in MockSplitTransactions)
         {
-            if (decimal.TryParse(split.SplitAmount, out decimal amount))
+            if (decimal.TryParse(split.SplitAmount, out decimal amount) && amount > 0)
             {
                 currentSplitTotal += amount;
 
-                // Construct the child entity mapping
+                int? tagId = (!string.IsNullOrWhiteSpace(split.SplitTag) && _tagIdsByName.TryGetValue(split.SplitTag.Trim(), out var resolvedTagId))
+                    ? resolvedTagId
+                    : null;
+
+                int? payeeId = (!string.IsNullOrWhiteSpace(split.SplitPayee) && _payeeIdsByName.TryGetValue(split.SplitPayee.Trim(), out var resolvedPayeeId))
+                    ? resolvedPayeeId
+                    : null;
+
                 childTransactions.Add(new Transaction
                 {
+                    Description = SelectedTransaction.RawDescription,
                     Debit = SelectedTransaction.Debit > 0 ? amount : 0,
                     Credit = SelectedTransaction.Credit > 0 ? amount : 0,
-                    // Note: Tags/Payees should ideally be resolved to IDs here via MasterData orchestration
+                    TagId = tagId,
+                    PayeeId = payeeId,
                     ReviewStatus = ReviewFlags.None,
-                    RawAmountText = SelectedTransaction.Debit > 0 ? $"Dr: {amount}" : $"Cr: {amount}"
+                    RawAmountText = SelectedTransaction.Debit > 0 ? $"Dr: {amount:N2}" : $"Cr: {amount:N2}"
                 });
             }
         }
 
-        // FRACTIONAL MATH GUARDRAIL
-        // If there is a slight fractional difference (e.g., 0.01), auto-correct the last split line.
+        if (childTransactions.Count < 2)
+        {
+            Broker.Send(new ToastNotificationMessage("Add at least two split lines with valid amounts.", NotificationType.Warning));
+            return;
+        }
+
+        // FRACTIONAL MATH GUARDRAIL: Auto-correct minor rounding remainders (<= 0.05) on the final line
         decimal difference = targetTotal - currentSplitTotal;
-        if (difference != 0 && childTransactions.Any())
+        if (difference != 0 && Math.Abs(difference) <= 0.05m)
         {
             var lastChild = childTransactions.Last();
             if (SelectedTransaction.Debit > 0)
@@ -410,15 +924,19 @@ public partial class TransactionReviewViewModel : ViewModelBase
             else
                 lastChild.Credit += difference;
 
-            lastChild.RawAmountText = SelectedTransaction.Debit > 0 ? $"Dr: {lastChild.Debit}" : $"Cr: {lastChild.Credit}";
+            lastChild.RawAmountText = SelectedTransaction.Debit > 0
+                ? $"Dr: {lastChild.Debit:N2}"
+                : $"Cr: {lastChild.Credit:N2}";
 
             Broker.Send(new ToastNotificationMessage($"Fractional difference of {difference:N2} auto-corrected on the last line.", NotificationType.Info));
         }
 
-        // Execute the backend call
         await _orchestrator.SplitTransactionAsync(SelectedTransaction.Id, childTransactions);
 
+        ClearSplitLines();
         IsPanelVisible = false;
+        SelectedTransaction = null;
+        await RefreshGridAsync();
     }
 
     [RelayCommand]
@@ -428,593 +946,289 @@ public partial class TransactionReviewViewModel : ViewModelBase
 
         await _orchestrator.RevertSplitAsync(SelectedTransaction.Id);
 
-        IsPanelVisible = false;
-        await RefreshGridAsync(); // Reload grid to show restored parent
-    }
-
-    /// <summary>
-    /// Populates the ViewModel with dummy mock data so the UI can be previewed immediately.
-    /// This method will be removed once real data fetching is implemented.
-    /// </summary>
-    // private void InitializeMockData()
-    // {
-    //     // Mock Payees for AutoCompleteBox
-    //     AvailablePayees.Add("Amazon");
-    //     AvailablePayees.Add("Zomato");
-    //     AvailablePayees.Add("Swiggy");
-    //     AvailablePayees.Add("Infosys Ltd");
-    //     AvailablePayees.Add("Netflix");
-    //     AvailablePayees.Add("Uber");
-    //     AvailablePayees.Add("Groww");
-
-    //     // Mock Tags for AutoCompleteBox
-    //     AvailableTags.Add("Food & Dining");
-    //     AvailableTags.Add("Salary");
-    //     AvailableTags.Add("Investment");
-    //     AvailableTags.Add("Entertainment");
-    //     AvailableTags.Add("Transport");
-    //     AvailableTags.Add("Shopping");
-    //     AvailableTags.Add("Utilities");
-
-    //     // Mock Accounts for ComboBox
-    //     AvailableAccounts.Add(new AccountFilterItem { Id = 1, DisplayName = "HDFC Savings - 4532" });
-    //     AvailableAccounts.Add(new AccountFilterItem { Id = 2, DisplayName = "ICICI Credit Card - 8876" });
-    //     AvailableAccounts.Add(new AccountFilterItem { Id = 3, DisplayName = "SBI Salary Account - 1209" });
-
-    //     // Mock Import Batches for ComboBox
-    //     AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 1, DisplayName = "Nov 2026 - HDFC Statement (500 txns)" });
-    //     AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 2, DisplayName = "Oct 2026 - ICICI Statement (320 txns)" });
-    //     AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 3, DisplayName = "Sep 2026 - SBI Statement (450 txns)" });
-
-    //     // Mock Group By Options
-    //     GroupByOptions.Add("None");
-    //     GroupByOptions.Add("Date");
-    //     GroupByOptions.Add("Payee");
-    //     GroupByOptions.Add("Account");
-
-    //     // Mock Page Size Options
-    //     PageSizeOptions.Add(50);
-    //     PageSizeOptions.Add(100);
-    //     PageSizeOptions.Add(200);
-
-    //     // Mock Transactions for DataGrid
-    //     Transactions.Add(new TransactionRowViewModel
-    //     {
-    //         Id = 1,
-    //         Date = new DateTime(2026, 11, 8),
-    //         AccountName = "HDFC Savings",
-    //         SanitizedSource = "Zomato",
-    //         RawDescription = "UPI/P2M/123456789/ZOMATO LTD/Food Order/HDFC BANK",
-    //         PayeeName = "Zomato",
-    //         TagName = "Food & Dining",
-    //         Debit = 450.00m,
-    //         Credit = 0m,
-    //         ReviewStatus = ReviewFlags.None,
-    //         RawAmountText = "Dr: 450.00"
-    //     });
-
-    //     Transactions.Add(new TransactionRowViewModel
-    //     {
-    //         Id = 2,
-    //         Date = new DateTime(2026, 11, 7),
-    //         AccountName = "SBI Salary Account",
-    //         SanitizedSource = "Infosys Ltd",
-    //         RawDescription = "NEFT-INFOSYS LIMITED-SALARY CREDIT NOV 2026",
-    //         PayeeName = "Infosys Ltd",
-    //         TagName = "Salary",
-    //         Debit = 0m,
-    //         Credit = 95000.00m,
-    //         ReviewStatus = ReviewFlags.None,
-    //         RawAmountText = "Cr: 95000.00"
-    //     });
-
-    //     Transactions.Add(new TransactionRowViewModel
-    //     {
-    //         Id = 3,
-    //         Date = new DateTime(2026, 11, 6),
-    //         AccountName = "ICICI Credit Card",
-    //         SanitizedSource = "Amazon Pay",
-    //         RawDescription = "AMAZON PAY INDIA PVT LTD BANGALORE",
-    //         PayeeName = null, // Missing Payee
-    //         TagName = null, // Missing Tag
-    //         Debit = 1299.00m,
-    //         Credit = 0m,
-    //         ReviewStatus = ReviewFlags.MissingPayee | ReviewFlags.MissingTag,
-    //         RawAmountText = "Dr: 1299.00"
-    //     });
-
-    //     Transactions.Add(new TransactionRowViewModel
-    //     {
-    //         Id = 4,
-    //         Date = new DateTime(2026, 11, 5),
-    //         AccountName = "HDFC Savings",
-    //         SanitizedSource = "Netflix",
-    //         RawDescription = "NETFLIX.COM BILL PAYMENT",
-    //         PayeeName = "Netflix",
-    //         TagName = "Entertainment",
-    //         Debit = 649.00m,
-    //         Credit = 0m,
-    //         ReviewStatus = ReviewFlags.None,
-    //         RawAmountText = "Dr: 649.00"
-    //     });
-
-    //     Transactions.Add(new TransactionRowViewModel
-    //     {
-    //         Id = 5,
-    //         Date = new DateTime(2026, 11, 4),
-    //         AccountName = "HDFC Savings",
-    //         SanitizedSource = "Groww Invest",
-    //         RawDescription = "UPI/P2M/987654321/GROWW INVEST TECH PVT/MF Purchase/HDFC",
-    //         PayeeName = "Groww",
-    //         TagName = null, // Missing Tag
-    //         Debit = 5000.00m,
-    //         Credit = 0m,
-    //         ReviewStatus = ReviewFlags.MissingTag,
-    //         RawAmountText = "Dr: 5000.00"
-    //     });
-
-    //     Transactions.Add(new TransactionRowViewModel
-    //     {
-    //         Id = 6,
-    //         Date = new DateTime(2026, 11, 3),
-    //         AccountName = "ICICI Credit Card",
-    //         SanitizedSource = "Uber India",
-    //         RawDescription = "UBER INDIA SYSTEMS PVT LTD BANGALORE",
-    //         PayeeName = "Uber",
-    //         TagName = "Transport",
-    //         Debit = 285.00m,
-    //         Credit = 0m,
-    //         ReviewStatus = ReviewFlags.None,
-    //         RawAmountText = "Dr: 285.00"
-    //     });
-
-    //     Transactions.Add(new TransactionRowViewModel
-    //     {
-    //         Id = 7,
-    //         Date = new DateTime(2026, 11, 2),
-    //         AccountName = "HDFC Savings",
-    //         SanitizedSource = "Unknown Merchant",
-    //         RawDescription = "POS PURCHASE-INVALID AMOUNT TEXT",
-    //         PayeeName = null,
-    //         TagName = null,
-    //         Debit = 0m,
-    //         Credit = 0m,
-    //         ReviewStatus = ReviewFlags.InvalidAmount | ReviewFlags.MissingPayee | ReviewFlags.MissingTag,
-    //         RawAmountText = "INVALID"
-    //     });
-    // }
-
-    // =============================================================================
-    // COMMANDS (User Actions)
-    // =============================================================================
-
-    [RelayCommand]
-    private async Task ReviewPendingEditsAsync()
-    {
-        if (StagedEditsCount == 0) return;
-
-        IsStagingModalVisible = true;
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Triggered when the user selects a row in the DataGrid.
-    /// Opens the right slide-in panel and populates editable fields with the selected transaction's data.
-    /// </summary>
-    [RelayCommand]
-    private void SelectTransaction(TransactionRowViewModel? transaction)
-    {
-        if (transaction == null)
-        {
-            // Deselection: Close the panel
-            IsPanelVisible = false;
-            SelectedTransaction = null;
-            return;
-        }
-
-        // Open the panel and populate edit fields
-        SelectedTransaction = transaction;
-        EditDate = transaction.Date;
-        EditDebit = transaction.Debit;
-        EditCredit = transaction.Credit;
-        EditPayee = transaction.PayeeName ?? string.Empty;
-        EditTag = transaction.TagName ?? string.Empty;
-        EditMemo = string.Empty; // Reset memo
-        RawAmountText = transaction.RawAmountText ?? string.Empty; // Populate raw amount text
-        IsPanelVisible = true;
-
-        // Initialize mock split transactions
-        MockSplitTransactions.Clear();
-    }
-
-    /// <summary>
-    /// Commits the staged edits to the in-memory collection and marks them for batch persistence.
-    /// This does NOT write to the database immediately; instead, it stages the changes
-    /// until the user clicks "Review X Edits" to trigger ApplyCorrectionsAsync.
-    /// </summary>
-    [RelayCommand]
-    private async Task StageUpdatesAsync()
-    {
-        if (SelectedTransaction == null) return;
-
-        // Apply the edits to the in-memory ViewModel
-        // In production, this would mark the transaction as "dirty" and increment PendingEditCount
-        SelectedTransaction.Date = EditDate;
-        SelectedTransaction.Debit = EditDebit;
-        SelectedTransaction.Credit = EditCredit;
-        SelectedTransaction.PayeeName = EditPayee;
-        SelectedTransaction.TagName = EditTag;
-
-        // Clear any review flags if the user corrected the issues
-        if (!string.IsNullOrWhiteSpace(EditPayee) && SelectedTransaction.ReviewStatus.HasFlag(ReviewFlags.MissingPayee))
-        {
-            SelectedTransaction.ReviewStatus &= ~ReviewFlags.MissingPayee;
-        }
-        if (!string.IsNullOrWhiteSpace(EditTag) && SelectedTransaction.ReviewStatus.HasFlag(ReviewFlags.MissingTag))
-        {
-            SelectedTransaction.ReviewStatus &= ~ReviewFlags.MissingTag;
-        }
-
-        // Increment staged edits count
-        StagedEditsCount++;
-        OnPropertyChanged(nameof(HasStagedEdits)); // Notify UI to update button visibility
-
-        // Close the panel
+        ClearSplitLines();
         IsPanelVisible = false;
         SelectedTransaction = null;
-
-        // Show a toast notification
-        Broker.Send(new ToastNotificationMessage("Changes staged. Click 'Review Edits' to commit.", NotificationType.Success));
-
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Discards the current edits and closes the slide-in panel.
-    /// </summary>
-    [RelayCommand]
-    private void CancelEdit()
-    {
-        IsPanelVisible = false;
-        SelectedTransaction = null;
-    }
-
-    /// <summary>
-    /// Applies the Triage Mode filter by reloading the grid with IsTriageMode = true.
-    /// This will fetch only transactions with ReviewStatus > 0 from the database.
-    /// </summary>
-    [RelayCommand]
-    private async Task ToggleTriageModeAsync()
-    {
-        // In production, this would trigger a new fetch from the orchestrator
-        // with TransactionFilterArgs.IsTriageMode = IsTriageMode
         await RefreshGridAsync();
     }
 
-    /// <summary>
-    /// Refreshes the DataGrid by fetching transactions from the orchestrator based on current filters.
-    /// </summary>
-    [RelayCommand]
-    private async Task RefreshGridAsync()
-    {
-        try
-        {
-            // 1. Build the filter arguments based on current UI state
-            var filters = new TransactionFilterArgs(
-                BatchId: SelectedImportBatch?.Id,
-                AccountId: SelectedAccountId,
-                SearchText: SearchText,
-                IsTriageMode: IsTriageMode,
-                DateFrom: StartDate,
-                DateTo: EndDate,
-                Limit: SelectedPageSize,
-                Offset: 0 // Reset to 0 on a fresh filter refresh. Pagination offset logic will handle next/prev.
-            );
-
-            // 2. Fetch from Database
-            var result = await _orchestrator.GetTransactionsAsync(filters);
-
-            if (IsAccountSelected && result.Items.Any())
-            {
-                // Pull the specific account's running balance from the View
-                CurrentFilterBalance = result.Items.First().RunningBalance;
-            }
-            else if (!IsAccountSelected)
-            {
-                // Pull the global summation across all accounts
-                CurrentFilterBalance = await _orchestrator.GetTotalGlobalBalanceAsync();
-            }
-            else
-            {
-                CurrentFilterBalance = 0m;
-            }
-
-            // 3. Clear existing and repopulate
-            _rawTransactions.Clear();
-
-            // Note: In production, you'd want to cache the Account/Payee/Tag names in dictionaries
-            // from your MasterData service to avoid N+1 queries. For now, we map them directly.
-            foreach (var txn in result.Items)
-            {
-                _rawTransactions.Add(TransactionRowViewModel.FromEntity(
-                    txn,
-                    accountName: $"Account {txn.AccountId}", // Placeholder: Resolve real name via MasterData
-                    payeeName: txn.PayeeId.HasValue ? $"Payee {txn.PayeeId}" : null,
-                    tagName: txn.TagId.HasValue ? $"Tag {txn.TagId}" : null
-                ));
-            }
-
-            // 4. Update Pagination UI
-            PageInfo = $"Showing 1-{result.Items.Count()} of {result.TotalCount} transactions";
-            CanGoPrevious = false; // We are on page 1
-            CanGoNext = result.TotalCount > SelectedPageSize;
-
-            Broker.Send(new ToastNotificationMessage("Grid Refreshed.", NotificationType.Info));
-        }
-        catch (Exception)
-        {
-            // Logging is handled by the orchestrator, just show generic UI fallback if needed
-            Broker.Send(new ToastNotificationMessage("Failed to load transactions.", NotificationType.Error));
-        }
-    }
-
     // =============================================================================
-    // BULK ACTIONS COMMANDS
+    // 13. COMMANDS: PAGINATION & IMPORT BATCH
     // =============================================================================
 
-    /// <summary>
-    /// Applies the bulk tag and/or payee to all selected transactions.
-    /// This stages the changes for commit.
-    /// </summary>
-    [RelayCommand]
-    private async Task ApplyBulkChangesAsync()
-    {
-        // In production, this would iterate through all selected transactions
-        // and apply the BulkTag and BulkPayee values
-        Broker.Send(new ToastNotificationMessage($"Bulk changes applied to {SelectedCount} transactions (mock)", NotificationType.Success));
-
-        // Reset bulk fields and clear selection
-        BulkTag = string.Empty;
-        BulkPayee = string.Empty;
-        SelectedCount = 0;
-        OnPropertyChanged(nameof(HasSelectedTransactions));
-        OnPropertyChanged(nameof(SelectedCountText));
-
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Cancels the current selection and hides the bulk actions bar.
-    /// </summary>
-    [RelayCommand]
-    private void CancelSelection()
-    {
-        // In production, this would clear the IsSelected flag on all transactions
-        SelectedCount = 0;
-        BulkTag = string.Empty;
-        BulkPayee = string.Empty;
-        OnPropertyChanged(nameof(HasSelectedTransactions));
-        OnPropertyChanged(nameof(SelectedCountText));
-    }
-
-    // =============================================================================
-    // PAGINATION COMMANDS
-    // =============================================================================
-
-    /// <summary>
-    /// Navigates to the previous page of transactions using keyset cursor paging.
-    /// </summary>
     [RelayCommand]
     private async Task PreviousPageAsync()
     {
-        // In production, this would trigger a keyset cursor fetch with the previous boundary
-        Broker.Send(new ToastNotificationMessage("Previous page loaded (mock)", NotificationType.Info));
-        CanGoPrevious = false; // Mock: disable for demo
-        CanGoNext = true;
-        await Task.CompletedTask;
+        if (!CanGoPrevious) return;
+
+        _currentOffset = Math.Max(0, _currentOffset - SelectedPageSize);
+        await RefreshGridAsync();
     }
 
-    /// <summary>
-    /// Navigates to the next page of transactions using keyset cursor paging.
-    /// </summary>
     [RelayCommand]
     private async Task NextPageAsync()
     {
-        // In production, this would trigger a keyset cursor fetch with the next boundary
-        Broker.Send(new ToastNotificationMessage("Next page loaded (mock)", NotificationType.Info));
-        CanGoPrevious = true;
-        CanGoNext = true;
-        await Task.CompletedTask;
+        if (!CanGoNext) return;
+
+        _currentOffset += SelectedPageSize;
+        await RefreshGridAsync();
     }
 
-    // =============================================================================
-    // SPLIT TRANSACTION COMMANDS
-    // =============================================================================
-
-    /// <summary>
-    /// Adds a new split line to the MockSplitTransactions collection.
-    /// </summary>
-    [RelayCommand]
-    private void AddSplitLine()
-    {
-        MockSplitTransactions.Add(new SplitLineViewModel
-        {
-            SplitAmount = "0.00",
-            SplitTag = string.Empty,
-            SplitPayee = string.Empty
-        });
-    }
-
-    /// <summary>
-    /// Removes a split line from the MockSplitTransactions collection.
-    /// </summary>
-    [RelayCommand]
-    private void RemoveSplitLine(SplitLineViewModel splitLine)
-    {
-        if (splitLine != null)
-        {
-            MockSplitTransactions.Remove(splitLine);
-        }
-    }
-
-    // =============================================================================
-    // IMPORT BATCH COMMANDS
-    // =============================================================================
-
-    /// <summary>
-    /// Reverts all transactions from the selected import batch.
-    /// This is a destructive operation that requires confirmation.
-    /// </summary>
     [RelayCommand]
     private async Task RevertBatchAsync()
     {
-        if (SelectedImportBatch == null)
+        if (SelectedImportBatch == null || SelectedImportBatch.Id <= 0)
         {
             Broker.Send(new ToastNotificationMessage("No batch selected to revert.", NotificationType.Warning));
             return;
         }
 
-        // In production, this would show a confirmation modal and then call
-        // the orchestrator to delete all transactions from the selected batch
-        Broker.Send(new ToastNotificationMessage($"Batch '{SelectedImportBatch.DisplayName}' reverted (mock)", NotificationType.Success));
-        SelectedImportBatch = null;
-        OnPropertyChanged(nameof(IsBatchSelected));
+        await _orchestrator.RevertImportBatchAsync(SelectedImportBatch.Id);
 
-        await Task.CompletedTask;
+        _isInitializing = true;
+        await LoadMasterDataAsync();
+        _isInitializing = false;
+
+        _currentOffset = 0;
+        await RefreshGridAsync();
+    }
+
+    // =============================================================================
+    // 14. INTERNAL EVENT HANDLERS & HELPERS
+    // =============================================================================
+
+    private void OnTransactionRowPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_isUpdatingSelection || e.PropertyName != nameof(TransactionRowViewModel.IsSelected))
+            return;
+
+        _isUpdatingSelection = true;
+        try
+        {
+            SelectedCount = _rawTransactions.Count(t => t.IsSelected);
+            IsAllSelected = _rawTransactions.Count > 0 && SelectedCount == _rawTransactions.Count;
+        }
+        finally
+        {
+            _isUpdatingSelection = false;
+        }
+    }
+
+    private void OnStagedCorrectionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        StagedEditsCount = StagingViewModel.StagedCorrections.Count;
+
+        // Sync draft row indicators in case a correction was discarded inside the staging modal
+        var stagedIds = StagingViewModel.StagedCorrections
+            .Select(c => c.TransactionId)
+            .ToHashSet();
+
+        foreach (var row in _rawTransactions)
+        {
+            row.IsStaged = stagedIds.Contains(row.Id);
+        }
+    }
+
+    private void OnSplitLinePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SplitLineViewModel.SplitAmount))
+        {
+            RecalculateSplitSummary();
+        }
+    }
+
+    private void ClearSplitLines()
+    {
+        foreach (var line in MockSplitTransactions)
+        {
+            line.PropertyChanged -= OnSplitLinePropertyChanged;
+        }
+        MockSplitTransactions.Clear();
+    }
+
+    private void RecalculateSplitSummary()
+    {
+        SplitTargetAmount = SelectedTransaction == null
+            ? 0m
+            : (SelectedTransaction.Debit > 0 ? SelectedTransaction.Debit : SelectedTransaction.Credit);
+
+        decimal allocated = 0m;
+        int validLines = 0;
+
+        foreach (var line in MockSplitTransactions)
+        {
+            if (decimal.TryParse(line.SplitAmount, out decimal amt) && amt > 0)
+            {
+                allocated += amt;
+                validLines++;
+            }
+        }
+
+        SplitAllocatedAmount = allocated;
+        SplitRemainingAmount = SplitTargetAmount - allocated;
+        CanCommitSplit = validLines >= 2 && Math.Abs(SplitRemainingAmount) <= 0.05m;
+
+        SplitStatusColor = CanCommitSplit
+            ? "#22C55E"                                       // Green: Balanced and ready
+            : (SplitRemainingAmount < -0.05m ? "#EF4444"      // Red: Over-allocated
+                                             : "#F59E0B");    // Amber: Remaining amount to allocate
+    }
+
+    private void StageOrUpdateCorrection(TransactionRowViewModel row, decimal originalDebit, decimal originalCredit)
+    {
+        var existing = StagingViewModel.StagedCorrections.FirstOrDefault(c => c.TransactionId == row.Id);
+        if (existing != null)
+        {
+            existing.Date = row.Date;
+            existing.NewPayee = row.PayeeName;
+            existing.NewTag = row.TagName;
+            existing.CorrectedDebit = row.Debit;
+            existing.CorrectedCredit = row.Credit;
+        }
+        else
+        {
+            StagingViewModel.StagedCorrections.Add(new TransactionCorrectionRowViewModel
+            {
+                TransactionId = row.Id,
+                Date = row.Date,
+                OriginalMerchant = row.SanitizedSource,
+                NewPayee = row.PayeeName,
+                NewTag = row.TagName,
+                OriginalDebit = originalDebit,
+                CorrectedDebit = row.Debit,
+                OriginalCredit = originalCredit,
+                CorrectedCredit = row.Credit
+            });
+        }
     }
 
     /// <summary>
-    /// Triggered when the user types into the global search TextBox.
-    /// Debounced in production to avoid excessive database queries.
+    /// Formats an Account into a readable label combining EntityName, AccountType, and masked Account/Card number.
     /// </summary>
-    [RelayCommand]
-    private async Task SearchAsync()
+    private static string FormatAccountDisplay(Account acc, Dictionary<int, string> entityNamesById)
     {
-        // In production, this would trigger RefreshGridAsync with the search text
-        await RefreshGridAsync();
+        var institution = !string.IsNullOrWhiteSpace(acc.EntityName)
+            ? acc.EntityName.Trim()
+            : (acc.EntityId.HasValue && entityNamesById.TryGetValue(acc.EntityId.Value, out var entityName)
+                ? entityName
+                : "Account");
+
+        var rawNumber = !string.IsNullOrWhiteSpace(acc.CardNumber)
+            ? acc.CardNumber.Trim()
+            : acc.AccountNumber?.Trim();
+
+        var masked = !string.IsNullOrWhiteSpace(rawNumber)
+            ? (rawNumber.Length > 4 ? $"•••• {rawNumber[^4..]}" : rawNumber)
+            : string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(acc.AccountType) && !string.IsNullOrWhiteSpace(masked))
+            return $"{institution} ({acc.AccountType}) {masked}";
+        if (!string.IsNullOrWhiteSpace(masked))
+            return $"{institution} {masked}";
+        if (!string.IsNullOrWhiteSpace(acc.AccountType))
+            return $"{institution} ({acc.AccountType})";
+
+        return institution;
     }
 }
 
 // =============================================================================
-// SUPPORTING VIEW MODELS
+// 15. SUPPORTING VIEW MODELS
 // =============================================================================
 
 /// <summary>
-/// Represents a single row in the DataGrid.
-/// This is a lightweight ViewModel that mirrors the Transaction entity but adds UI-specific properties.
+/// Represents a single row in the Ledger DataGrid with priority-based status icon helpers.
 /// </summary>
 public partial class TransactionRowViewModel : ObservableObject
 {
-    private int _id;
-    private bool _isSelected;
-    private DateTime _date;
-    private string _accountName = string.Empty;
-    private string _sanitizedSource = string.Empty;
-    private string _rawDescription = string.Empty;
-    private string? _payeeName;
-    private string? _tagName;
-    private decimal _debit;
-    private decimal _credit;
-    private ReviewFlags _reviewStatus;
-    private string? _rawAmountText;
+    private const ReviewFlags HighPriorityFlags =
+        ReviewFlags.InvalidAmount | ReviewFlags.InvalidDate | ReviewFlags.InvalidDescription;
 
+    private const ReviewFlags MediumPriorityFlags =
+        ReviewFlags.MissingPayee | ReviewFlags.MissingTag;
+
+    [ObservableProperty] private int _id;
+    [ObservableProperty] private bool _isSelected;
+    [ObservableProperty] private bool _isStaged;
+    [ObservableProperty] private DateTime _date;
+    [ObservableProperty] private string _accountName = string.Empty;
+    [ObservableProperty] private string _sanitizedSource = string.Empty;
+    [ObservableProperty] private string _rawDescription = string.Empty;
+    [ObservableProperty] private string? _payeeName;
+    [ObservableProperty] private string? _tagName;
+    [ObservableProperty] private decimal _debit;
+    [ObservableProperty] private decimal _credit;
+    [ObservableProperty] private string? _rawAmountText;
     [ObservableProperty] private decimal _runningBalance;
     [ObservableProperty] private string? _memo;
     [ObservableProperty] private int? _parentTransactionId;
-    [ObservableProperty] private int? _linkedTransactionId;
 
-    public int Id
-    {
-        get => _id;
-        set => SetProperty(ref _id, value);
-    }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsTransfer))]
+    [NotifyPropertyChangedFor(nameof(StatusIcon))]
+    [NotifyPropertyChangedFor(nameof(StatusColor))]
+    [NotifyPropertyChangedFor(nameof(StatusTooltip))]
+    private int? _linkedTransactionId;
 
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set => SetProperty(ref _isSelected, value);
-    }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSplitParent))]
+    [NotifyPropertyChangedFor(nameof(StatusDisplay))]
+    [NotifyPropertyChangedFor(nameof(StatusIcon))]
+    [NotifyPropertyChangedFor(nameof(StatusColor))]
+    [NotifyPropertyChangedFor(nameof(StatusTooltip))]
+    private ReviewFlags _reviewStatus;
 
-    public DateTime Date
-    {
-        get => _date;
-        set => SetProperty(ref _date, value);
-    }
-
-    public string AccountName
-    {
-        get => _accountName;
-        set => SetProperty(ref _accountName, value);
-    }
-
-    public string SanitizedSource
-    {
-        get => _sanitizedSource;
-        set => SetProperty(ref _sanitizedSource, value);
-    }
-
-    public string RawDescription
-    {
-        get => _rawDescription;
-        set => SetProperty(ref _rawDescription, value);
-    }
-
-    public string? PayeeName
-    {
-        get => _payeeName;
-        set => SetProperty(ref _payeeName, value);
-    }
-
-    public string? TagName
-    {
-        get => _tagName;
-        set => SetProperty(ref _tagName, value);
-    }
-
-    public decimal Debit
-    {
-        get => _debit;
-        set => SetProperty(ref _debit, value);
-    }
-
-    public decimal Credit
-    {
-        get => _credit;
-        set => SetProperty(ref _credit, value);
-    }
-
-    public ReviewFlags ReviewStatus
-    {
-        get => _reviewStatus;
-        set => SetProperty(ref _reviewStatus, value);
-    }
-
-    public string? RawAmountText
-    {
-        get => _rawAmountText;
-        set => SetProperty(ref _rawAmountText, value);
-    }
-
-    // UI Helpers
-    public bool IsSplitParent => ReviewStatus.HasFlag(ReviewFlags.IsSplitParent); // Assuming IsSplitParent is 16
+    public bool IsSplitParent => ReviewStatus.HasFlag(ReviewFlags.IsSplitParent);
     public bool IsTransfer => LinkedTransactionId.HasValue;
-
-    /// <summary>
-    /// Computed property to display the review status as a human-readable string.
-    /// Used in the DataGrid Status column.
-    /// </summary>
     public string StatusDisplay => ReviewStatus == ReviewFlags.None ? "Clean" : ReviewStatus.ToString();
 
-    /// <summary>
-    /// Maps a raw database Transaction entity to this UI ViewModel.
-    /// </summary>
+    public string StatusIcon
+    {
+        get
+        {
+            if ((ReviewStatus & HighPriorityFlags) != 0) return "⚠";
+            if ((ReviewStatus & MediumPriorityFlags) != 0) return "⚑";
+            if (IsTransfer) return "⇄";
+            if (IsSplitParent) return "⑂";
+            return "✓";
+        }
+    }
+
+    public string StatusColor
+    {
+        get
+        {
+            if ((ReviewStatus & HighPriorityFlags) != 0) return "#EF4444";   // Red: High Priority Error
+            if ((ReviewStatus & MediumPriorityFlags) != 0) return "#F59E0B"; // Amber: Missing Payee/Tag
+            if (IsTransfer || IsSplitParent) return "#6366F1";               // Indigo: Linked Transfer / Split
+            return "#22C55E";                                                // Green: Clean
+        }
+    }
+
+    public string StatusTooltip
+    {
+        get
+        {
+            var notes = new List<string>();
+            if (ReviewStatus.HasFlag(ReviewFlags.InvalidAmount)) notes.Add("Invalid Amount");
+            if (ReviewStatus.HasFlag(ReviewFlags.InvalidDate)) notes.Add("Invalid Date");
+            if (ReviewStatus.HasFlag(ReviewFlags.InvalidDescription)) notes.Add("Invalid Description");
+            if (ReviewStatus.HasFlag(ReviewFlags.MissingPayee)) notes.Add("Missing Payee");
+            if (ReviewStatus.HasFlag(ReviewFlags.MissingTag)) notes.Add("Missing Tag");
+            if (IsSplitParent) notes.Add("Split Parent");
+            if (IsTransfer) notes.Add("Linked Transfer");
+
+            return notes.Count == 0 ? "Clean" : string.Join(" • ", notes);
+        }
+    }
+
     public static TransactionRowViewModel FromEntity(Transaction txn, string accountName, string? payeeName, string? tagName)
     {
         return new TransactionRowViewModel
         {
             Id = txn.Id,
             Date = txn.Date,
-            AccountName = accountName, // Passed in from a dictionary lookup for speed
+            AccountName = accountName,
             SanitizedSource = txn.Source,
             RawDescription = txn.Description,
             PayeeName = payeeName,
@@ -1023,7 +1237,7 @@ public partial class TransactionRowViewModel : ObservableObject
             Credit = txn.Credit,
             ReviewStatus = txn.ReviewStatus,
             RawAmountText = txn.RawAmountText,
-            RunningBalance = txn.RunningBalance, // The dynamic SQL column
+            RunningBalance = txn.RunningBalance,
             Memo = txn.Memo,
             ParentTransactionId = txn.ParentTransactionId,
             LinkedTransactionId = txn.LinkedTransactionId
@@ -1031,18 +1245,12 @@ public partial class TransactionRowViewModel : ObservableObject
     }
 }
 
-/// <summary>
-/// Represents an account filter item for the ComboBox in the top action bar.
-/// </summary>
 public class AccountFilterItem
 {
     public int Id { get; set; }
     public string DisplayName { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Represents an import batch filter item for the ComboBox in the top action bar.
-/// </summary>
 public class ImportBatchFilterItem
 {
     public int Id { get; set; }
@@ -1050,30 +1258,22 @@ public class ImportBatchFilterItem
 }
 
 /// <summary>
-/// Represents a single split line in the split transaction UI.
-/// This is a mock ViewModel for UI preview purposes.
+/// Represents a single split allocation line inside the Slide-In Edit Panel.
 /// </summary>
-public class SplitLineViewModel : ObservableObject
+public partial class SplitLineViewModel : ObservableObject
 {
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LineHeader))]
+    private int _lineNumber = 1;
+
+    [ObservableProperty]
     private string _splitAmount = string.Empty;
+
+    [ObservableProperty]
     private string _splitTag = string.Empty;
+
+    [ObservableProperty]
     private string _splitPayee = string.Empty;
 
-    public string SplitAmount
-    {
-        get => _splitAmount;
-        set => SetProperty(ref _splitAmount, value);
-    }
-
-    public string SplitTag
-    {
-        get => _splitTag;
-        set => SetProperty(ref _splitTag, value);
-    }
-
-    public string SplitPayee
-    {
-        get => _splitPayee;
-        set => SetProperty(ref _splitPayee, value);
-    }
+    public string LineHeader => $"Split #{LineNumber}";
 }

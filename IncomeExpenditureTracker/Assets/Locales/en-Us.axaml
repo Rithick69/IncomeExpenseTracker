@@ -381,6 +381,7 @@
 
     <!-- DataGrid Column Headers -->
     <system:String x:Key="Locale_Ledger_Grid_Select">Select</system:String>
+    <system:String x:Key="Locale_Ledger_Grid_Edit">Edit</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Date">Date</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Account">Account</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Merchant">Merchant</system:String>
@@ -388,7 +389,6 @@
     <system:String x:Key="Locale_Ledger_Grid_Tag">Tag</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Debit">Debit</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Credit">Credit</system:String>
-    <system:String x:Key="Locale_Ledger_Grid_Balance">Running Balance</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Status">Status</system:String>
 
     <!-- Slide-In Edit Panel -->

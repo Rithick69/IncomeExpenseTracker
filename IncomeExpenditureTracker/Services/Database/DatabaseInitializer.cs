@@ -242,10 +242,11 @@ public class DatabaseInitializer : IDatabaseInitializer
                 CREATE INDEX IF NOT EXISTS idx_transactions_accountid ON Transactions(AccountId);
                 CREATE INDEX IF NOT EXISTS idx_transactions_source ON Transactions(Source);
 
-                CREATE VIEW IF NOT EXISTS vw_TransactionBalances AS
+                DROP VIEW IF EXISTS vw_TransactionBalances;
+                CREATE VIEW vw_TransactionBalances AS
                 SELECT
                     t.*,
-                    SUM(t.Credit - t.Debit) OVER (
+                    SUM(CASE WHEN (t.ReviewStatus & 16) = 0 THEN (t.Credit - t.Debit) ELSE 0 END) OVER (
                         PARTITION BY t.AccountId
                         ORDER BY t.Date ASC, t.Id ASC
                     ) AS RunningBalance

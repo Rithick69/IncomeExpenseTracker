@@ -46,7 +46,9 @@ public readonly record struct TransactionFilterArgs(
     int? Limit = 50,
     int? Offset = 0,
     DateTime? DateFrom = null,
-    DateTime? DateTo = null
+    DateTime? DateTo = null,
+    string SortBy = "Date",
+    bool SortDescending = true
 );
 
 /// <summary>

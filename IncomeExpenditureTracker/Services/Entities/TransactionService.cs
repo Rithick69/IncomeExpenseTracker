@@ -608,7 +608,7 @@ public class TransactionService : ITransactionService, IDisposable
             return await _database.ExecuteWithRetryAsync(async (conn, cancelToken) =>
             {
                 // Fast aggregate of all money in vs money out
-                const string sql = "SELECT COALESCE(SUM(Credit - Debit), 0) FROM Transactions;";
+                const string sql = "SELECT COALESCE(SUM(Credit - Debit), 0) FROM Transactions WHERE (ReviewStatus & 16) = 0;";
                 return await conn.ExecuteScalarAsync<decimal>(new CommandDefinition(sql, cancellationToken: cancelToken));
             }, ct);
         }
@@ -643,7 +643,7 @@ public class TransactionService : ITransactionService, IDisposable
 
     private static string GetCacheKey(TransactionFilterArgs args)
     {
-        return $"FILTER:{args.BatchId}_{args.AccountId}_{args.Source}_{args.SearchText}_{args.IsTriageMode}_{(int?)args.SpecificError}_{args.DateFrom:yyyyMMdd}_{args.DateTo:yyyyMMdd}_{args.Limit}_{args.Offset}";
+        return $"FILTER:{args.BatchId}_{args.AccountId}_{args.Source}_{args.SearchText}_{args.IsTriageMode}_{(int?)args.SpecificError}_{args.DateFrom:yyyyMMdd}_{args.DateTo:yyyyMMdd}_{args.SortBy}_{args.SortDescending}_{args.Limit}_{args.Offset}";
     }
 
     private void InvalidateCache()
@@ -742,7 +742,15 @@ public class TransactionService : ITransactionService, IDisposable
             sql += " WHERE " + string.Join(" AND ", conditions);
         }
 
-        sql += " ORDER BY Date DESC, Id DESC";
+        var direction = args.SortDescending ? "DESC" : "ASC";
+        var orderBy = args.SortBy switch
+        {
+            "Debit" => $"ORDER BY Debit {direction}, Date DESC, Id DESC",
+            "Credit" => $"ORDER BY Credit {direction}, Date DESC, Id DESC",
+            _ => $"ORDER BY Date {direction}, Id {direction}"
+        };
+
+        sql += $" {orderBy}";
 
         if (args.Limit.HasValue)
         {
