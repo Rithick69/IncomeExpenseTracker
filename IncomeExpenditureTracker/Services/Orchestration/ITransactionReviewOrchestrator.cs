@@ -40,4 +40,6 @@ public interface ITransactionReviewOrchestrator
     Task RevertSplitAsync(int parentId, CancellationToken ct = default);
 
     Task<decimal> GetTotalGlobalBalanceAsync(CancellationToken ct = default);
+
+    Task<decimal> GetAccountsBalanceSumAsync(IReadOnlyList<int> accountIds, CancellationToken ct = default);
 }

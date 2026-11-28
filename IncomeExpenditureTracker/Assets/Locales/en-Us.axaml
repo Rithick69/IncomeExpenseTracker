@@ -379,6 +379,39 @@
     <system:String x:Key="Locale_Ledger_AllAccounts_Placeholder">All Accounts</system:String>
     <system:String x:Key="Locale_Ledger_Refresh_Button">Refresh</system:String>
 
+    <!-- Ledger Sorting, Filters & Multi-Select -->
+    <system:String x:Key="Locale_Ledger_SortBy_Label">Sort By</system:String>
+    <system:String x:Key="Locale_Ledger_ResetFilters_Button">Reset</system:String>
+    <system:String x:Key="Locale_Ledger_Tag_Label">Tag</system:String>
+    <system:String x:Key="Locale_Ledger_Payee_Label">Payee</system:String>
+    <system:String x:Key="Locale_Ledger_AllTags_Placeholder">All Tags</system:String>
+    <system:String x:Key="Locale_Ledger_AllPayees_Placeholder">All Payees</system:String>
+    <system:String x:Key="Locale_Ledger_Filter_Search_Placeholder">Search...</system:String>
+    <system:String x:Key="Locale_Ledger_Filter_Clear_Button">Clear Selection</system:String>
+
+    <!-- Ledger Balance Pills -->
+    <system:String x:Key="Locale_Ledger_TotalBalance_Label">Total Balance:</system:String>
+    <system:String x:Key="Locale_Ledger_FilteredAccountBalance_Label">Selected Accounts Balance:</system:String>
+
+    <!-- Ledger Grid Headers & Tooltips -->
+    <system:String x:Key="Locale_Ledger_SelectAll_Tooltip">Select / Deselect all on this page</system:String>
+    <system:String x:Key="Locale_Ledger_StagedEdit_Tooltip">Staged change pending commit</system:String>
+
+    <!-- Ledger Table Toolbar & Bulk Actions Floating Modal -->
+    <system:String x:Key="Locale_Ledger_BulkActions_Button">Bulk Actions</system:String>
+    <system:String x:Key="Locale_Ledger_BulkActions_Hint">Select 2 or more rows to enable Bulk Actions or Transfer Linking</system:String>
+    <system:String x:Key="Locale_Ledger_BulkModal_Title">Bulk Actions</system:String>
+    <system:String x:Key="Locale_Ledger_BulkModal_Description">Assign a shared Tag or Payee across all selected transactions at once, or stage a Transfer link between exactly two matching Debit &amp; Credit rows. All changes are staged until committed.</system:String>
+    <system:String x:Key="Locale_Ledger_BulkModal_TransferTitle">Link as Internal Transfer</system:String>
+    <system:String x:Key="Locale_Ledger_BulkModal_TransferSubtitle">Requires exactly 2 selected rows (1 Debit, 1 Credit) with identical amounts. Staged until committed.</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_ActionType">Action</system:String>
+    <!-- Split Transaction Live Allocation & Staged Actions -->
+    <system:String x:Key="Locale_Ledger_Split_Original_Label">Original</system:String>
+    <system:String x:Key="Locale_Ledger_Split_Allocated_Label">Allocated</system:String>
+    <system:String x:Key="Locale_Ledger_Split_Remaining_Label">Remaining</system:String>
+    <system:String x:Key="Locale_Ledger_StageSplit_Button">Stage Split</system:String>
+    <system:String x:Key="Locale_Ledger_Panel_StageRevertSplit_Button">Stage Revert Split</system:String>
+
     <!-- DataGrid Column Headers -->
     <system:String x:Key="Locale_Ledger_Grid_Select">Select</system:String>
     <system:String x:Key="Locale_Ledger_Grid_Edit">Edit</system:String>
@@ -448,6 +481,8 @@
     <system:String x:Key="Locale_Ledger_StagingModal_Discard">Discard correction</system:String>
     <system:String x:Key="Locale_Ledger_StagingModal_FooterHelper">All corrections will be applied in a single database transaction.</system:String>
     <system:String x:Key="Locale_Ledger_StagingModal_CommitButton">Commit Updates</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_DiscardAllButton">Discard All</system:String>
+    <system:String x:Key="Locale_Ledger_StagingModal_CloseTooltip">Close</system:String>
 
     <!-- ========================================== -->
     <!-- REPORTS HUB MODULE                       -->

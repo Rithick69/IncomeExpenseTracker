@@ -623,6 +623,30 @@ public class TransactionService : ITransactionService, IDisposable
         }
     }
 
+    public async Task<decimal> GetAccountsBalanceSumAsync(IReadOnlyList<int> accountIds, CancellationToken ct = default)
+    {
+        if (accountIds == null || accountIds.Count == 0) return 0m;
+        try
+        {
+
+            return await _database.ExecuteWithRetryAsync(async (conn, cancelToken) =>
+            {
+                // Sum Credit - Debit across all selected accounts, excluding Split Parents (ReviewStatus & 16)
+                const string sql = "SELECT COALESCE(SUM(Credit - Debit), 0) FROM Transactions WHERE (ReviewStatus & 16) = 0 AND AccountId IN @AccountIds;";
+                return await conn.ExecuteScalarAsync<decimal>(new CommandDefinition(sql, new { AccountIds = accountIds }, cancellationToken: cancelToken));
+            }, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to calculate total balance for accounts: {AccountIds}.", string.Join(",", accountIds));
+            throw;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // PRIVATE HELPER METHODS
     // -------------------------------------------------------------------------
@@ -643,7 +667,12 @@ public class TransactionService : ITransactionService, IDisposable
 
     private static string GetCacheKey(TransactionFilterArgs args)
     {
-        return $"FILTER:{args.BatchId}_{args.AccountId}_{args.Source}_{args.SearchText}_{args.IsTriageMode}_{(int?)args.SpecificError}_{args.DateFrom:yyyyMMdd}_{args.DateTo:yyyyMMdd}_{args.SortBy}_{args.SortDescending}_{args.Limit}_{args.Offset}";
+        var batches = args.BatchIds is { Count: > 0 } ? string.Join(",", args.BatchIds.OrderBy(x => x)) : "";
+        var accounts = args.AccountIds is { Count: > 0 } ? string.Join(",", args.AccountIds.OrderBy(x => x)) : "";
+        var tags = args.TagIds is { Count: > 0 } ? string.Join(",", args.TagIds.OrderBy(x => x)) : "";
+        var payees = args.PayeeIds is { Count: > 0 } ? string.Join(",", args.PayeeIds.OrderBy(x => x)) : "";
+
+        return $"FILTER:B[{batches}]_A[{accounts}]_T[{tags}]_P[{payees}]_{args.Source}_{args.SearchText}_{args.IsTriageMode}_{(int?)args.SpecificError}_{args.DateFrom:yyyyMMdd}_{args.DateTo:yyyyMMdd}_{args.SortBy}_{args.SortDescending}_{args.Limit}_{args.Offset}";
     }
 
     private void InvalidateCache()
@@ -658,16 +687,28 @@ public class TransactionService : ITransactionService, IDisposable
         var conditions = new List<string>();
         var parameters = new DynamicParameters();
 
-        if (args.BatchId.HasValue)
+        if (args.BatchIds is { Count: > 0 })
         {
-            conditions.Add("ImportBatchId = @BatchId");
-            parameters.Add("@BatchId", args.BatchId.Value);
+            conditions.Add("ImportBatchId IN @BatchIds");
+            parameters.Add("@BatchIds", args.BatchIds);
         }
 
-        if (args.AccountId.HasValue)
+        if (args.AccountIds is { Count: > 0 })
         {
-            conditions.Add("AccountId = @AccountId");
-            parameters.Add("@AccountId", args.AccountId.Value);
+            conditions.Add("AccountId IN @AccountIds");
+            parameters.Add("@AccountIds", args.AccountIds);
+        }
+
+        if (args.TagIds is { Count: > 0 })
+        {
+            conditions.Add("TagId IN @TagIds");
+            parameters.Add("@TagIds", args.TagIds);
+        }
+
+        if (args.PayeeIds is { Count: > 0 })
+        {
+            conditions.Add("PayeeId IN @PayeeIds");
+            parameters.Add("@PayeeIds", args.PayeeIds);
         }
 
         if (!string.IsNullOrWhiteSpace(args.Source))

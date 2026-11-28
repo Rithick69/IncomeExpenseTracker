@@ -116,4 +116,8 @@ public interface ITransactionService
 
     Task<decimal> GetTotalGlobalBalanceAsync(
         CancellationToken ct = default);
+
+    Task<decimal> GetAccountsBalanceSumAsync(
+        IReadOnlyList<int> accountIds,
+        CancellationToken ct = default);
 }

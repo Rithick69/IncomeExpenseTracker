@@ -63,47 +63,30 @@ public partial class TransactionReviewViewModel : ViewModelBase
     [ObservableProperty]
     private DateTimeOffset? _endDate = null;
 
-    [ObservableProperty]
-    private int? _selectedAccountId = null;
+    // =============================================================================
+    // MULTI-SELECT SEARCHABLE FILTERS (Account, Import Batch, Tag, Payee)
+    // =============================================================================
+
+    /// <summary>Multi-select filter for Accounts (formatted with Entity + masked number).</summary>
+    public MultiSelectFilterViewModel AccountFilter { get; }
+
+    /// <summary>Multi-select filter for Import Batches.</summary>
+    public MultiSelectFilterViewModel BatchFilter { get; }
+
+    /// <summary>Multi-select filter for Tags.</summary>
+    public MultiSelectFilterViewModel TagFilter { get; }
+
+    /// <summary>Multi-select filter for Payees.</summary>
+    public MultiSelectFilterViewModel PayeeFilter { get; }
+
+    /// <summary>Controls visibility of the conditional Selected Accounts balance pill.</summary>
+    public bool HasFilteredAccounts => AccountFilter.SelectedCount > 0;
 
     /// <summary>
-    /// Account filter options populated from MasterData (includes "All Accounts" at Id = 0).
+    /// Controls visibility of the destructive "Revert Batch" button.
+    /// Enabled only when exactly 1 specific import batch is selected.
     /// </summary>
-    public ObservableCollection<AccountFilterItem> AvailableAccounts { get; } = new();
-
-    private AccountFilterItem? _selectedAccount;
-    public AccountFilterItem? SelectedAccount
-    {
-        get => _selectedAccount;
-        set
-        {
-            if (SetProperty(ref _selectedAccount, value))
-            {
-                SelectedAccountId = (value != null && value.Id > 0) ? value.Id : null;
-                OnPropertyChanged(nameof(IsAccountSelected));
-                OnPropertyChanged(nameof(HasActiveFilters));
-                BalanceLabel = IsAccountSelected ? "Account Balance:" : "Total Balance:";
-
-                if (!_isInitializing)
-                {
-                    _currentOffset = 0;
-                    _ = RefreshGridAsync();
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Import batch filter options populated from MasterData (includes "All Batches" at Id = 0).
-    /// </summary>
-    public ObservableCollection<ImportBatchFilterItem> AvailableImportBatches { get; } = new();
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsBatchSelected))]
-    private ImportBatchFilterItem? _selectedImportBatch = null;
-
-    public bool IsAccountSelected => SelectedAccountId.HasValue && SelectedAccountId.Value > 0;
-    public bool IsBatchSelected => SelectedImportBatch != null && SelectedImportBatch.Id > 0;
+    public bool IsBatchSelected => BatchFilter.SelectedCount == 1;
 
     /// <summary>
     /// Controls visibility of the "Reset Filters" button in the top action bar.
@@ -113,8 +96,17 @@ public partial class TransactionReviewViewModel : ViewModelBase
         !string.IsNullOrWhiteSpace(SearchText) ||
         StartDate.HasValue ||
         EndDate.HasValue ||
-        IsAccountSelected ||
-        IsBatchSelected;
+        AccountFilter.HasSelection ||
+        BatchFilter.HasSelection ||
+        TagFilter.HasSelection ||
+        PayeeFilter.HasSelection;
+
+    // Highlighted Balance Widgets (Always-visible Global Total + Conditional Selected Accounts)
+    [ObservableProperty]
+    private decimal _totalGlobalBalance = 0m;
+
+    [ObservableProperty]
+    private decimal _filteredAccountBalance = 0m;
 
     // Cross-Page SQLite Sorting
     public ObservableCollection<string> SortByOptions { get; } = new() { "Date", "Debit", "Credit" };
@@ -132,12 +124,12 @@ public partial class TransactionReviewViewModel : ViewModelBase
         ? "Descending (Newest / High to Low)"
         : "Ascending (Oldest / Low to High)";
 
-    // Highlighted Balance Widget
-    [ObservableProperty]
-    private decimal _currentFilterBalance = 0m;
+    // // Highlighted Balance Widget
+    // [ObservableProperty]
+    // private decimal _currentFilterBalance = 0m;
 
-    [ObservableProperty]
-    private string _balanceLabel = "Total Balance:";
+    // [ObservableProperty]
+    // private string _balanceLabel = "Total Balance:";
 
     // Filter & Search Change Hooks
     partial void OnStartDateChanged(DateTimeOffset? value)
@@ -156,13 +148,13 @@ public partial class TransactionReviewViewModel : ViewModelBase
         _ = RefreshGridAsync();
     }
 
-    partial void OnSelectedImportBatchChanged(ImportBatchFilterItem? value)
-    {
-        OnPropertyChanged(nameof(HasActiveFilters));
-        if (_isInitializing) return;
-        _currentOffset = 0;
-        _ = RefreshGridAsync();
-    }
+    // partial void OnSelectedImportBatchChanged(ImportBatchFilterItem? value)
+    // {
+    //     OnPropertyChanged(nameof(HasActiveFilters));
+    //     if (_isInitializing) return;
+    //     _currentOffset = 0;
+    //     _ = RefreshGridAsync();
+    // }
 
     partial void OnSelectedSortByChanged(string value)
     {
@@ -379,14 +371,28 @@ public partial class TransactionReviewViewModel : ViewModelBase
 
         TransactionsView = new DataGridCollectionView(_rawTransactions);
 
-        StagingViewModel = new StagingReviewModalViewModel(orchestrator, broker)
+        StagingViewModel = new StagingReviewModalViewModel(orchestrator, masterDataOrchestrator, broker)
         {
-            CloseAction = () => IsStagingModalVisible = false
+            CloseAction = () => IsStagingModalVisible = false,
+            OnCommitCompletedAsync = async () =>
+            {
+                _isInitializing = true;
+                await LoadMasterDataAsync();
+                _isInitializing = false;
+                await RefreshGridAsync();
+            },
+            OnDiscardCompletedAsync = RefreshGridAsync
         };
 
         // Keep badge count and row draft indicators synced with the staging cart
         StagingViewModel.StagedCorrections.CollectionChanged += OnStagedCorrectionsChanged;
         StagedEditsCount = StagingViewModel.StagedCorrections.Count;
+
+        // Initialize multi-select searchable filter controls
+        AccountFilter = new MultiSelectFilterViewModel("All Accounts", OnMultiSelectFilterChanged);
+        BatchFilter = new MultiSelectFilterViewModel("All Batches", OnMultiSelectFilterChanged);
+        TagFilter = new MultiSelectFilterViewModel("All Tags", OnMultiSelectFilterChanged);
+        PayeeFilter = new MultiSelectFilterViewModel("All Payees", OnMultiSelectFilterChanged);
 
         _ = InitializeAsync();
     }
@@ -398,6 +404,7 @@ public partial class TransactionReviewViewModel : ViewModelBase
     {
         try
         {
+
             await LoadMasterDataAsync();
         }
         finally
@@ -428,17 +435,7 @@ public partial class TransactionReviewViewModel : ViewModelBase
                 a => a.Id,
                 a => FormatAccountDisplay(a, entityNamesById));
 
-            AvailableAccounts.Clear();
-            AvailableAccounts.Add(new AccountFilterItem { Id = 0, DisplayName = "All Accounts" });
-            foreach (var acc in accounts)
-            {
-                AvailableAccounts.Add(new AccountFilterItem
-                {
-                    Id = acc.Id,
-                    DisplayName = _accountNamesById[acc.Id]
-                });
-            }
-            SelectedAccount = AvailableAccounts.FirstOrDefault();
+            AccountFilter.SetOptions(accounts.Select(a => (a.Id, _accountNamesById[a.Id])));
 
             // 2. Payees
             var payees = payeesTask.Result.ToList();
@@ -452,6 +449,7 @@ public partial class TransactionReviewViewModel : ViewModelBase
             {
                 AvailablePayees.Add(payee.Name);
             }
+            PayeeFilter.SetOptions(payees.OrderBy(p => p.Name).Select(p => (p.Id, p.Name)));
 
             // 3. Tags
             var tags = tagsTask.Result;
@@ -465,20 +463,15 @@ public partial class TransactionReviewViewModel : ViewModelBase
             {
                 AvailableTags.Add(tag.Name);
             }
+            TagFilter.SetOptions(tags.OrderBy(t => t.Name).Select(t => (t.Id, t.Name)));
 
             // 4. Import Batches
             var batches = batchesTask.Result;
-            AvailableImportBatches.Clear();
-            AvailableImportBatches.Add(new ImportBatchFilterItem { Id = 0, DisplayName = "All Batches" });
-            foreach (var batch in batches.OrderByDescending(b => b.Id))
-            {
-                AvailableImportBatches.Add(new ImportBatchFilterItem
-                {
-                    Id = batch.Id,
-                    DisplayName = $"Batch #{batch.Id} - {batch.FileName}"
-                });
-            }
-            SelectedImportBatch = AvailableImportBatches.FirstOrDefault();
+            BatchFilter.SetOptions(
+                batches.OrderByDescending(b => b.Id)
+                       .Select(b => (b.Id, $"Batch #{b.Id} - {b.FileName}")));
+
+            // SelectedImportBatch = AvailableImportBatches.FirstOrDefault();
         }
         catch (Exception)
         {
@@ -495,13 +488,17 @@ public partial class TransactionReviewViewModel : ViewModelBase
     {
         try
         {
-            int? batchId = (SelectedImportBatch != null && SelectedImportBatch.Id > 0)
-                ? SelectedImportBatch.Id
-                : null;
+            // Collect multi-select filter IDs (pass null when empty so SQL skips the IN clause)
+            var selectedBatchIds = BatchFilter.SelectedIds;
+            var selectedAccountIds = AccountFilter.SelectedIds;
+            var selectedTagIds = TagFilter.SelectedIds;
+            var selectedPayeeIds = PayeeFilter.SelectedIds;
 
             var filters = new TransactionFilterArgs(
-                BatchId: batchId,
-                AccountId: SelectedAccountId,
+                BatchIds: selectedBatchIds.Count > 0 ? selectedBatchIds : null,
+                AccountIds: selectedAccountIds.Count > 0 ? selectedAccountIds : null,
+                TagIds: selectedTagIds.Count > 0 ? selectedTagIds : null,
+                PayeeIds: selectedPayeeIds.Count > 0 ? selectedPayeeIds : null,
                 SearchText: string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim(),
                 IsTriageMode: IsTriageMode,
                 DateFrom: StartDate?.DateTime,
@@ -512,27 +509,23 @@ public partial class TransactionReviewViewModel : ViewModelBase
                 Offset: _currentOffset
             );
 
-            var result = await _orchestrator.GetTransactionsAsync(filters);
+            // Execute grid fetch and balance aggregations concurrently for lower latency
+            var gridTask = _orchestrator.GetTransactionsAsync(filters);
+            var globalBalanceTask = _orchestrator.GetTotalGlobalBalanceAsync();
+            var filteredBalanceTask = selectedAccountIds.Count > 0
+                ? _orchestrator.GetAccountsBalanceSumAsync(selectedAccountIds)
+                : Task.FromResult(0m);
+
+            await Task.WhenAll(gridTask, globalBalanceTask, filteredBalanceTask);
+
+            var result = gridTask.Result;
             var items = result.Items.ToList();
             _totalCount = result.TotalCount;
 
-            // Resolve Balance Widget (Account Balance uses latest chronological row regardless of sort order)
-            if (IsAccountSelected && items.Any())
-            {
-                CurrentFilterBalance = items
-                    .OrderByDescending(x => x.Date)
-                    .ThenByDescending(x => x.Id)
-                    .First()
-                    .RunningBalance;
-            }
-            else if (!IsAccountSelected)
-            {
-                CurrentFilterBalance = await _orchestrator.GetTotalGlobalBalanceAsync();
-            }
-            else
-            {
-                CurrentFilterBalance = 0m;
-            }
+            // Update both the always-visible Total Balance and the conditional Selected Accounts Balance
+            TotalGlobalBalance = globalBalanceTask.Result;
+            FilteredAccountBalance = filteredBalanceTask.Result;
+            OnPropertyChanged(nameof(HasFilteredAccounts));
 
             // Unsubscribe old rows before clearing to prevent memory leaks
             foreach (var oldRow in _rawTransactions)
@@ -546,9 +539,16 @@ public partial class TransactionReviewViewModel : ViewModelBase
             IsAllSelected = false;
             _isUpdatingSelection = false;
 
-            var stagedIds = StagingViewModel.StagedCorrections
-                .Select(c => c.TransactionId)
-                .ToHashSet();
+            // Collect all staged transaction IDs (including Credit legs of staged Transfers)
+            var stagedIds = new HashSet<long>();
+            foreach (var correction in StagingViewModel.StagedCorrections)
+            {
+                stagedIds.Add(correction.TransactionId);
+                if (correction.LinkedCreditTransactionId.HasValue)
+                {
+                    stagedIds.Add(correction.LinkedCreditTransactionId.Value);
+                }
+            }
 
             foreach (var txn in items)
             {
@@ -590,6 +590,9 @@ public partial class TransactionReviewViewModel : ViewModelBase
             Broker.Send(new ToastNotificationMessage("Failed to load transactions.", NotificationType.Error));
         }
     }
+    // =============================================================================
+    // REUSABLE MULTI-SELECT SEARCHABLE FILTER VIEWMODEL
+    // =============================================================================
 
     [RelayCommand]
     private async Task ToggleTriageModeAsync()
@@ -624,8 +627,10 @@ public partial class TransactionReviewViewModel : ViewModelBase
             SearchText = string.Empty;
             StartDate = null;
             EndDate = null;
-            SelectedAccount = AvailableAccounts.FirstOrDefault();
-            SelectedImportBatch = AvailableImportBatches.FirstOrDefault();
+            AccountFilter.ClearSilently();
+            BatchFilter.ClearSilently();
+            TagFilter.ClearSilently();
+            PayeeFilter.ClearSilently();
             SelectedGroupBy = "None";
             SelectedSortBy = "Date";
             IsSortDescending = true;
@@ -634,6 +639,8 @@ public partial class TransactionReviewViewModel : ViewModelBase
         finally
         {
             _isInitializing = false;
+            OnPropertyChanged(nameof(HasFilteredAccounts));
+            OnPropertyChanged(nameof(IsBatchSelected));
             OnPropertyChanged(nameof(HasActiveFilters));
         }
 
@@ -802,6 +809,10 @@ public partial class TransactionReviewViewModel : ViewModelBase
         IsBulkActionsModalVisible = false;
     }
 
+    // =========================================================================
+    // STAGED TRANSFER LINKING (Deferred until Staging Modal Commit)
+    // =========================================================================
+
     [RelayCommand]
     private async Task LinkAsTransferAsync()
     {
@@ -820,6 +831,12 @@ public partial class TransactionReviewViewModel : ViewModelBase
             return;
         }
 
+        if (debitTx.Debit != creditTx.Credit)
+        {
+            Broker.Send(new ToastNotificationMessage($"Transfer amounts must match exactly (Debit: {debitTx.Debit:N2} vs Credit: {creditTx.Credit:N2}).", NotificationType.Warning));
+            return;
+        }
+
         // Resolve or auto-create the system Transfer tag dynamically
         if (!_tagIdsByName.TryGetValue("Transfer", out int systemTransferTagId))
         {
@@ -829,10 +846,31 @@ public partial class TransactionReviewViewModel : ViewModelBase
             if (!AvailableTags.Contains("Transfer")) AvailableTags.Add("Transfer");
         }
 
-        await _orchestrator.LinkTransferAsync(debitTx.Id, creditTx.Id, systemTransferTagId);
+        // Remove any prior staged action on either transaction to prevent conflicting operations
+        RemoveExistingStagedOperations(debitTx.Id, creditTx.Id);
 
+        StagingViewModel.StagedCorrections.Add(new TransactionCorrectionRowViewModel
+        {
+            TransactionId = debitTx.Id,
+            Date = debitTx.Date,
+            OriginalMerchant = $"{debitTx.SanitizedSource} ↔ {creditTx.SanitizedSource}",
+            NewPayee = debitTx.PayeeName,
+            NewTag = "Transfer",
+            OriginalDebit = debitTx.Debit,
+            CorrectedDebit = debitTx.Debit,
+            OriginalCredit = creditTx.Credit,
+            CorrectedCredit = creditTx.Credit,
+            OperationType = StagedOperationType.LinkTransfer,
+            ActionSummary = $"Link Transfer (Tx #{debitTx.Id} ↔ #{creditTx.Id})",
+            LinkedCreditTransactionId = creditTx.Id,
+            SystemTransferTagId = systemTransferTagId
+        });
+
+        debitTx.IsStaged = true;
+        creditTx.IsStaged = true;
+
+        Broker.Send(new ToastNotificationMessage("Transfer link staged. Click 'Review Edits' to commit.", NotificationType.Success));
         CancelSelection();
-        await RefreshGridAsync();
     }
 
     // =============================================================================
@@ -871,6 +909,10 @@ public partial class TransactionReviewViewModel : ViewModelBase
 
         RecalculateSplitSummary();
     }
+
+    // =========================================================================
+    // STAGED SPLIT & REVERT SPLIT (Deferred until Staging Modal Commit)
+    // =========================================================================
 
     [RelayCommand]
     private async Task CommitSplitAsync()
@@ -930,13 +972,39 @@ public partial class TransactionReviewViewModel : ViewModelBase
 
             Broker.Send(new ToastNotificationMessage($"Fractional difference of {difference:N2} auto-corrected on the last line.", NotificationType.Info));
         }
+        else if (difference != 0)
+        {
+            Broker.Send(new ToastNotificationMessage($"Split total must equal {targetTotal:N2} (Remaining: {difference:N2}).", NotificationType.Warning));
+            return;
+        }
 
-        await _orchestrator.SplitTransactionAsync(SelectedTransaction.Id, childTransactions);
+        // Replace any prior staged edit for this row with the staged split
+        RemoveExistingStagedOperations(SelectedTransaction.Id);
+
+        StagingViewModel.StagedCorrections.Add(new TransactionCorrectionRowViewModel
+        {
+            TransactionId = SelectedTransaction.Id,
+            Date = SelectedTransaction.Date,
+            OriginalMerchant = SelectedTransaction.SanitizedSource,
+            NewPayee = SelectedTransaction.PayeeName,
+            NewTag = $"Split ({childTransactions.Count} lines)",
+            OriginalDebit = SelectedTransaction.Debit,
+            CorrectedDebit = SelectedTransaction.Debit,
+            OriginalCredit = SelectedTransaction.Credit,
+            CorrectedCredit = SelectedTransaction.Credit,
+            OperationType = StagedOperationType.Split,
+            ActionSummary = $"Split into {childTransactions.Count} lines",
+            SplitChildren = childTransactions
+        });
+
+        SelectedTransaction.IsStaged = true;
 
         ClearSplitLines();
         IsPanelVisible = false;
         SelectedTransaction = null;
-        await RefreshGridAsync();
+
+        Broker.Send(new ToastNotificationMessage($"Split into {childTransactions.Count} lines staged. Click 'Review Edits' to commit.", NotificationType.Success));
+        await Task.CompletedTask;
     }
 
     [RelayCommand]
@@ -944,12 +1012,31 @@ public partial class TransactionReviewViewModel : ViewModelBase
     {
         if (SelectedTransaction == null || !SelectedTransaction.IsSplitParent) return;
 
-        await _orchestrator.RevertSplitAsync(SelectedTransaction.Id);
+        RemoveExistingStagedOperations(SelectedTransaction.Id);
+
+        StagingViewModel.StagedCorrections.Add(new TransactionCorrectionRowViewModel
+        {
+            TransactionId = SelectedTransaction.Id,
+            Date = SelectedTransaction.Date,
+            OriginalMerchant = SelectedTransaction.SanitizedSource,
+            NewPayee = SelectedTransaction.PayeeName,
+            NewTag = SelectedTransaction.TagName,
+            OriginalDebit = SelectedTransaction.Debit,
+            CorrectedDebit = SelectedTransaction.Debit,
+            OriginalCredit = SelectedTransaction.Credit,
+            CorrectedCredit = SelectedTransaction.Credit,
+            OperationType = StagedOperationType.RevertSplit,
+            ActionSummary = "Revert Split"
+        });
+
+        SelectedTransaction.IsStaged = true;
 
         ClearSplitLines();
         IsPanelVisible = false;
         SelectedTransaction = null;
-        await RefreshGridAsync();
+
+        Broker.Send(new ToastNotificationMessage("Split revert staged. Click 'Review Edits' to commit.", NotificationType.Success));
+        await Task.CompletedTask;
     }
 
     // =============================================================================
@@ -977,17 +1064,22 @@ public partial class TransactionReviewViewModel : ViewModelBase
     [RelayCommand]
     private async Task RevertBatchAsync()
     {
-        if (SelectedImportBatch == null || SelectedImportBatch.Id <= 0)
+        var selectedBatchIds = BatchFilter.SelectedIds;
+        if (selectedBatchIds.Count != 1)
         {
-            Broker.Send(new ToastNotificationMessage("No batch selected to revert.", NotificationType.Warning));
+            Broker.Send(new ToastNotificationMessage("Select exactly one import batch to revert.", NotificationType.Warning));
             return;
         }
 
-        await _orchestrator.RevertImportBatchAsync(SelectedImportBatch.Id);
+        await _orchestrator.RevertImportBatchAsync(selectedBatchIds[0]);
 
         _isInitializing = true;
+        BatchFilter.ClearSilently();
         await LoadMasterDataAsync();
         _isInitializing = false;
+
+        OnPropertyChanged(nameof(IsBatchSelected));
+        OnPropertyChanged(nameof(HasActiveFilters));
 
         _currentOffset = 0;
         await RefreshGridAsync();
@@ -996,6 +1088,78 @@ public partial class TransactionReviewViewModel : ViewModelBase
     // =============================================================================
     // 14. INTERNAL EVENT HANDLERS & HELPERS
     // =============================================================================
+
+    private void OnStagedCorrectionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        StagedEditsCount = StagingViewModel.StagedCorrections.Count;
+
+        // Sync draft row indicators (including Credit legs of staged Transfers)
+        var stagedIds = new HashSet<long>();
+        foreach (var correction in StagingViewModel.StagedCorrections)
+        {
+            stagedIds.Add(correction.TransactionId);
+            if (correction.LinkedCreditTransactionId.HasValue)
+            {
+                stagedIds.Add(correction.LinkedCreditTransactionId.Value);
+            }
+        }
+
+        foreach (var row in _rawTransactions)
+        {
+            row.IsStaged = stagedIds.Contains(row.Id);
+        }
+    }
+
+    private void RemoveExistingStagedOperations(params long[] transactionIds)
+    {
+        var idSet = transactionIds.ToHashSet();
+        var toRemove = StagingViewModel.StagedCorrections
+            .Where(c => idSet.Contains(c.TransactionId) ||
+                        (c.LinkedCreditTransactionId.HasValue && idSet.Contains(c.LinkedCreditTransactionId.Value)))
+            .ToList();
+
+        foreach (var item in toRemove)
+        {
+            StagingViewModel.StagedCorrections.Remove(item);
+        }
+    }
+
+    private void StageOrUpdateCorrection(TransactionRowViewModel row, decimal originalDebit, decimal originalCredit)
+    {
+        var existing = StagingViewModel.StagedCorrections
+            .FirstOrDefault(c => c.TransactionId == row.Id && c.OperationType == StagedOperationType.Edit);
+
+        if (existing != null)
+        {
+            existing.Date = row.Date;
+            existing.NewPayee = row.PayeeName;
+            existing.NewTag = row.TagName;
+            existing.NewMemo = row.Memo;
+            existing.CorrectedDebit = row.Debit;
+            existing.CorrectedCredit = row.Credit;
+        }
+        else
+        {
+            RemoveExistingStagedOperations(row.Id);
+            StagingViewModel.StagedCorrections.Add(new TransactionCorrectionRowViewModel
+            {
+                TransactionId = row.Id,
+                Date = row.Date,
+                OriginalMerchant = row.SanitizedSource,
+                NewPayee = row.PayeeName,
+                NewTag = row.TagName,
+                NewMemo = row.Memo,
+                OriginalDebit = originalDebit,
+                CorrectedDebit = row.Debit,
+                OriginalCredit = originalCredit,
+                CorrectedCredit = row.Credit,
+                Source = row.SanitizedSource,
+                RawDescription = row.RawDescription,
+                OperationType = StagedOperationType.Edit,
+                ActionSummary = "Edit"
+            });
+        }
+    }
 
     private void OnTransactionRowPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -1014,19 +1178,19 @@ public partial class TransactionReviewViewModel : ViewModelBase
         }
     }
 
-    private void OnStagedCorrectionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    /// <summary>
+    /// Triggered whenever any checkbox inside Account, Batch, Tag, or Payee filters is toggled.
+    /// </summary>
+    private void OnMultiSelectFilterChanged()
     {
-        StagedEditsCount = StagingViewModel.StagedCorrections.Count;
+        OnPropertyChanged(nameof(HasFilteredAccounts));
+        OnPropertyChanged(nameof(IsBatchSelected));
+        OnPropertyChanged(nameof(HasActiveFilters));
 
-        // Sync draft row indicators in case a correction was discarded inside the staging modal
-        var stagedIds = StagingViewModel.StagedCorrections
-            .Select(c => c.TransactionId)
-            .ToHashSet();
+        if (_isInitializing) return;
 
-        foreach (var row in _rawTransactions)
-        {
-            row.IsStaged = stagedIds.Contains(row.Id);
-        }
+        _currentOffset = 0;
+        _ = RefreshGridAsync();
     }
 
     private void OnSplitLinePropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1072,34 +1236,6 @@ public partial class TransactionReviewViewModel : ViewModelBase
             ? "#22C55E"                                       // Green: Balanced and ready
             : (SplitRemainingAmount < -0.05m ? "#EF4444"      // Red: Over-allocated
                                              : "#F59E0B");    // Amber: Remaining amount to allocate
-    }
-
-    private void StageOrUpdateCorrection(TransactionRowViewModel row, decimal originalDebit, decimal originalCredit)
-    {
-        var existing = StagingViewModel.StagedCorrections.FirstOrDefault(c => c.TransactionId == row.Id);
-        if (existing != null)
-        {
-            existing.Date = row.Date;
-            existing.NewPayee = row.PayeeName;
-            existing.NewTag = row.TagName;
-            existing.CorrectedDebit = row.Debit;
-            existing.CorrectedCredit = row.Credit;
-        }
-        else
-        {
-            StagingViewModel.StagedCorrections.Add(new TransactionCorrectionRowViewModel
-            {
-                TransactionId = row.Id,
-                Date = row.Date,
-                OriginalMerchant = row.SanitizedSource,
-                NewPayee = row.PayeeName,
-                NewTag = row.TagName,
-                OriginalDebit = originalDebit,
-                CorrectedDebit = row.Debit,
-                OriginalCredit = originalCredit,
-                CorrectedCredit = row.Credit
-            });
-        }
     }
 
     /// <summary>
@@ -1245,17 +1381,17 @@ public partial class TransactionRowViewModel : ObservableObject
     }
 }
 
-public class AccountFilterItem
-{
-    public int Id { get; set; }
-    public string DisplayName { get; set; } = string.Empty;
-}
+// public class AccountFilterItem
+// {
+//     public int Id { get; set; }
+//     public string DisplayName { get; set; } = string.Empty;
+// }
 
-public class ImportBatchFilterItem
-{
-    public int Id { get; set; }
-    public string DisplayName { get; set; } = string.Empty;
-}
+// public class ImportBatchFilterItem
+// {
+//     public int Id { get; set; }
+//     public string DisplayName { get; set; } = string.Empty;
+// }
 
 /// <summary>
 /// Represents a single split allocation line inside the Slide-In Edit Panel.
@@ -1277,3 +1413,145 @@ public partial class SplitLineViewModel : ObservableObject
 
     public string LineHeader => $"Split #{LineNumber}";
 }
+
+public partial class MultiSelectFilterViewModel : ObservableObject
+{
+    private readonly string _defaultPlaceholder;
+    private readonly Action _onSelectionChanged;
+    private bool _isUpdating;
+
+    public ObservableCollection<SelectableFilterOption> Options { get; } = new();
+
+    [ObservableProperty]
+    private string _searchQuery = string.Empty;
+
+    [ObservableProperty]
+    private string _summaryText;
+
+    [ObservableProperty]
+    private bool _hasSelection;
+
+    public MultiSelectFilterViewModel(string defaultPlaceholder, Action onSelectionChanged)
+    {
+        _defaultPlaceholder = defaultPlaceholder;
+        _summaryText = defaultPlaceholder;
+        _onSelectionChanged = onSelectionChanged;
+    }
+
+    public IReadOnlyList<int> SelectedIds => Options.Where(o => o.IsSelected).Select(o => o.Id).ToList();
+    public int SelectedCount => Options.Count(o => o.IsSelected);
+
+    partial void OnSearchQueryChanged(string value)
+    {
+        var query = value?.Trim() ?? string.Empty;
+        foreach (var opt in Options)
+        {
+            opt.IsVisible = string.IsNullOrEmpty(query) ||
+                            opt.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    public void SetOptions(IEnumerable<(int Id, string DisplayName)> items)
+    {
+        var previouslySelected = SelectedIds.ToHashSet();
+
+        foreach (var old in Options)
+            old.PropertyChanged -= OnOptionPropertyChanged;
+
+        Options.Clear();
+
+        foreach (var (id, name) in items)
+        {
+            var option = new SelectableFilterOption
+            {
+                Id = id,
+                DisplayName = name,
+                IsSelected = previouslySelected.Contains(id)
+            };
+            option.PropertyChanged += OnOptionPropertyChanged;
+            Options.Add(option);
+        }
+
+        SearchQuery = string.Empty;
+        UpdateSummary();
+    }
+
+    [RelayCommand]
+    public void ClearSelection()
+    {
+        if (!HasSelection && string.IsNullOrEmpty(SearchQuery)) return;
+
+        _isUpdating = true;
+        try
+        {
+            foreach (var opt in Options)
+                opt.IsSelected = false;
+
+            SearchQuery = string.Empty;
+        }
+        finally
+        {
+            _isUpdating = false;
+        }
+
+        UpdateSummary();
+        _onSelectionChanged();
+    }
+
+    /// <summary>
+    /// Clears selections silently without firing the change callback (used during Reset All Filters).
+    /// </summary>
+    public void ClearSilently()
+    {
+        _isUpdating = true;
+        try
+        {
+            foreach (var opt in Options)
+                opt.IsSelected = false;
+
+            SearchQuery = string.Empty;
+        }
+        finally
+        {
+            _isUpdating = false;
+        }
+
+        UpdateSummary();
+    }
+
+    private void OnOptionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_isUpdating || e.PropertyName != nameof(SelectableFilterOption.IsSelected))
+            return;
+
+        UpdateSummary();
+        _onSelectionChanged();
+    }
+
+    private void UpdateSummary()
+    {
+        var selected = Options.Where(o => o.IsSelected).ToList();
+        HasSelection = selected.Count > 0;
+
+        SummaryText = selected.Count switch
+        {
+            0 => _defaultPlaceholder,
+            1 => selected[0].DisplayName,
+            _ => $"{selected.Count} selected"
+        };
+    }
+}
+
+public partial class SelectableFilterOption : ObservableObject
+{
+    public int Id { get; init; }
+    public string DisplayName { get; init; } = string.Empty;
+
+    [ObservableProperty]
+    private bool _isSelected;
+
+    [ObservableProperty]
+    private bool _isVisible = true;
+}
+
+

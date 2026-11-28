@@ -31,24 +31,28 @@ public record TransactionCorrectionDTO
     public decimal Credit { get; init; }
     public int? PayeeId { get; init; }
     public int? TargetTagId { get; init; }
+
+    public string Memo { get; init; } = string.Empty;
     public ReviewFlags ReviewStatus { get; init; } // Bound directly to pass down user UI flag clears
 }
 /// <summary>
 /// A memory-efficient struct for paginated and filtered UI queries.
 /// </summary>
 public readonly record struct TransactionFilterArgs(
-    int? BatchId = null,
-    int? AccountId = null,
+    IReadOnlyList<int>? BatchIds = null,
+    IReadOnlyList<int>? AccountIds = null,
+    IReadOnlyList<int>? TagIds = null,
+    IReadOnlyList<int>? PayeeIds = null,
     string? Source = null,
     string? SearchText = null,
-    bool? IsTriageMode = null, // ADDED: True = Only show rows with ReviewStatus > 0
-    ReviewFlags? SpecificError = null,     // Target a specific error (e.g., MissingPayee)
-    int? Limit = 50,
-    int? Offset = 0,
+    bool? IsTriageMode = null,
+    ReviewFlags? SpecificError = null,
     DateTime? DateFrom = null,
     DateTime? DateTo = null,
     string SortBy = "Date",
-    bool SortDescending = true
+    bool SortDescending = true,
+    int? Limit = 50,
+    int? Offset = 0
 );
 
 /// <summary>

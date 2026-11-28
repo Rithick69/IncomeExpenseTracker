@@ -191,6 +191,24 @@ public class TransactionReviewOrchestrator : ITransactionReviewOrchestrator
         }
     }
 
+    public async Task<decimal> GetAccountsBalanceSumAsync(IReadOnlyList<int> accountIds, CancellationToken ct = default)
+    {
+        try
+        {
+            return await _transactionService.GetAccountsBalanceSumAsync(accountIds, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve balance sum for accounts: {AccountIds}.", string.Join(", ", accountIds));
+            _broker.Send(new CrudErrorMessage(
+                DomainEntity.Transaction,
+                CrudOperation.Read,
+                "Locale_Error_Read_AccountsBalance"
+            ));
+            throw;
+        }
+    }
+
     public async Task ApplyCorrectionsAsync(IReadOnlyCollection<TransactionCorrectionDTO> corrections, CancellationToken ct = default)
     {
         if (corrections == null || !corrections.Any()) return;
